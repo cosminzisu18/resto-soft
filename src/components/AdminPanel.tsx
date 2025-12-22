@@ -8,11 +8,11 @@ import { cn } from '@/lib/utils';
 import { 
   LogOut, Settings, UtensilsCrossed, LayoutGrid, 
   Monitor, Plus, Trash2, Edit2, Save, Users, CalendarDays,
-  Truck, BarChart3, Map, ShoppingCart, Phone, Wifi, WifiOff
+  Truck, BarChart3, Map, ShoppingCart, Phone, Wifi, WifiOff, Salad
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers } from '@/data/mockData';
+import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -22,7 +22,7 @@ interface AdminPanelProps {
   onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'kds' | 'reservations' | 'delivery' | 'waiters' | 'customers';
+type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'extraIngredients' | 'kds' | 'reservations' | 'delivery' | 'waiters' | 'customers';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const isMobile = useIsMobile();
@@ -166,6 +166,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     { id: 'tableMap' as AdminView, label: t('nav.tableMap'), icon: Map },
     { id: 'orders' as AdminView, label: t('nav.orders'), icon: ShoppingCart },
     { id: 'menu' as AdminView, label: t('nav.menu'), icon: UtensilsCrossed },
+    { id: 'extraIngredients' as AdminView, label: 'Ingrediente Extra', icon: Salad },
     { id: 'kds' as AdminView, label: t('nav.kds'), icon: Monitor },
     { id: 'reservations' as AdminView, label: t('nav.reservations'), icon: CalendarDays },
     { id: 'delivery' as AdminView, label: t('nav.delivery'), icon: Truck },
@@ -572,6 +573,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Extra Ingredients Management */}
+        {activeView === 'extraIngredients' && (
+          <div className="p-4 md:p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Ingrediente Extra</h2>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Adauga ingredient
+              </Button>
+            </div>
+            
+            <p className="text-muted-foreground mb-6">
+              Ingredientele extra pot fi adaugate de clienti la produse contra cost.
+            </p>
+
+            {/* Group by category */}
+            {Object.entries(
+              extraIngredients.reduce((acc, ing) => {
+                if (!acc[ing.category]) acc[ing.category] = [];
+                acc[ing.category].push(ing);
+                return acc;
+              }, {} as Record<string, typeof extraIngredients>)
+            ).map(([category, items]) => (
+              <div key={category} className="mb-6">
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <Salad className="w-5 h-5 text-primary" />
+                  {category}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {items.map(ing => (
+                    <div key={ing.id} className="p-4 rounded-xl bg-card border border-border flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{ing.name}</p>
+                        <p className="text-primary font-bold">+{ing.price} RON</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon">
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
