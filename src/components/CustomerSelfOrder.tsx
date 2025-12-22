@@ -3,21 +3,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { menuItems, menuCategories, MenuItem, Table } from '@/data/mockData';
+import { menuItems, menuCategories, MenuItem, Table, extraIngredients } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, Send, QrCode, 
-  UtensilsCrossed, Home, ArrowLeft, Check, Truck
+  UtensilsCrossed, Home, ArrowLeft, Check, Truck, Edit2, X
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import LanguageSelector from '@/components/LanguageSelector';
 
-type CustomerOrderStep = 'scan' | 'menu' | 'cart' | 'confirm';
+type CustomerOrderStep = 'scan' | 'menu' | 'cart' | 'customize' | 'confirm';
 type OrderType = 'dine-in' | 'delivery';
 
 interface CartItem {
   menuItem: MenuItem;
   quantity: number;
+  modifications: {
+    added: string[];
+    removed: string[];
+    extras: string[];
+  };
 }
 
 interface CustomerSelfOrderProps {
@@ -39,10 +44,23 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
   // Delivery form
   const [deliveryForm, setDeliveryForm] = useState({ name: '', phone: '', address: '' });
 
+  // Customization state
+  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
+  const [tempAdditions, setTempAdditions] = useState<string[]>([]);
+  const [tempRemovals, setTempRemovals] = useState<string[]>([]);
+  const [tempExtras, setTempExtras] = useState<string[]>([]);
+  const [editingCartIndex, setEditingCartIndex] = useState<number | null>(null);
+
   const scannedTable = scannedTableId ? tables.find(t => t.id === scannedTableId) : null;
 
+  // Group extra ingredients by category
+  const extrasByCategory = extraIngredients.reduce((acc, ing) => {
+    if (!acc[ing.category]) acc[ing.category] = [];
+    acc[ing.category].push(ing);
+    return acc;
+  }, {} as Record<string, typeof extraIngredients>);
+
   const handleScanQR = () => {
-    // Simulate QR scanning - in reality would use camera
     const table = tables.find(t => t.qrCode === qrInput || t.id.includes(qrInput.toLowerCase()));
     if (table) {
       setScannedTableId(table.id);
@@ -54,19 +72,61 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     }
   };
 
-  const addToCart = (item: MenuItem) => {
-    setCart(prev => {
-      const existing = prev.find(c => c.menuItem.id === item.id);
-      if (existing) {
-        return prev.map(c => c.menuItem.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+  const openCustomization = (item: MenuItem, editIndex?: number) => {
+    setCustomizingItem(item);
+    setTempAdditions([]);
+    setTempRemovals([]);
+    setTempExtras([]);
+    setEditingCartIndex(editIndex ?? null);
+    
+    if (editIndex !== undefined) {
+      const cartItem = cart[editIndex];
+      if (cartItem) {
+        setTempAdditions(cartItem.modifications.added);
+        setTempRemovals(cartItem.modifications.removed);
+        setTempExtras(cartItem.modifications.extras);
       }
-      return [...prev, { menuItem: item, quantity: 1 }];
-    });
+    }
+    setStep('customize');
   };
 
-  const updateQuantity = (itemId: string, delta: number) => {
-    setCart(prev => prev.map(c => {
-      if (c.menuItem.id === itemId) {
+  const confirmCustomization = () => {
+    if (!customizingItem) return;
+    
+    if (editingCartIndex !== null) {
+      setCart(prev => prev.map((item, idx) => 
+        idx === editingCartIndex 
+          ? { ...item, modifications: { added: tempAdditions, removed: tempRemovals, extras: tempExtras } }
+          : item
+      ));
+    } else {
+      setCart(prev => [...prev, { 
+        menuItem: customizingItem, 
+        quantity: 1, 
+        modifications: { added: tempAdditions, removed: tempRemovals, extras: tempExtras } 
+      }]);
+    }
+    
+    setCustomizingItem(null);
+    setEditingCartIndex(null);
+    setStep('menu');
+  };
+
+  const addToCartQuick = (item: MenuItem) => {
+    if (item.ingredients && item.ingredients.length > 0) {
+      openCustomization(item);
+    } else {
+      setCart(prev => [...prev, { 
+        menuItem: item, 
+        quantity: 1, 
+        modifications: { added: [], removed: [], extras: [] } 
+      }]);
+    }
+  };
+
+  const updateQuantity = (index: number, delta: number) => {
+    setCart(prev => prev.map((c, idx) => {
+      if (idx === index) {
         const newQty = c.quantity + delta;
         return newQty > 0 ? { ...c, quantity: newQty } : c;
       }
@@ -74,11 +134,21 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     }).filter(c => c.quantity > 0));
   };
 
-  const removeFromCart = (itemId: string) => {
-    setCart(prev => prev.filter(c => c.menuItem.id !== itemId));
+  const removeFromCart = (index: number) => {
+    setCart(prev => prev.filter((_, idx) => idx !== index));
   };
 
-  const totalAmount = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
+  // Calculate extra price
+  const getExtraPrice = (extras: string[]) => {
+    return extras.reduce((sum, extraName) => {
+      const extra = extraIngredients.find(e => e.name === extraName);
+      return sum + (extra?.price || 0);
+    }, 0);
+  };
+
+  const totalAmount = cart.reduce((sum, c) => 
+    sum + (c.menuItem.price + getExtraPrice(c.modifications.extras)) * c.quantity, 0
+  );
   const totalItems = cart.reduce((sum, c) => sum + c.quantity, 0);
 
   const handlePlaceOrder = () => {
@@ -238,42 +308,33 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
             <div className="flex-1 p-3">
               <div className="space-y-3">
                 {filteredMenu.map(item => {
-                  const inCart = cart.find(c => c.menuItem.id === item.id);
+                  const inCart = cart.filter(c => c.menuItem.id === item.id);
+                  const totalQty = inCart.reduce((sum, c) => sum + c.quantity, 0);
                   return (
                     <div 
                       key={item.id}
                       className={cn(
                         "p-4 rounded-xl border transition-all",
-                        inCart ? "border-primary bg-primary/5" : "border-border"
+                        totalQty > 0 ? "border-primary bg-primary/5" : "border-border"
                       )}
                     >
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex-1">
                           <h3 className="font-semibold">{item.name}</h3>
                           <p className="text-sm text-muted-foreground">{item.description}</p>
+                          {item.ingredients && item.ingredients.length > 0 && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Ingrediente: {item.ingredients.join(', ')}
+                            </p>
+                          )}
                         </div>
                         <span className="text-lg font-bold text-primary ml-4">{item.price} RON</span>
                       </div>
                       
-                      {inCart ? (
-                        <div className="flex items-center gap-3 mt-3">
-                          <Button size="sm" variant="outline" onClick={() => updateQuantity(item.id, -1)}>
-                            <Minus className="w-4 h-4" />
-                          </Button>
-                          <span className="font-bold w-8 text-center">{inCart.quantity}</span>
-                          <Button size="sm" variant="outline" onClick={() => updateQuantity(item.id, 1)}>
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => removeFromCart(item.id)}>
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button size="sm" className="mt-3" onClick={() => addToCart(item)}>
-                          <Plus className="w-4 h-4 mr-1" />
-                          Adaugă
-                        </Button>
-                      )}
+                      <Button size="sm" className="mt-3" onClick={() => addToCartQuick(item)}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        {item.ingredients?.length ? 'Personalizează' : 'Adaugă'}
+                      </Button>
                     </div>
                   );
                 })}
@@ -303,20 +364,46 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                 </div>
               ) : (
                 <div className="space-y-3 mb-6">
-                  {cart.map(item => (
-                    <div key={item.menuItem.id} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50">
-                      <div className="flex-1">
-                        <p className="font-medium">{item.menuItem.name}</p>
-                        <p className="text-sm text-primary font-bold">{(item.menuItem.price * item.quantity).toFixed(2)} RON</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, -1)}>
-                          <Minus className="w-4 h-4" />
-                        </Button>
-                        <span className="w-6 text-center font-bold">{item.quantity}</span>
-                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, 1)}>
-                          <Plus className="w-4 h-4" />
-                        </Button>
+                  {cart.map((item, idx) => (
+                    <div key={idx} className="p-3 rounded-xl bg-secondary/50">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1">
+                          <p className="font-medium">{item.menuItem.name}</p>
+                          {/* Show modifications */}
+                          {(item.modifications.added.length > 0 || item.modifications.removed.length > 0 || item.modifications.extras.length > 0) && (
+                            <div className="text-xs text-muted-foreground mt-1 space-x-1">
+                              {item.modifications.added.map(a => (
+                                <span key={a} className="text-emerald-500">+Extra {a}</span>
+                              ))}
+                              {item.modifications.removed.map(r => (
+                                <span key={r} className="text-destructive">-{r}</span>
+                              ))}
+                              {item.modifications.extras.map(e => (
+                                <span key={e} className="text-primary">+{e}</span>
+                              ))}
+                            </div>
+                          )}
+                          <p className="text-sm text-primary font-bold">
+                            {((item.menuItem.price + getExtraPrice(item.modifications.extras)) * item.quantity).toFixed(2)} RON
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {item.menuItem.ingredients?.length > 0 && (
+                            <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => openCustomization(item.menuItem, idx)}>
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(idx, -1)}>
+                            <Minus className="w-4 h-4" />
+                          </Button>
+                          <span className="w-6 text-center font-bold">{item.quantity}</span>
+                          <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(idx, 1)}>
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                          <Button size="icon" variant="destructive" className="h-8 w-8" onClick={() => removeFromCart(idx)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -369,7 +456,158 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     );
   }
 
-  // Confirmation
+  // Customization Screen
+  if (step === 'customize' && customizingItem) {
+    const ingredients = customizingItem.ingredients || [];
+    
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <header className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-background z-10">
+          <Button variant="ghost" size="sm" onClick={() => { setStep('menu'); setCustomizingItem(null); }}>
+            <X className="w-4 h-4 mr-1" />
+            Anulează
+          </Button>
+          <h1 className="text-lg font-bold">Personalizează</h1>
+          <div className="w-20" />
+        </header>
+
+        <div className="flex-1 overflow-auto p-4">
+          {/* Product Info */}
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold mb-1">{customizingItem.name}</h2>
+            <p className="text-muted-foreground text-sm mb-2">{customizingItem.description}</p>
+            <p className="text-xl font-bold text-primary">{customizingItem.price} RON</p>
+          </div>
+
+          {/* Current Ingredients */}
+          {ingredients.length > 0 && (
+            <div className="mb-6">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <UtensilsCrossed className="w-4 h-4" />
+                Ingrediente incluse
+              </h3>
+              <div className="space-y-2">
+                {ingredients.map(ing => {
+                  const isRemoved = tempRemovals.includes(ing);
+                  const isExtra = tempAdditions.includes(ing);
+                  
+                  return (
+                    <div 
+                      key={ing}
+                      className={cn(
+                        "p-3 rounded-lg border flex items-center justify-between",
+                        isRemoved && "border-destructive/50 bg-destructive/10",
+                        isExtra && "border-primary bg-primary/10",
+                        !isRemoved && !isExtra && "border-border"
+                      )}
+                    >
+                      <span className={cn("font-medium", isRemoved && "line-through text-muted-foreground")}>
+                        {ing}
+                      </span>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant={isRemoved ? 'destructive' : 'outline'}
+                          onClick={() => {
+                            if (isRemoved) {
+                              setTempRemovals(tempRemovals.filter(r => r !== ing));
+                            } else {
+                              setTempRemovals([...tempRemovals, ing]);
+                              setTempAdditions(tempAdditions.filter(a => a !== ing));
+                            }
+                          }}
+                        >
+                          Fără
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={isExtra ? 'default' : 'outline'}
+                          onClick={() => {
+                            if (isExtra) {
+                              setTempAdditions(tempAdditions.filter(a => a !== ing));
+                            } else {
+                              setTempAdditions([...tempAdditions, ing]);
+                              setTempRemovals(tempRemovals.filter(r => r !== ing));
+                            }
+                          }}
+                        >
+                          Extra
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Extra Ingredients from Admin List */}
+          <div className="mb-6">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              Adaugă ingrediente extra
+            </h3>
+            {Object.entries(extrasByCategory).map(([category, items]) => (
+              <div key={category} className="mb-4">
+                <p className="text-sm text-muted-foreground mb-2">{category}</p>
+                <div className="flex flex-wrap gap-2">
+                  {items.map(extra => {
+                    const isSelected = tempExtras.includes(extra.name);
+                    return (
+                      <button
+                        key={extra.id}
+                        onClick={() => {
+                          if (isSelected) {
+                            setTempExtras(tempExtras.filter(e => e !== extra.name));
+                          } else {
+                            setTempExtras([...tempExtras, extra.name]);
+                          }
+                        }}
+                        className={cn(
+                          "px-3 py-2 rounded-lg border text-sm transition-all",
+                          isSelected 
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        {extra.name} (+{extra.price} RON)
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Modifications Summary */}
+          {(tempAdditions.length > 0 || tempRemovals.length > 0 || tempExtras.length > 0) && (
+            <div className="p-3 rounded-lg bg-secondary/50 border border-border mb-4">
+              <h4 className="font-medium mb-2 text-sm">Modificări:</h4>
+              <div className="flex flex-wrap gap-1">
+                {tempAdditions.map(a => (
+                  <span key={a} className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs">+Extra {a}</span>
+                ))}
+                {tempRemovals.map(r => (
+                  <span key={r} className="px-2 py-1 rounded-full bg-destructive/20 text-destructive text-xs">-{r}</span>
+                ))}
+                {tempExtras.map(e => (
+                  <span key={e} className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-600 text-xs">+{e}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Confirm Button */}
+        <div className="p-4 border-t border-border">
+          <Button className="w-full h-12" onClick={confirmCustomization}>
+            <Check className="w-4 h-4 mr-2" />
+            {editingCartIndex !== null ? 'Actualizează' : 'Adaugă în coș'} - {(customizingItem.price + getExtraPrice(tempExtras)).toFixed(2)} RON
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (step === 'confirm') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-500/20 via-background to-emerald-500/10 flex flex-col items-center justify-center p-6">
@@ -385,10 +623,19 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
         </p>
         
         <div className="bg-card rounded-xl p-4 mb-6 w-full max-w-sm">
-          {cart.map(item => (
-            <div key={item.menuItem.id} className="flex justify-between py-1 text-sm">
-              <span>{item.quantity}x {item.menuItem.name}</span>
-              <span>{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
+          {cart.map((item, idx) => (
+            <div key={idx} className="py-1 text-sm">
+              <div className="flex justify-between">
+                <span>{item.quantity}x {item.menuItem.name}</span>
+                <span>{((item.menuItem.price + getExtraPrice(item.modifications.extras)) * item.quantity).toFixed(2)} RON</span>
+              </div>
+              {(item.modifications.added.length > 0 || item.modifications.removed.length > 0 || item.modifications.extras.length > 0) && (
+                <div className="text-xs text-muted-foreground pl-4">
+                  {item.modifications.removed.map(r => <span key={r}>-{r} </span>)}
+                  {item.modifications.added.map(a => <span key={a}>+{a} </span>)}
+                  {item.modifications.extras.map(e => <span key={e}>+{e} </span>)}
+                </div>
+              )}
             </div>
           ))}
           <div className="border-t border-border mt-2 pt-2 flex justify-between font-bold">

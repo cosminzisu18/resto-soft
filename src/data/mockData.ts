@@ -341,6 +341,32 @@ export const initialTables: Table[] = [
 // Categories for menu
 export const menuCategories = ['Supe', 'Pizza', 'Grill', 'Tradițional', 'Giros', 'Garnituri', 'Băuturi'];
 
+// Extra ingredients that can be added (defined by admin)
+export const extraIngredients: { id: string; name: string; price: number; category: string }[] = [
+  { id: 'ei1', name: 'Mozzarella extra', price: 5, category: 'Brânzeturi' },
+  { id: 'ei2', name: 'Parmezan', price: 4, category: 'Brânzeturi' },
+  { id: 'ei3', name: 'Gorgonzola', price: 6, category: 'Brânzeturi' },
+  { id: 'ei4', name: 'Feta', price: 5, category: 'Brânzeturi' },
+  { id: 'ei5', name: 'Bacon', price: 6, category: 'Carne' },
+  { id: 'ei6', name: 'Șuncă', price: 5, category: 'Carne' },
+  { id: 'ei7', name: 'Salam', price: 4, category: 'Carne' },
+  { id: 'ei8', name: 'Pui extra', price: 8, category: 'Carne' },
+  { id: 'ei9', name: 'Vită extra', price: 10, category: 'Carne' },
+  { id: 'ei10', name: 'Ciuperci', price: 4, category: 'Legume' },
+  { id: 'ei11', name: 'Ardei gras', price: 3, category: 'Legume' },
+  { id: 'ei12', name: 'Ceapă caramelizată', price: 4, category: 'Legume' },
+  { id: 'ei13', name: 'Măsline', price: 3, category: 'Legume' },
+  { id: 'ei14', name: 'Roșii uscate', price: 5, category: 'Legume' },
+  { id: 'ei15', name: 'Jalapeño', price: 3, category: 'Legume' },
+  { id: 'ei16', name: 'Sos usturoi', price: 3, category: 'Sosuri' },
+  { id: 'ei17', name: 'Sos BBQ', price: 3, category: 'Sosuri' },
+  { id: 'ei18', name: 'Sos iute', price: 2, category: 'Sosuri' },
+  { id: 'ei19', name: 'Smântână', price: 3, category: 'Sosuri' },
+  { id: 'ei20', name: 'Ou prăjit', price: 4, category: 'Altele' },
+  { id: 'ei21', name: 'Avocado', price: 8, category: 'Altele' },
+  { id: 'ei22', name: 'Cartofi extra', price: 5, category: 'Altele' },
+];
+
 // Sample order history items (for customer history)
 export const orderHistoryItems: { orderId: string; customerId: string; items: { menuItemId: string; quantity: number }[]; date: Date; total: number }[] = [
   { orderId: 'oh1', customerId: 'c1', items: [{ menuItemId: 'm4', quantity: 2 }, { menuItemId: 'm13', quantity: 1 }], date: new Date('2024-03-10'), total: 92 },
