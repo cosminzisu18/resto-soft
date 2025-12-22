@@ -3,17 +3,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { menuItems, menuCategories, MenuItem, Table } from '@/data/mockData';
+import { menuItems, menuCategories, MenuItem, Table, extraIngredients } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, Send, ArrowLeft, ArrowRight,
-  Home, Package, UtensilsCrossed, QrCode, Check, Edit2, X
+  Home, Package, UtensilsCrossed, QrCode, Check, Edit2, X,
+  Banknote, CreditCard, Loader2, CheckCircle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import LanguageSelector from '@/components/LanguageSelector';
 
-type KioskStep = 'mode' | 'table' | 'menu' | 'cart' | 'customize' | 'confirm';
+type KioskStep = 'mode' | 'table' | 'menu' | 'cart' | 'customize' | 'payment' | 'processing' | 'confirm';
 type OrderMode = 'dine-in' | 'takeaway';
+type KioskPaymentMethod = 'cash' | 'card';
 
 interface CartItem {
   menuItem: MenuItem;
@@ -40,7 +42,12 @@ const KioskOrdering: React.FC = () => {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [tempAdditions, setTempAdditions] = useState<string[]>([]);
   const [tempRemovals, setTempRemovals] = useState<string[]>([]);
+  const [tempExtraIngredients, setTempExtraIngredients] = useState<string[]>([]);
   const [editingCartItemId, setEditingCartItemId] = useState<string | null>(null);
+  
+  // Payment state
+  const [kioskPaymentMethod, setKioskPaymentMethod] = useState<KioskPaymentMethod>('card');
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
 
   // Available table numbers for dine-in
   const availableNumbers = Array.from({ length: 50 }, (_, i) => i + 1);
@@ -460,9 +467,9 @@ const KioskOrdering: React.FC = () => {
               <span>Total</span>
               <span className="text-primary">{totalAmount.toFixed(2)} RON</span>
             </div>
-            <Button className="w-full h-14 text-lg" disabled={cart.length === 0} onClick={handleConfirmOrder}>
-              Plasează comanda
-              <Send className="w-5 h-5 ml-2" />
+            <Button className="w-full h-14 text-lg" disabled={cart.length === 0} onClick={() => setStep('payment')}>
+              Continuă la plată
+              <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </div>
         </div>
@@ -605,14 +612,175 @@ const KioskOrdering: React.FC = () => {
     );
   }
 
+  // Payment Screen
+  if (step === 'payment') {
+    const processPayment = () => {
+      setStep('processing');
+      // Simulate payment processing
+      setTimeout(() => {
+        handleConfirmOrder();
+      }, 3000);
+    };
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary/10 via-background to-primary/5 flex flex-col">
+        <header className="p-6 border-b border-border flex items-center justify-between">
+          <Button variant="ghost" onClick={() => setStep('cart')}>
+            <ArrowLeft className="w-5 h-5 mr-2" />
+            Înapoi la coș
+          </Button>
+          <h1 className="text-2xl font-bold">Selectează metoda de plată</h1>
+          <div className="w-24" />
+        </header>
+
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="max-w-2xl w-full space-y-8">
+            {/* Order Summary */}
+            <div className="bg-card rounded-2xl p-6 border border-border">
+              <h3 className="font-semibold mb-4">Rezumat comandă</h3>
+              <div className="space-y-2 mb-4 max-h-40 overflow-auto">
+                {cart.map((item, idx) => (
+                  <div key={idx} className="flex justify-between text-sm">
+                    <span>{item.quantity}x {item.menuItem.name}</span>
+                    <span>{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-border pt-4 flex justify-between text-2xl font-bold">
+                <span>Total de plată</span>
+                <span className="text-primary">{totalAmount.toFixed(2)} RON</span>
+              </div>
+            </div>
+
+            {/* Payment Methods */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <button
+                onClick={() => setKioskPaymentMethod('cash')}
+                className={cn(
+                  "p-8 rounded-3xl border-4 flex flex-col items-center gap-4 transition-all",
+                  kioskPaymentMethod === 'cash'
+                    ? "border-primary bg-primary/10 scale-105"
+                    : "border-border bg-card hover:border-primary/50"
+                )}
+              >
+                <div className={cn(
+                  "w-24 h-24 rounded-full flex items-center justify-center",
+                  kioskPaymentMethod === 'cash' ? "bg-primary/20" : "bg-secondary"
+                )}>
+                  <Banknote className={cn("w-12 h-12", kioskPaymentMethod === 'cash' ? "text-primary" : "text-muted-foreground")} />
+                </div>
+                <div className="text-center">
+                  <h3 className="text-2xl font-bold mb-1">Cash</h3>
+                  <p className="text-muted-foreground">Plătește cu numerar</p>
+                  <p className="text-xs text-muted-foreground mt-2">Introdu bancnotele și monezile în automatul de plată</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setKioskPaymentMethod('card')}
+                className={cn(
+                  "p-8 rounded-3xl border-4 flex flex-col items-center gap-4 transition-all",
+                  kioskPaymentMethod === 'card'
+                    ? "border-primary bg-primary/10 scale-105"
+                    : "border-border bg-card hover:border-primary/50"
+                )}
+              >
+                <div className={cn(
+                  "w-24 h-24 rounded-full flex items-center justify-center",
+                  kioskPaymentMethod === 'card' ? "bg-primary/20" : "bg-secondary"
+                )}>
+                  <CreditCard className={cn("w-12 h-12", kioskPaymentMethod === 'card' ? "text-primary" : "text-muted-foreground")} />
+                </div>
+                <div className="text-center">
+                  <h3 className="text-2xl font-bold mb-1">Card</h3>
+                  <p className="text-muted-foreground">Plătește contactless sau cu PIN</p>
+                  <p className="text-xs text-muted-foreground mt-2">Apropie cardul de POS sau introdu-l în cititor</p>
+                </div>
+              </button>
+            </div>
+
+            {/* Confirm Button */}
+            <Button 
+              size="lg" 
+              className="w-full h-16 text-xl"
+              onClick={processPayment}
+            >
+              {kioskPaymentMethod === 'cash' ? (
+                <>
+                  <Banknote className="w-6 h-6 mr-2" />
+                  Plătește {totalAmount.toFixed(2)} RON în numerar
+                </>
+              ) : (
+                <>
+                  <CreditCard className="w-6 h-6 mr-2" />
+                  Plătește {totalAmount.toFixed(2)} RON cu cardul
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Payment Processing
+  if (step === 'processing') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary/20 via-background to-primary/10 flex flex-col items-center justify-center p-8">
+        <div className="max-w-md w-full text-center">
+          {kioskPaymentMethod === 'cash' ? (
+            <>
+              <div className="w-32 h-32 mx-auto rounded-full bg-primary/20 flex items-center justify-center mb-8 animate-pulse">
+                <Banknote className="w-16 h-16 text-primary" />
+              </div>
+              <h1 className="text-3xl font-bold mb-4">Introdu numerarul</h1>
+              <p className="text-xl text-muted-foreground mb-2">
+                Total: <span className="text-primary font-bold">{totalAmount.toFixed(2)} RON</span>
+              </p>
+              <p className="text-muted-foreground mb-8">
+                Introdu bancnotele și monezile în automatul de plată din dreapta
+              </p>
+              <div className="bg-card rounded-2xl p-6 border border-border mb-8">
+                <div className="flex items-center justify-center gap-2 text-lg">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span>Se procesează plata...</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-32 h-32 mx-auto rounded-full bg-primary/20 flex items-center justify-center mb-8 animate-pulse">
+                <CreditCard className="w-16 h-16 text-primary" />
+              </div>
+              <h1 className="text-3xl font-bold mb-4">Apropie cardul</h1>
+              <p className="text-xl text-muted-foreground mb-2">
+                Total: <span className="text-primary font-bold">{totalAmount.toFixed(2)} RON</span>
+              </p>
+              <p className="text-muted-foreground mb-8">
+                Apropie cardul de POS sau introdu-l în cititor pentru plata cu PIN
+              </p>
+              <div className="bg-card rounded-2xl p-6 border border-border mb-8">
+                <div className="flex items-center justify-center gap-2 text-lg">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span>Se procesează plata...</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Confirmation
   if (step === 'confirm') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-500/20 via-background to-emerald-500/10 flex flex-col items-center justify-center p-8">
         <div className="w-32 h-32 rounded-full bg-emerald-500 flex items-center justify-center mb-8 animate-bounce">
-          <Check className="w-16 h-16 text-white" />
+          <CheckCircle className="w-16 h-16 text-white" />
         </div>
-        <h1 className="text-4xl font-bold mb-4 text-center">Comandă plasată!</h1>
+        <h1 className="text-4xl font-bold mb-2 text-center">Plată confirmată!</h1>
+        <p className="text-xl text-muted-foreground mb-2">Comandă trimisă la bucătărie</p>
         <p className="text-xl text-muted-foreground mb-2">
           {orderMode === 'dine-in' 
             ? `Comanda ta va fi adusă la masa nr. ${selectedTable}`
@@ -622,9 +790,13 @@ const KioskOrdering: React.FC = () => {
         <p className="text-muted-foreground mb-8">Urmărește statusul pe monitorul din restaurant</p>
         
         <div className="bg-card rounded-2xl p-6 mb-8 min-w-[300px]">
+          <div className="flex items-center gap-2 mb-4 text-emerald-500">
+            <Check className="w-5 h-5" />
+            <span className="font-medium">Plătit cu {kioskPaymentMethod === 'cash' ? 'numerar' : 'card'}</span>
+          </div>
           <h3 className="font-semibold mb-3">Rezumat comandă</h3>
-          {cart.map(item => (
-            <div key={item.menuItem.id} className="flex justify-between py-1">
+          {cart.map((item, idx) => (
+            <div key={idx} className="flex justify-between py-1">
               <span>{item.quantity}x {item.menuItem.name}</span>
               <span>{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
             </div>
