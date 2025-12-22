@@ -16,6 +16,8 @@ export interface Table {
   shape: 'round' | 'square' | 'rectangle';
   currentOrderId?: string;
   reservationId?: string;
+  currentGuests?: number; // Number of people currently at the table
+  mergedWith?: string[]; // IDs of tables merged with this one
 }
 
 export interface MenuItem {
@@ -25,10 +27,9 @@ export interface MenuItem {
   price: number;
   category: string;
   kdsStation: string;
-  prepTime: number; // in minutes
+  prepTime: number;
   ingredients: string[];
   image?: string;
-  // Platform-specific pricing
   platformPricing?: {
     glovo?: { name: string; price: number; enabled: boolean };
     wolt?: { name: string; price: number; enabled: boolean };
@@ -53,6 +54,37 @@ export interface OrderItem {
 }
 
 export type OrderSource = 'restaurant' | 'glovo' | 'wolt' | 'bolt' | 'own_website' | 'phone';
+export type PaymentMethod = 'cash' | 'card' | 'usage_card';
+
+export interface UsageCard {
+  id: string;
+  barcode: string;
+  customerId: string;
+  balance: number;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+export interface CustomerAddress {
+  id: string;
+  label: string;
+  street: string;
+  city: string;
+  notes?: string;
+  isDefault: boolean;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  addresses: CustomerAddress[];
+  usageCards: UsageCard[];
+  orderHistory: string[]; // Order IDs
+  createdAt: Date;
+  notes?: string;
+}
 
 export interface Order {
   id: string;
@@ -68,14 +100,16 @@ export interface Order {
   tip?: number;
   cui?: string;
   paidAt?: Date;
-  // Delivery-specific fields
   source: OrderSource;
   deliveryAddress?: string;
   customerName?: string;
   customerPhone?: string;
+  customerId?: string;
   platformOrderId?: string;
   estimatedDeliveryTime?: Date;
-  priority?: number; // For alternating restaurant/online orders
+  priority?: number;
+  paymentMethod?: PaymentMethod;
+  usageCardId?: string;
 }
 
 export interface Reservation {
@@ -132,6 +166,7 @@ export const users: User[] = [
   { id: '5', name: 'Bucătar Supe', role: 'kitchen', pin: '1111', avatar: 'BS' },
   { id: '6', name: 'Bucătar Pizza', role: 'kitchen', pin: '2222', avatar: 'BP' },
   { id: '7', name: 'Bucătar Grill', role: 'kitchen', pin: '3333', avatar: 'BG' },
+  { id: '8', name: 'Bucătar Giros', role: 'kitchen', pin: '4444', avatar: 'BK' },
 ];
 
 // KDS Stations
@@ -148,6 +183,69 @@ export const deliveryPlatforms: DeliveryPlatform[] = [
   { id: 'wolt', name: 'Wolt', icon: '🔵', color: 'bg-blue-500', enabled: true, apiConnected: true },
   { id: 'bolt', name: 'Bolt Food', icon: '🟢', color: 'bg-green-500', enabled: true, apiConnected: false },
   { id: 'own', name: 'Website propriu', icon: '🏠', color: 'bg-primary', enabled: true, apiConnected: true },
+];
+
+// Mock Customers
+export const mockCustomers: Customer[] = [
+  {
+    id: 'c1',
+    name: 'Alexandru Popa',
+    phone: '0741234567',
+    email: 'alex.popa@email.com',
+    addresses: [
+      { id: 'a1', label: 'Acasă', street: 'Str. Victoriei 123, Ap. 4', city: 'București', isDefault: true },
+      { id: 'a2', label: 'Birou', street: 'Bd. Unirii 50, Et. 3', city: 'București', isDefault: false },
+    ],
+    usageCards: [
+      { id: 'uc1', barcode: '1234567890123', customerId: 'c1', balance: 250, isActive: true, createdAt: new Date('2024-01-15') },
+    ],
+    orderHistory: ['oh1', 'oh2', 'oh3'],
+    createdAt: new Date('2023-06-15'),
+    notes: 'Client fidel, preferă livrare seara',
+  },
+  {
+    id: 'c2',
+    name: 'Maria Ionescu',
+    phone: '0751234567',
+    email: 'maria.ionescu@email.com',
+    addresses: [
+      { id: 'a3', label: 'Acasă', street: 'Bd. Unirii 45, Et. 2', city: 'București', isDefault: true },
+    ],
+    usageCards: [
+      { id: 'uc2', barcode: '9876543210123', customerId: 'c2', balance: 100, isActive: true, createdAt: new Date('2024-02-20') },
+      { id: 'uc3', barcode: '5555666677778', customerId: 'c2', balance: 500, isActive: true, createdAt: new Date('2024-03-10') },
+    ],
+    orderHistory: ['oh4', 'oh5'],
+    createdAt: new Date('2023-09-20'),
+  },
+  {
+    id: 'c3',
+    name: 'Andrei Marinescu',
+    phone: '0721234567',
+    email: 'andrei@email.com',
+    addresses: [
+      { id: 'a4', label: 'Acasă', street: 'Str. Florilor 78', city: 'București', isDefault: true },
+      { id: 'a5', label: 'Casă Părinți', street: 'Str. Libertății 12', city: 'Ploiești', isDefault: false },
+    ],
+    usageCards: [],
+    orderHistory: ['oh6'],
+    createdAt: new Date('2024-01-10'),
+  },
+  {
+    id: 'c4',
+    name: 'Elena Dumitrescu',
+    phone: '0761234567',
+    email: 'elena.d@email.com',
+    addresses: [
+      { id: 'a6', label: 'Acasă', street: 'Calea Dorobanți 100', city: 'București', isDefault: true },
+    ],
+    usageCards: [
+      { id: 'uc4', barcode: '1111222233334', customerId: 'c4', balance: 750, isActive: true, createdAt: new Date('2024-01-05') },
+    ],
+    orderHistory: ['oh7', 'oh8', 'oh9', 'oh10'],
+    createdAt: new Date('2023-03-15'),
+    notes: 'Alergică la gluten',
+  },
 ];
 
 // Menu Items with platform pricing
@@ -228,19 +326,33 @@ export const menuItems: MenuItem[] = [
 
 // Tables
 export const initialTables: Table[] = [
-  { id: 't1', number: 1, seats: 2, status: 'free', position: { x: 10, y: 15 }, shape: 'round' },
-  { id: 't2', number: 2, seats: 2, status: 'free', position: { x: 30, y: 15 }, shape: 'round' },
-  { id: 't3', number: 3, seats: 4, status: 'occupied', position: { x: 50, y: 15 }, shape: 'square' },
-  { id: 't4', number: 4, seats: 4, status: 'free', position: { x: 70, y: 15 }, shape: 'square' },
-  { id: 't5', number: 5, seats: 6, status: 'reserved', position: { x: 10, y: 45 }, shape: 'rectangle' },
-  { id: 't6', number: 6, seats: 6, status: 'free', position: { x: 40, y: 45 }, shape: 'rectangle' },
-  { id: 't7', number: 7, seats: 4, status: 'occupied', position: { x: 70, y: 45 }, shape: 'square' },
-  { id: 't8', number: 8, seats: 8, status: 'free', position: { x: 25, y: 75 }, shape: 'rectangle' },
-  { id: 't9', number: 9, seats: 4, status: 'free', position: { x: 60, y: 75 }, shape: 'square' },
+  { id: 't1', number: 1, seats: 2, status: 'free', position: { x: 10, y: 15 }, shape: 'round', currentGuests: 0 },
+  { id: 't2', number: 2, seats: 2, status: 'free', position: { x: 30, y: 15 }, shape: 'round', currentGuests: 0 },
+  { id: 't3', number: 3, seats: 4, status: 'occupied', position: { x: 50, y: 15 }, shape: 'square', currentGuests: 3 },
+  { id: 't4', number: 4, seats: 4, status: 'free', position: { x: 70, y: 15 }, shape: 'square', currentGuests: 0 },
+  { id: 't5', number: 5, seats: 6, status: 'reserved', position: { x: 10, y: 45 }, shape: 'rectangle', currentGuests: 0 },
+  { id: 't6', number: 6, seats: 6, status: 'free', position: { x: 40, y: 45 }, shape: 'rectangle', currentGuests: 0 },
+  { id: 't7', number: 7, seats: 4, status: 'occupied', position: { x: 70, y: 45 }, shape: 'square', currentGuests: 4 },
+  { id: 't8', number: 8, seats: 8, status: 'free', position: { x: 25, y: 75 }, shape: 'rectangle', currentGuests: 0 },
+  { id: 't9', number: 9, seats: 4, status: 'free', position: { x: 60, y: 75 }, shape: 'square', currentGuests: 0 },
 ];
 
 // Categories for menu
 export const menuCategories = ['Supe', 'Pizza', 'Grill', 'Tradițional', 'Giros', 'Garnituri', 'Băuturi'];
+
+// Sample order history items (for customer history)
+export const orderHistoryItems: { orderId: string; customerId: string; items: { menuItemId: string; quantity: number }[]; date: Date; total: number }[] = [
+  { orderId: 'oh1', customerId: 'c1', items: [{ menuItemId: 'm4', quantity: 2 }, { menuItemId: 'm13', quantity: 1 }], date: new Date('2024-03-10'), total: 92 },
+  { orderId: 'oh2', customerId: 'c1', items: [{ menuItemId: 'm1', quantity: 1 }, { menuItemId: 'm8', quantity: 1 }], date: new Date('2024-03-05'), total: 57 },
+  { orderId: 'oh3', customerId: 'c1', items: [{ menuItemId: 'm16', quantity: 2 }, { menuItemId: 'm17', quantity: 1 }], date: new Date('2024-02-28'), total: 72 },
+  { orderId: 'oh4', customerId: 'c2', items: [{ menuItemId: 'm5', quantity: 1 }, { menuItemId: 'm19', quantity: 2 }], date: new Date('2024-03-12'), total: 58 },
+  { orderId: 'oh5', customerId: 'c2', items: [{ menuItemId: 'm11', quantity: 2 }], date: new Date('2024-03-01'), total: 76 },
+  { orderId: 'oh6', customerId: 'c3', items: [{ menuItemId: 'm9', quantity: 1 }, { menuItemId: 'm18', quantity: 1 }], date: new Date('2024-03-08'), total: 56 },
+  { orderId: 'oh7', customerId: 'c4', items: [{ menuItemId: 'm2', quantity: 2 }, { menuItemId: 'm12', quantity: 1 }], date: new Date('2024-03-11'), total: 71 },
+  { orderId: 'oh8', customerId: 'c4', items: [{ menuItemId: 'm14', quantity: 1 }, { menuItemId: 'm15', quantity: 1 }], date: new Date('2024-03-09'), total: 70 },
+  { orderId: 'oh9', customerId: 'c4', items: [{ menuItemId: 'm7', quantity: 1 }], date: new Date('2024-03-03'), total: 45 },
+  { orderId: 'oh10', customerId: 'c4', items: [{ menuItemId: 'm10', quantity: 1 }, { menuItemId: 'm17', quantity: 2 }], date: new Date('2024-02-25'), total: 69 },
+];
 
 // Sample reservations
 export const sampleReservations: Reservation[] = [
@@ -305,7 +417,7 @@ export const sampleNotifications: Notification[] = [
   },
 ];
 
-// Sample orders for demo (updated with source)
+// Sample orders for demo
 export const sampleOrders: Order[] = [
   {
     id: 'o1',
@@ -402,6 +514,7 @@ export const sampleOrders: Order[] = [
     platformOrderId: 'GLV-12345',
     customerName: 'Alexandru Popa',
     customerPhone: '0741234567',
+    customerId: 'c1',
     deliveryAddress: 'Str. Victoriei 123, Ap. 4, București',
     priority: 1,
   },
@@ -427,6 +540,7 @@ export const sampleOrders: Order[] = [
     platformOrderId: 'WLT-67890',
     customerName: 'Maria Ionescu',
     customerPhone: '0751234567',
+    customerId: 'c2',
     deliveryAddress: 'Bd. Unirii 45, Et. 2, București',
     priority: 2,
   },

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { 
   LogOut, Settings, UtensilsCrossed, LayoutGrid, 
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User } from '@/data/mockData';
+import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,9 +22,10 @@ interface AdminPanelProps {
   onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'kds' | 'reservations' | 'delivery' | 'waiters';
+type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'kds' | 'reservations' | 'delivery' | 'waiters' | 'customers';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
+  const isMobile = useIsMobile();
   const { 
     tables, addTable, updateTable, deleteTable,
     menu, addMenuItem, updateMenuItem, deleteMenuItem,
@@ -36,7 +38,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [showAddTable, setShowAddTable] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(isMobile);
 
   // Table form
   const [tableForm, setTableForm] = useState({
