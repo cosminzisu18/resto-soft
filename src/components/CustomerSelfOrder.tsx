@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import LanguageSelector from '@/components/LanguageSelector';
+import AllergenBadges from '@/components/AllergenBadges';
 
 type CustomerOrderStep = 'scan' | 'menu' | 'cart' | 'customize' | 'confirm';
 type OrderType = 'dine-in' | 'delivery';
@@ -334,7 +335,10 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                           <span className="text-lg font-bold text-primary ml-4">{item.price} RON</span>
                         </div>
                         
-                        {/* Ingredients / Allergens */}
+                        {/* Allergens badges */}
+                        <AllergenBadges allergenIds={item.allergenIds} size="sm" className="mb-2" />
+                        
+                        {/* Ingredients */}
                         {item.ingredients && item.ingredients.length > 0 && (
                           <div className="mb-3 p-2 rounded-lg bg-secondary/50">
                             <p className="text-xs font-medium text-foreground">Conține:</p>

@@ -7,11 +7,12 @@ import { cn } from '@/lib/utils';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
-  Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode
+  Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode, Search, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import Receipt from './Receipt';
+import AllergenBadges from './AllergenBadges';
 
 interface OrderPanelProps {
   table: Table;
@@ -26,6 +27,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const { toast } = useToast();
   
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [orderCollapsed, setOrderCollapsed] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [showModifier, setShowModifier] = useState<MenuItem | null>(null);
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
@@ -187,7 +190,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     }
   };
 
-  const filteredMenu = menu.filter(item => item.category === activeCategory);
+  const filteredMenu = menu.filter(item => {
+    const matchesCategory = item.category === activeCategory;
+    const matchesSearch = searchQuery 
+      ? item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.description.toLowerCase().includes(searchQuery.toLowerCase())
+      : true;
+    return searchQuery ? matchesSearch : matchesCategory;
+  });
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -217,21 +227,49 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Menu Section */}
-        <div className="flex-1 flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-border">
-          {/* Categories */}
-          <div className="flex gap-2 p-2 md:p-3 overflow-x-auto border-b border-border">
-            {menuCategories.map(cat => (
-              <Button
-                key={cat}
-                variant={activeCategory === cat ? 'default' : 'secondary'}
-                size="sm"
-                onClick={() => setActiveCategory(cat)}
-                className="whitespace-nowrap text-xs md:text-sm"
-              >
-                {cat}
-              </Button>
-            ))}
+        <div className={cn(
+          "flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-border transition-all",
+          orderCollapsed ? "flex-1" : "flex-1 md:flex-[2]"
+        )}>
+          {/* Search */}
+          <div className="p-2 md:p-3 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input 
+                placeholder="Caută în meniu..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9"
+              />
+              {searchQuery && (
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                  onClick={() => setSearchQuery('')}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
           </div>
+
+          {/* Categories */}
+          {!searchQuery && (
+            <div className="flex gap-2 p-2 md:p-3 overflow-x-auto border-b border-border">
+              {menuCategories.map(cat => (
+                <Button
+                  key={cat}
+                  variant={activeCategory === cat ? 'default' : 'secondary'}
+                  size="sm"
+                  onClick={() => setActiveCategory(cat)}
+                  className="whitespace-nowrap text-xs md:text-sm"
+                >
+                  {cat}
+                </Button>
+              ))}
+            </div>
+          )}
 
           {/* Menu Items */}
           <div className="flex-1 overflow-auto p-2 md:p-3">
@@ -253,7 +291,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-1 hidden md:block">
                       {item.description}
                     </p>
-                    {/* Ingredients / Allergens */}
+                    {/* Allergens badges */}
+                    <AllergenBadges allergenIds={item.allergenIds} size="sm" className="mb-1" />
+                    {/* Ingredients */}
                     {item.ingredients && item.ingredients.length > 0 && (
                       <p className="text-[10px] text-muted-foreground mb-2 line-clamp-1">
                         Conține: {item.ingredients.slice(0, 3).join(', ')}{item.ingredients.length > 3 ? '...' : ''}
@@ -273,18 +313,46 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           </div>
         </div>
 
-        {/* Order Summary */}
-        <div className="h-1/2 md:h-auto md:w-72 lg:w-80 flex flex-col bg-secondary/30">
-          <div className="p-2 md:p-3 border-b border-border">
-            <h3 className="font-semibold text-sm md:text-base">Comandă curentă</h3>
-          </div>
+        {/* Order Summary - Collapsible */}
+        <div className={cn(
+          "flex flex-col bg-secondary/30 transition-all duration-300",
+          orderCollapsed 
+            ? "h-14 md:h-auto md:w-14" 
+            : "h-1/2 md:h-auto md:w-72 lg:w-80"
+        )}>
+          <button 
+            className="p-2 md:p-3 border-b border-border flex items-center justify-between cursor-pointer hover:bg-secondary/50"
+            onClick={() => setOrderCollapsed(!orderCollapsed)}
+          >
+            {!orderCollapsed && (
+              <h3 className="font-semibold text-sm md:text-base">Comandă curentă</h3>
+            )}
+            <div className="flex items-center gap-2">
+              {order && order.items.length > 0 && (
+                <span className="text-xs font-bold text-primary">
+                  {order.totalAmount.toFixed(0)} RON
+                </span>
+              )}
+              {orderCollapsed ? (
+                <ChevronUp className="w-4 h-4 md:hidden" />
+              ) : (
+                <ChevronDown className="w-4 h-4 md:hidden" />
+              )}
+              {orderCollapsed ? (
+                <ChevronDown className="w-4 h-4 hidden md:block rotate-90" />
+              ) : (
+                <ChevronUp className="w-4 h-4 hidden md:block rotate-90" />
+              )}
+            </div>
+          </button>
 
-          <div className="flex-1 overflow-auto p-2 md:p-3">
-            {order?.items.length === 0 ? (
-              <p className="text-center text-muted-foreground py-4 md:py-8 text-xs md:text-sm">
-                Adaugă produse din meniu
-              </p>
-            ) : (
+          {!orderCollapsed && (
+            <div className="flex-1 overflow-auto p-2 md:p-3">
+              {order?.items.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4 md:py-8 text-xs md:text-sm">
+                  Adaugă produse din meniu
+                </p>
+              ) : (
               <div className="space-y-2">
                 {order?.items.map(item => (
                   <div
@@ -354,8 +422,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               </div>
             )}
           </div>
+          )}
 
-          {order && order.items.length > 0 && (
+          {!orderCollapsed && order && order.items.length > 0 && (
             <div className="p-2 md:p-3 border-t border-border space-y-2 md:space-y-3">
               <div className="flex items-center justify-between font-bold text-base md:text-lg">
                 <span>Total</span>
