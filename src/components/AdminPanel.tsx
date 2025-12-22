@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps } from '@/data/mockData';
+import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, kdsStations as defaultKdsStations, KDSStation } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -51,6 +51,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   
   // Kiosk config state
   const [localKioskSteps, setLocalKioskSteps] = useState(kioskSteps);
+  
+  // KDS stations state
+  const [localKdsStations, setLocalKdsStations] = useState<KDSStation[]>(defaultKdsStations);
+  const [showAddKdsStation, setShowAddKdsStation] = useState(false);
+  const [editingKdsStation, setEditingKdsStation] = useState<KDSStation | null>(null);
+  const [kdsForm, setKdsForm] = useState({ name: '', type: 'grill', color: 'bg-orange-500', icon: '🔥' });
 
   // Table form
   const [tableForm, setTableForm] = useState({
@@ -61,7 +67,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     y: '50'
   });
 
-  // Menu form
+  // Menu form - extended with all fields
   const [menuForm, setMenuForm] = useState({
     name: '',
     description: '',
@@ -70,6 +76,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     kdsStation: 'grill',
     prepTime: '10',
     ingredients: '',
+    allergenIds: [] as string[],
+    availableExtras: [] as string[],
+    image: '',
+    availRestaurant: true,
+    availKiosk: true,
+    availApp: true,
+    availDelivery: true,
     glovoPrice: '',
     woltPrice: '',
     boltPrice: '',
@@ -98,6 +111,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       kdsStation: menuForm.kdsStation,
       prepTime: parseInt(menuForm.prepTime),
       ingredients: menuForm.ingredients.split(',').map(i => i.trim()).filter(Boolean),
+      allergenIds: menuForm.allergenIds,
+      availableExtras: menuForm.availableExtras,
+      image: menuForm.image || undefined,
+      availability: {
+        restaurant: menuForm.availRestaurant,
+        kiosk: menuForm.availKiosk,
+        app: menuForm.availApp,
+        delivery: menuForm.availDelivery,
+      },
       platformPricing: {
         glovo: { name: menuForm.name, price: parseFloat(menuForm.glovoPrice) || parseFloat(menuForm.price) * 1.2, enabled: true },
         wolt: { name: menuForm.name, price: parseFloat(menuForm.woltPrice) || parseFloat(menuForm.price) * 1.2, enabled: true },
@@ -111,7 +133,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   };
 
   const resetMenuForm = () => {
-    setMenuForm({ name: '', description: '', price: '', category: menuCategories[0], kdsStation: 'grill', prepTime: '10', ingredients: '', glovoPrice: '', woltPrice: '', boltPrice: '', ownPrice: '' });
+    setMenuForm({ 
+      name: '', description: '', price: '', category: menuCategories[0], kdsStation: 'grill', prepTime: '10', ingredients: '',
+      allergenIds: [], availableExtras: [], image: '', availRestaurant: true, availKiosk: true, availApp: true, availDelivery: true,
+      glovoPrice: '', woltPrice: '', boltPrice: '', ownPrice: '' 
+    });
   };
 
   const handleUpdateMenuItem = () => {
@@ -125,6 +151,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       kdsStation: menuForm.kdsStation,
       prepTime: parseInt(menuForm.prepTime),
       ingredients: menuForm.ingredients.split(',').map(i => i.trim()).filter(Boolean),
+      allergenIds: menuForm.allergenIds,
+      availableExtras: menuForm.availableExtras,
+      image: menuForm.image || undefined,
+      availability: {
+        restaurant: menuForm.availRestaurant,
+        kiosk: menuForm.availKiosk,
+        app: menuForm.availApp,
+        delivery: menuForm.availDelivery,
+      },
       platformPricing: {
         glovo: { name: menuForm.name, price: parseFloat(menuForm.glovoPrice) || parseFloat(menuForm.price) * 1.2, enabled: true },
         wolt: { name: menuForm.name, price: parseFloat(menuForm.woltPrice) || parseFloat(menuForm.price) * 1.2, enabled: true },
@@ -146,6 +181,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
       kdsStation: item.kdsStation,
       prepTime: item.prepTime.toString(),
       ingredients: item.ingredients.join(', '),
+      allergenIds: item.allergenIds || [],
+      availableExtras: item.availableExtras || [],
+      image: item.image || '',
+      availRestaurant: item.availability?.restaurant ?? true,
+      availKiosk: item.availability?.kiosk ?? true,
+      availApp: item.availability?.app ?? true,
+      availDelivery: item.availability?.delivery ?? true,
       glovoPrice: item.platformPricing?.glovo?.price.toString() || '',
       woltPrice: item.platformPricing?.wolt?.price.toString() || '',
       boltPrice: item.platformPricing?.bolt?.price.toString() || '',
@@ -1074,6 +1116,90 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <div>
               <label className="text-sm font-medium">{t('menu.ingredients')}</label>
               <Input value={menuForm.ingredients} onChange={e => setMenuForm({...menuForm, ingredients: e.target.value})} placeholder="Ingredient 1, Ingredient 2..." />
+            </div>
+            
+            {/* Photo URL */}
+            <div>
+              <label className="text-sm font-medium">Imagine URL</label>
+              <Input value={menuForm.image} onChange={e => setMenuForm({...menuForm, image: e.target.value})} placeholder="https://..." />
+            </div>
+            
+            {/* Allergens */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Alergeni</label>
+              <div className="flex flex-wrap gap-2">
+                {allergens.map(allergen => (
+                  <button
+                    key={allergen.id}
+                    type="button"
+                    onClick={() => {
+                      const newAllergens = menuForm.allergenIds.includes(allergen.id)
+                        ? menuForm.allergenIds.filter(a => a !== allergen.id)
+                        : [...menuForm.allergenIds, allergen.id];
+                      setMenuForm({...menuForm, allergenIds: newAllergens});
+                    }}
+                    className={cn(
+                      "px-3 py-1 rounded-full text-sm flex items-center gap-1 border transition-all",
+                      menuForm.allergenIds.includes(allergen.id) 
+                        ? `${allergen.color} text-white border-transparent` 
+                        : "border-border hover:border-primary"
+                    )}
+                  >
+                    <span>{allergen.icon}</span>
+                    <span>{allergen.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {/* Availability */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Disponibilitate</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <label className="flex items-center gap-2 p-2 rounded border border-border">
+                  <Switch checked={menuForm.availRestaurant} onCheckedChange={c => setMenuForm({...menuForm, availRestaurant: c})} />
+                  <span className="text-sm">Restaurant</span>
+                </label>
+                <label className="flex items-center gap-2 p-2 rounded border border-border">
+                  <Switch checked={menuForm.availKiosk} onCheckedChange={c => setMenuForm({...menuForm, availKiosk: c})} />
+                  <span className="text-sm">Kiosk</span>
+                </label>
+                <label className="flex items-center gap-2 p-2 rounded border border-border">
+                  <Switch checked={menuForm.availApp} onCheckedChange={c => setMenuForm({...menuForm, availApp: c})} />
+                  <span className="text-sm">App</span>
+                </label>
+                <label className="flex items-center gap-2 p-2 rounded border border-border">
+                  <Switch checked={menuForm.availDelivery} onCheckedChange={c => setMenuForm({...menuForm, availDelivery: c})} />
+                  <span className="text-sm">Delivery</span>
+                </label>
+              </div>
+            </div>
+            
+            {/* Available Extra Ingredients */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Ingrediente Extra Disponibile</label>
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-auto p-2 border border-border rounded">
+                {localExtraIngredients.map(extra => (
+                  <button
+                    key={extra.id}
+                    type="button"
+                    onClick={() => {
+                      const newExtras = menuForm.availableExtras.includes(extra.id)
+                        ? menuForm.availableExtras.filter(e => e !== extra.id)
+                        : [...menuForm.availableExtras, extra.id];
+                      setMenuForm({...menuForm, availableExtras: newExtras});
+                    }}
+                    className={cn(
+                      "px-2 py-1 rounded text-xs border transition-all",
+                      menuForm.availableExtras.includes(extra.id) 
+                        ? "bg-primary text-primary-foreground border-primary" 
+                        : "border-border hover:border-primary"
+                    )}
+                  >
+                    {extra.name} (+{extra.price} RON)
+                  </button>
+                ))}
+              </div>
             </div>
             
             {/* Platform Pricing */}
