@@ -5,13 +5,13 @@ import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { 
   Order, OrderItem, MenuItem, menuCategories, deliveryPlatforms, OrderSource,
-  Customer, mockCustomers, orderHistoryItems, menuItems, PaymentMethod, CustomerAddress
+  Customer, mockCustomers, orderHistoryItems, menuItems, PaymentMethod, CustomerAddress, extraIngredients
 } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
   Phone, Truck, Plus, ChefHat, Clock, Check, 
   MapPin, User, Send, X, Package, Search, History,
-  CreditCard, Banknote, Barcode, PlusCircle, Trash2
+  CreditCard, Banknote, Barcode, PlusCircle, Trash2, Edit2, UtensilsCrossed, Minus
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -21,6 +21,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface DeliveryOrdersProps {
   onClose?: () => void;
+}
+
+interface OrderItemWithMods {
+  menuItem: MenuItem;
+  quantity: number;
+  modifications: {
+    added: string[];
+    removed: string[];
+    extraIngredients: { id: string; name: string; price: number }[];
+  };
 }
 
 const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
@@ -62,6 +72,17 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
   const [orderStep, setOrderStep] = useState<'customer' | 'products' | 'payment'>('customer');
 
+  // Order items with modifications (local state for new order)
+  const [orderItems, setOrderItems] = useState<OrderItemWithMods[]>([]);
+
+  // Customization state
+  const [showCustomization, setShowCustomization] = useState(false);
+  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
+  const [tempRemovals, setTempRemovals] = useState<string[]>([]);
+  const [tempAdditions, setTempAdditions] = useState<string[]>([]);
+  const [tempExtraIngredients, setTempExtraIngredients] = useState<{ id: string; name: string; price: number }[]>([]);
+  const [editingOrderItemIdx, setEditingOrderItemIdx] = useState<number | null>(null);
+
   const deliveryOrders = getDeliveryOrders();
   const phoneOrders = getPhoneOrders();
   const displayOrders = activeTab === 'delivery' ? deliveryOrders : phoneOrders;
@@ -91,6 +112,15 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [selectedCustomer]);
 
+  // Calculate total for local order items
+  const orderTotal = useMemo(() => {
+    return orderItems.reduce((sum, item) => {
+      const basePrice = item.menuItem.price * item.quantity;
+      const extraPrice = item.modifications.extraIngredients.reduce((s, e) => s + e.price, 0) * item.quantity;
+      return sum + basePrice + extraPrice;
+    }, 0);
+  }, [orderItems]);
+
   const handleSelectCustomer = (customer: Customer) => {
     setSelectedCustomer(customer);
     setSearchQuery('');
@@ -101,7 +131,6 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
   };
 
   const handleCreateNewCustomer = () => {
-    // In a real app, this would save to database
     const newCustomer: Customer = {
       id: `c${Date.now()}`,
       name: newCustomerForm.name,
@@ -145,35 +174,109 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
     toast({ title: 'Comandă creată' });
   };
 
-  const handleAddToOrder = (menuItem: MenuItem, quantity: number = 1) => {
-    if (!newOrderId) return;
-    
-    let price = menuItem.price;
-    const platformKey = selectedPlatform === 'own_website' ? 'own' : selectedPlatform;
-    if (menuItem.platformPricing && menuItem.platformPricing[platformKey as keyof typeof menuItem.platformPricing]?.enabled) {
-      price = menuItem.platformPricing[platformKey as keyof typeof menuItem.platformPricing]!.price;
+  const openCustomization = (item: MenuItem, existingIdx?: number) => {
+    setCustomizingItem(item);
+    if (existingIdx !== undefined) {
+      const existing = orderItems[existingIdx];
+      setTempRemovals(existing.modifications.removed);
+      setTempAdditions(existing.modifications.added);
+      setTempExtraIngredients(existing.modifications.extraIngredients);
+      setEditingOrderItemIdx(existingIdx);
+    } else {
+      setTempRemovals([]);
+      setTempAdditions([]);
+      setTempExtraIngredients([]);
+      setEditingOrderItemIdx(null);
+    }
+    setShowCustomization(true);
+  };
+
+  const confirmCustomization = () => {
+    if (!customizingItem) return;
+
+    if (editingOrderItemIdx !== null) {
+      setOrderItems(prev => prev.map((item, idx) => 
+        idx === editingOrderItemIdx 
+          ? { ...item, modifications: { added: tempAdditions, removed: tempRemovals, extraIngredients: tempExtraIngredients } }
+          : item
+      ));
+    } else {
+      setOrderItems(prev => [...prev, {
+        menuItem: customizingItem,
+        quantity: 1,
+        modifications: { added: tempAdditions, removed: tempRemovals, extraIngredients: tempExtraIngredients }
+      }]);
     }
 
-    addItemToOrder(newOrderId, { ...menuItem, price }, quantity);
-    toast({ title: `${menuItem.name} adăugat` });
+    setShowCustomization(false);
+    setCustomizingItem(null);
+    toast({ title: editingOrderItemIdx !== null ? 'Produs modificat' : `${customizingItem.name} adăugat` });
+  };
+
+  const handleAddToOrderQuick = (menuItem: MenuItem) => {
+    if (menuItem.ingredients && menuItem.ingredients.length > 0) {
+      openCustomization(menuItem);
+    } else {
+      // No ingredients, add directly
+      setOrderItems(prev => {
+        const existing = prev.findIndex(i => 
+          i.menuItem.id === menuItem.id && 
+          i.modifications.added.length === 0 && 
+          i.modifications.removed.length === 0 &&
+          i.modifications.extraIngredients.length === 0
+        );
+        if (existing >= 0) {
+          return prev.map((item, idx) => 
+            idx === existing ? { ...item, quantity: item.quantity + 1 } : item
+          );
+        }
+        return [...prev, { menuItem, quantity: 1, modifications: { added: [], removed: [], extraIngredients: [] } }];
+      });
+      toast({ title: `${menuItem.name} adăugat` });
+    }
   };
 
   const handleAddFromHistory = (historyOrder: typeof customerHistory[0]) => {
     historyOrder.items.forEach(item => {
       if (item.menuItem) {
-        handleAddToOrder(item.menuItem, item.quantity);
+        setOrderItems(prev => [...prev, {
+          menuItem: item.menuItem!,
+          quantity: item.quantity,
+          modifications: { added: [], removed: [], extraIngredients: [] }
+        }]);
       }
     });
     toast({ title: 'Produse din istoric adăugate' });
   };
 
-  const handleSendToKitchen = (orderId: string) => {
-    const order = orders.find(o => o.id === orderId);
-    if (!order) return;
+  const updateOrderItemQuantity = (idx: number, delta: number) => {
+    setOrderItems(prev => prev.map((item, i) => {
+      if (i === idx) {
+        const newQty = item.quantity + delta;
+        return newQty > 0 ? { ...item, quantity: newQty } : item;
+      }
+      return item;
+    }).filter(item => item.quantity > 0));
+  };
 
-    order.items.filter(i => i.status === 'pending').forEach(item => {
-      updateOrderItemStatus(orderId, item.id, 'cooking');
+  const removeOrderItem = (idx: number) => {
+    setOrderItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSendToKitchen = () => {
+    if (!newOrderId) return;
+
+    // Add all items to the actual order
+    orderItems.forEach(item => {
+      addItemToOrder(newOrderId, item.menuItem, item.quantity);
     });
+
+    const order = orders.find(o => o.id === newOrderId);
+    if (order) {
+      order.items.filter(i => i.status === 'pending').forEach(item => {
+        updateOrderItemStatus(newOrderId, item.id, 'cooking');
+      });
+    }
 
     toast({ title: 'Comandă trimisă la bucătărie' });
     resetOrder();
@@ -188,10 +291,8 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
     setPaymentMethod('cash');
     setSelectedUsageCardId(null);
     setSelectedAddressId(null);
+    setOrderItems([]);
   };
-
-  const currentNewOrder = orders.find(o => o.id === newOrderId);
-  const filteredMenu = menu.filter(m => m.category === activeCategory);
 
   const getSourceIcon = (source: OrderSource) => {
     switch (source) {
@@ -223,6 +324,15 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
       default: return null;
     }
   };
+
+  // Group extra ingredients by category
+  const extraIngredientsByCategory = useMemo(() => {
+    return extraIngredients.reduce((acc, ing) => {
+      if (!acc[ing.category]) acc[ing.category] = [];
+      acc[ing.category].push(ing);
+      return acc;
+    }, {} as Record<string, typeof extraIngredients>);
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -301,7 +411,12 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
                 </div>
 
                 {order.items.some(i => i.status === 'pending') && (
-                  <Button className="w-full" size="sm" onClick={() => handleSendToKitchen(order.id)}>
+                  <Button className="w-full" size="sm" onClick={() => {
+                    order.items.filter(i => i.status === 'pending').forEach(item => {
+                      updateOrderItemStatus(order.id, item.id, 'cooking');
+                    });
+                    toast({ title: 'Comandă trimisă la bucătărie' });
+                  }}>
                     <Send className="w-4 h-4 mr-2" />
                     Trimite la bucătărie
                   </Button>
@@ -480,14 +595,17 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
                 </div>
                 <div className="flex-1 overflow-auto">
                   <div className="grid grid-cols-2 gap-2">
-                    {filteredMenu.map(item => (
+                    {menu.filter(m => m.category === activeCategory).map(item => (
                       <button
                         key={item.id}
-                        onClick={() => handleAddToOrder(item)}
+                        onClick={() => handleAddToOrderQuick(item)}
                         className="p-3 rounded-lg bg-secondary text-left hover:bg-primary/10 transition-all"
                       >
                         <p className="font-medium text-xs">{item.name}</p>
                         <p className="text-primary font-bold text-sm">{item.price} RON</p>
+                        {item.ingredients && item.ingredients.length > 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">Personalizabil</p>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -495,24 +613,64 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
               </div>
 
               {/* Order summary */}
-              <div className="w-full md:w-72 border-t md:border-t-0 md:border-l border-border pt-3 md:pt-0 md:pl-4 flex flex-col">
+              <div className="w-full md:w-80 border-t md:border-t-0 md:border-l border-border pt-3 md:pt-0 md:pl-4 flex flex-col">
                 <div className="text-sm text-muted-foreground mb-2">
                   Client: <span className="font-medium text-foreground">{selectedCustomer?.name}</span>
                 </div>
                 
                 <h4 className="font-semibold mb-2 text-sm">Comandă</h4>
-                <div className="space-y-1 flex-1 max-h-40 overflow-auto mb-3">
-                  {currentNewOrder?.items.map(item => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span>{item.quantity}x {item.menuItem.name}</span>
-                      <span>{(item.menuItem.price * item.quantity).toFixed(2)}</span>
+                <div className="space-y-2 flex-1 max-h-60 overflow-auto mb-3">
+                  {orderItems.map((item, idx) => (
+                    <div key={idx} className="p-2 rounded-lg bg-secondary/50">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <span className="font-medium text-sm">{item.quantity}x {item.menuItem.name}</span>
+                          {/* Show modifications */}
+                          {(item.modifications.added.length > 0 || item.modifications.removed.length > 0 || item.modifications.extraIngredients.length > 0) && (
+                            <div className="text-xs mt-1 space-x-1">
+                              {item.modifications.added.map(a => (
+                                <span key={a} className="text-emerald-500">+{a}</span>
+                              ))}
+                              {item.modifications.removed.map(r => (
+                                <span key={r} className="text-destructive">-{r}</span>
+                              ))}
+                              {item.modifications.extraIngredients.map(e => (
+                                <span key={e.id} className="text-primary">+{e.name}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-sm font-bold">
+                          {((item.menuItem.price + item.modifications.extraIngredients.reduce((s, e) => s + e.price, 0)) * item.quantity).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-2">
+                        {item.menuItem.ingredients && item.menuItem.ingredients.length > 0 && (
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => openCustomization(item.menuItem, idx)}>
+                            <Edit2 className="w-3 h-3" />
+                          </Button>
+                        )}
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => updateOrderItemQuantity(idx, -1)}>
+                          <Minus className="w-3 h-3" />
+                        </Button>
+                        <span className="w-6 text-center text-sm">{item.quantity}</span>
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => updateOrderItemQuantity(idx, 1)}>
+                          <Plus className="w-3 h-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => removeOrderItem(idx)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
+                  {orderItems.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">Niciun produs adăugat</p>
+                  )}
                 </div>
                 
                 <div className="flex justify-between font-bold mb-3 pt-2 border-t border-border">
                   <span>Total</span>
-                  <span>{currentNewOrder?.totalAmount.toFixed(2)} RON</span>
+                  <span>{orderTotal.toFixed(2)} RON</span>
                 </div>
 
                 {/* Payment Method */}
@@ -571,8 +729,8 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
                 
                 <Button 
                   className="w-full" 
-                  onClick={() => handleSendToKitchen(newOrderId!)}
-                  disabled={!currentNewOrder?.items.length}
+                  onClick={handleSendToKitchen}
+                  disabled={orderItems.length === 0}
                 >
                   <Send className="w-4 h-4 mr-2" />
                   Trimite
@@ -580,6 +738,158 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Customization Dialog */}
+      <Dialog open={showCustomization} onOpenChange={(open) => { if (!open) { setShowCustomization(false); setCustomizingItem(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Personalizează {customizingItem?.name}</DialogTitle>
+          </DialogHeader>
+          
+          {customizingItem && (
+            <div className="flex-1 overflow-auto space-y-6">
+              {/* Current Ingredients */}
+              {customizingItem.ingredients && customizingItem.ingredients.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <UtensilsCrossed className="w-4 h-4" />
+                    Ingrediente ({customizingItem.ingredients.length})
+                  </h4>
+                  <div className="grid gap-2">
+                    {customizingItem.ingredients.map(ing => {
+                      const isRemoved = tempRemovals.includes(ing);
+                      const isExtra = tempAdditions.includes(ing);
+                      
+                      return (
+                        <div 
+                          key={ing}
+                          className={cn(
+                            "p-3 rounded-lg border flex items-center justify-between",
+                            isRemoved && "border-destructive/50 bg-destructive/10",
+                            isExtra && "border-primary bg-primary/10",
+                            !isRemoved && !isExtra && "border-border bg-card"
+                          )}
+                        >
+                          <span className={cn(
+                            "font-medium",
+                            isRemoved && "line-through text-muted-foreground"
+                          )}>
+                            {ing}
+                          </span>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant={isRemoved ? 'destructive' : 'outline'}
+                              onClick={() => {
+                                if (isRemoved) {
+                                  setTempRemovals(tempRemovals.filter(r => r !== ing));
+                                } else {
+                                  setTempRemovals([...tempRemovals, ing]);
+                                  setTempAdditions(tempAdditions.filter(a => a !== ing));
+                                }
+                              }}
+                            >
+                              {isRemoved ? '✓ Fără' : 'Fără'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={isExtra ? 'default' : 'outline'}
+                              onClick={() => {
+                                if (isExtra) {
+                                  setTempAdditions(tempAdditions.filter(a => a !== ing));
+                                } else {
+                                  setTempAdditions([...tempAdditions, ing]);
+                                  setTempRemovals(tempRemovals.filter(r => r !== ing));
+                                }
+                              }}
+                            >
+                              {isExtra ? '✓ Extra' : 'Extra'}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Extra Ingredients */}
+              <div>
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Adaugă ingrediente extra
+                </h4>
+                {Object.entries(extraIngredientsByCategory).map(([category, items]) => (
+                  <div key={category} className="mb-4">
+                    <p className="text-sm text-muted-foreground mb-2">{category}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map(ing => {
+                        const isSelected = tempExtraIngredients.some(e => e.id === ing.id);
+                        return (
+                          <button
+                            key={ing.id}
+                            onClick={() => {
+                              if (isSelected) {
+                                setTempExtraIngredients(tempExtraIngredients.filter(e => e.id !== ing.id));
+                              } else {
+                                setTempExtraIngredients([...tempExtraIngredients, ing]);
+                              }
+                            }}
+                            className={cn(
+                              "px-3 py-2 rounded-lg border text-sm transition-all",
+                              isSelected
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border hover:border-primary/50"
+                            )}
+                          >
+                            {ing.name} <span className="text-primary font-bold">+{ing.price}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Summary */}
+              {(tempAdditions.length > 0 || tempRemovals.length > 0 || tempExtraIngredients.length > 0) && (
+                <div className="p-3 rounded-lg bg-secondary/50 border border-border">
+                  <h4 className="font-semibold mb-2 text-sm">Modificări selectate:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {tempAdditions.map(a => (
+                      <span key={a} className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs">
+                        + Extra {a}
+                      </span>
+                    ))}
+                    {tempRemovals.map(r => (
+                      <span key={r} className="px-2 py-1 rounded-full bg-destructive/20 text-destructive text-xs">
+                        - Fără {r}
+                      </span>
+                    ))}
+                    {tempExtraIngredients.map(e => (
+                      <span key={e.id} className="px-2 py-1 rounded-full bg-primary/20 text-primary text-xs">
+                        + {e.name} (+{e.price} RON)
+                      </span>
+                    ))}
+                  </div>
+                  {tempExtraIngredients.length > 0 && (
+                    <p className="text-sm mt-2">
+                      Cost extra: <span className="font-bold text-primary">+{tempExtraIngredients.reduce((s, e) => s + e.price, 0)} RON</span>
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="pt-4 border-t border-border">
+            <Button className="w-full" onClick={confirmCustomization}>
+              <Check className="w-4 h-4 mr-2" />
+              {editingOrderItemIdx !== null ? 'Actualizează' : 'Adaugă în comandă'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

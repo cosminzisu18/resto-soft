@@ -31,15 +31,18 @@ const RestaurantApp: React.FC = () => {
   if (appMode !== 'staff') {
     return (
       <div className="relative">
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="absolute top-4 left-4 z-50"
-          onClick={() => setAppMode('staff')}
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Înapoi
-        </Button>
+        {/* Home button - positioned in a non-overlapping corner */}
+        <div className="fixed bottom-4 right-4 z-[60]">
+          <Button 
+            variant="default" 
+            size="lg" 
+            className="shadow-lg"
+            onClick={() => setAppMode('staff')}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Acasă
+          </Button>
+        </div>
         {appMode === 'monitor' && <OrderStatusMonitor mode={monitorType} />}
         {appMode === 'kiosk' && <KioskOrdering />}
         {appMode === 'customer' && <CustomerSelfOrder />}
