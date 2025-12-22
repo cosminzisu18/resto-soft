@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import LanguageSelector from '@/components/LanguageSelector';
+import AllergenBadges from '@/components/AllergenBadges';
 
 type KioskStep = 'mode' | 'table' | 'menu' | 'cart' | 'customize' | 'payment' | 'processing' | 'confirm';
 type OrderMode = 'dine-in' | 'takeaway';
@@ -357,7 +358,10 @@ const KioskOrdering: React.FC = () => {
                       <h3 className="font-bold mb-1">{item.name}</h3>
                       <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{item.description}</p>
                       
-                      {/* Ingredients / Allergens */}
+                      {/* Allergens badges */}
+                      <AllergenBadges allergenIds={item.allergenIds} size="md" className="mb-2" />
+                      
+                      {/* Ingredients */}
                       {item.ingredients && item.ingredients.length > 0 && (
                         <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
                           <span className="font-medium">Conține:</span> {item.ingredients.join(', ')}
