@@ -6,12 +6,13 @@ import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
-  CreditCard, Receipt, ArrowLeft, Send, Edit2,
-  Trash2
+  CreditCard, ArrowLeft, Send, Edit2,
+  Trash2, Printer
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import Receipt from './Receipt';
 
 interface OrderPanelProps {
   table: Table;

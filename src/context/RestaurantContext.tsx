@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { 
-  User, Table, MenuItem, Order, OrderItem, KDSStation,
-  users, initialTables, menuItems, kdsStations, sampleOrders 
+  User, Table, MenuItem, Order, OrderItem, KDSStation, Reservation, Notification, OrderSource,
+  users, initialTables, menuItems, kdsStations, sampleOrders, sampleReservations, sampleNotifications, deliveryPlatforms
 } from '@/data/mockData';
 
 interface RestaurantContextType {
@@ -24,16 +24,33 @@ interface RestaurantContextType {
   
   // Orders
   orders: Order[];
-  createOrder: (tableId: string) => Order;
+  createOrder: (tableId?: string, source?: OrderSource) => Order;
   updateOrder: (order: Order) => void;
   addItemToOrder: (orderId: string, menuItem: MenuItem, quantity: number, modifications?: OrderItem['modifications']) => void;
   updateOrderItemStatus: (orderId: string, itemId: string, status: OrderItem['status']) => void;
   completeOrder: (orderId: string, tip?: number, cui?: string) => void;
   getActiveOrderForTable: (tableId: string) => Order | undefined;
+  createDeliveryOrder: (source: OrderSource, customerInfo: { name: string; phone: string; address?: string; platformOrderId?: string }) => Order;
+  
+  // Reservations
+  reservations: Reservation[];
+  createReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'>) => void;
+  updateReservation: (reservation: Reservation) => void;
+  deleteReservation: (id: string) => void;
+  
+  // Notifications
+  notifications: Notification[];
+  addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => void;
+  markNotificationRead: (id: string) => void;
+  clearNotifications: () => void;
   
   // KDS
   kdsStations: KDSStation[];
   getOrdersForStation: (stationId: string) => { order: Order; items: OrderItem[] }[];
+  
+  // Delivery
+  getDeliveryOrders: () => Order[];
+  getPhoneOrders: () => Order[];
 }
 
 const RestaurantContext = createContext<RestaurantContextType | undefined>(undefined);
@@ -43,6 +60,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [tables, setTables] = useState<Table[]>(initialTables);
   const [menu, setMenu] = useState<MenuItem[]>(menuItems);
   const [orders, setOrders] = useState<Order[]>(sampleOrders);
+  const [reservations, setReservations] = useState<Reservation[]>(sampleReservations);
+  const [notifications, setNotifications] = useState<Notification[]>(sampleNotifications);
 
   // Auth
   const login = useCallback((userId: string, pin: string): boolean => {
@@ -87,26 +106,62 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   // Orders
-  const createOrder = useCallback((tableId: string): Order => {
-    const table = tables.find(t => t.id === tableId);
+  const createOrder = useCallback((tableId?: string, source: OrderSource = 'restaurant'): Order => {
+    const table = tableId ? tables.find(t => t.id === tableId) : undefined;
     const newOrder: Order = {
       id: `o${Date.now()}`,
       tableId,
-      tableNumber: table?.number || 0,
+      tableNumber: table?.number,
       waiterId: currentUser?.id || '',
-      waiterName: currentUser?.name || '',
+      waiterName: currentUser?.name || 'Sistem',
       items: [],
       status: 'active',
       createdAt: new Date(),
-      syncTiming: true,
+      syncTiming: source === 'restaurant',
       totalAmount: 0,
+      source,
     };
     setOrders(prev => [...prev, newOrder]);
-    setTables(prev => prev.map(t => 
-      t.id === tableId ? { ...t, status: 'occupied' as const, currentOrderId: newOrder.id } : t
-    ));
+    if (tableId) {
+      setTables(prev => prev.map(t => 
+        t.id === tableId ? { ...t, status: 'occupied' as const, currentOrderId: newOrder.id } : t
+      ));
+    }
     return newOrder;
   }, [currentUser, tables]);
+
+  const createDeliveryOrder = useCallback((
+    source: OrderSource, 
+    customerInfo: { name: string; phone: string; address?: string; platformOrderId?: string }
+  ): Order => {
+    const newOrder: Order = {
+      id: `o${Date.now()}`,
+      waiterId: currentUser?.id || '',
+      waiterName: 'Sistem',
+      items: [],
+      status: 'active',
+      createdAt: new Date(),
+      syncTiming: false,
+      totalAmount: 0,
+      source,
+      customerName: customerInfo.name,
+      customerPhone: customerInfo.phone,
+      deliveryAddress: customerInfo.address,
+      platformOrderId: customerInfo.platformOrderId,
+      priority: orders.filter(o => o.source !== 'restaurant' && o.status === 'active').length + 1,
+    };
+    setOrders(prev => [...prev, newOrder]);
+    
+    // Add notification
+    addNotification({
+      type: 'new_order',
+      title: `Comandă nouă ${source}`,
+      message: `Comandă de la ${customerInfo.name} - ${customerInfo.phone}`,
+      targetRole: 'admin',
+    });
+    
+    return newOrder;
+  }, [currentUser, orders]);
 
   const updateOrder = useCallback((order: Order) => {
     setOrders(prev => prev.map(o => o.id === order.id ? order : o));
@@ -153,6 +208,22 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         };
       });
 
+      // Add notification when item is ready
+      if (status === 'ready') {
+        const item = order.items.find(i => i.id === itemId);
+        if (item) {
+          addNotification({
+            type: 'order_ready',
+            title: 'Preparat gata',
+            message: `${item.menuItem.name} pentru ${order.tableNumber ? `Masa ${order.tableNumber}` : order.customerName || 'Livrare'} este gata`,
+            orderId: order.id,
+            tableNumber: order.tableNumber,
+            targetRole: 'waiter',
+            targetUserId: order.waiterId,
+          });
+        }
+      }
+
       return { ...order, items: updatedItems };
     }));
   }, []);
@@ -164,7 +235,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }));
 
     const order = orders.find(o => o.id === orderId);
-    if (order) {
+    if (order?.tableId) {
       setTables(prev => prev.map(t =>
         t.id === order.tableId ? { ...t, status: 'free' as const, currentOrderId: undefined } : t
       ));
@@ -175,11 +246,83 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return orders.find(o => o.tableId === tableId && o.status === 'active');
   }, [orders]);
 
+  // Reservations
+  const createReservation = useCallback((reservation: Omit<Reservation, 'id' | 'createdAt'>) => {
+    const newReservation: Reservation = {
+      ...reservation,
+      id: `r${Date.now()}`,
+      createdAt: new Date(),
+    };
+    setReservations(prev => [...prev, newReservation]);
+    
+    // Update tables status
+    reservation.tableIds.forEach(tableId => {
+      setTables(prev => prev.map(t =>
+        t.id === tableId ? { ...t, status: 'reserved' as const, reservationId: newReservation.id } : t
+      ));
+    });
+
+    addNotification({
+      type: 'reservation',
+      title: 'Rezervare nouă',
+      message: `${reservation.customerName} - ${reservation.partySize} pers. la ${reservation.time}`,
+      targetRole: 'admin',
+    });
+  }, []);
+
+  const updateReservation = useCallback((reservation: Reservation) => {
+    setReservations(prev => prev.map(r => r.id === reservation.id ? reservation : r));
+  }, []);
+
+  const deleteReservation = useCallback((id: string) => {
+    const reservation = reservations.find(r => r.id === id);
+    if (reservation) {
+      reservation.tableIds.forEach(tableId => {
+        setTables(prev => prev.map(t =>
+          t.id === tableId ? { ...t, status: 'free' as const, reservationId: undefined } : t
+        ));
+      });
+    }
+    setReservations(prev => prev.filter(r => r.id !== id));
+  }, [reservations]);
+
+  // Notifications
+  const addNotification = useCallback((notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => {
+    const newNotification: Notification = {
+      ...notification,
+      id: `n${Date.now()}`,
+      createdAt: new Date(),
+      read: false,
+    };
+    setNotifications(prev => [newNotification, ...prev]);
+  }, []);
+
+  const markNotificationRead = useCallback((id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  }, []);
+
+  const clearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
   // KDS
   const getOrdersForStation = useCallback((stationId: string): { order: Order; items: OrderItem[] }[] => {
     const result: { order: Order; items: OrderItem[] }[] = [];
     
-    orders.filter(o => o.status === 'active').forEach(order => {
+    // Get all active orders, alternating between restaurant and delivery
+    const activeOrders = orders.filter(o => o.status === 'active');
+    const restaurantOrders = activeOrders.filter(o => o.source === 'restaurant');
+    const deliveryOrders = activeOrders.filter(o => o.source !== 'restaurant');
+    
+    // Interleave orders: restaurant, online, restaurant, online...
+    const interleavedOrders: Order[] = [];
+    const maxLen = Math.max(restaurantOrders.length, deliveryOrders.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (i < restaurantOrders.length) interleavedOrders.push(restaurantOrders[i]);
+      if (i < deliveryOrders.length) interleavedOrders.push(deliveryOrders[i]);
+    }
+    
+    interleavedOrders.forEach(order => {
       const stationItems = order.items.filter(
         item => item.menuItem.kdsStation === stationId && 
                 (item.status === 'pending' || item.status === 'cooking')
@@ -191,6 +334,18 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
 
     return result;
+  }, [orders]);
+
+  // Delivery
+  const getDeliveryOrders = useCallback((): Order[] => {
+    return orders.filter(o => 
+      ['glovo', 'wolt', 'bolt', 'own_website'].includes(o.source) && 
+      o.status === 'active'
+    );
+  }, [orders]);
+
+  const getPhoneOrders = useCallback((): Order[] => {
+    return orders.filter(o => o.source === 'phone' && o.status === 'active');
   }, [orders]);
 
   return (
@@ -213,8 +368,19 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       updateOrderItemStatus,
       completeOrder,
       getActiveOrderForTable,
+      createDeliveryOrder,
+      reservations,
+      createReservation,
+      updateReservation,
+      deleteReservation,
+      notifications,
+      addNotification,
+      markNotificationRead,
+      clearNotifications,
       kdsStations,
       getOrdersForStation,
+      getDeliveryOrders,
+      getPhoneOrders,
     }}>
       {children}
     </RestaurantContext.Provider>

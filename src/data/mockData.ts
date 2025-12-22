@@ -15,6 +15,7 @@ export interface Table {
   position: { x: number; y: number };
   shape: 'round' | 'square' | 'rectangle';
   currentOrderId?: string;
+  reservationId?: string;
 }
 
 export interface MenuItem {
@@ -27,6 +28,13 @@ export interface MenuItem {
   prepTime: number; // in minutes
   ingredients: string[];
   image?: string;
+  // Platform-specific pricing
+  platformPricing?: {
+    glovo?: { name: string; price: number; enabled: boolean };
+    wolt?: { name: string; price: number; enabled: boolean };
+    bolt?: { name: string; price: number; enabled: boolean };
+    own?: { name: string; price: number; enabled: boolean };
+  };
 }
 
 export interface OrderItem {
@@ -44,10 +52,12 @@ export interface OrderItem {
   readyAt?: Date;
 }
 
+export type OrderSource = 'restaurant' | 'glovo' | 'wolt' | 'bolt' | 'own_website' | 'phone';
+
 export interface Order {
   id: string;
-  tableId: string;
-  tableNumber: number;
+  tableId?: string;
+  tableNumber?: number;
   waiterId: string;
   waiterName: string;
   items: OrderItem[];
@@ -58,6 +68,42 @@ export interface Order {
   tip?: number;
   cui?: string;
   paidAt?: Date;
+  // Delivery-specific fields
+  source: OrderSource;
+  deliveryAddress?: string;
+  customerName?: string;
+  customerPhone?: string;
+  platformOrderId?: string;
+  estimatedDeliveryTime?: Date;
+  priority?: number; // For alternating restaurant/online orders
+}
+
+export interface Reservation {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  date: Date;
+  time: string;
+  partySize: number;
+  tableIds: string[];
+  status: 'pending' | 'confirmed' | 'arrived' | 'completed' | 'cancelled';
+  notes?: string;
+  source: 'phone' | 'online' | 'walk-in';
+  createdAt: Date;
+}
+
+export interface Notification {
+  id: string;
+  type: 'order_ready' | 'new_order' | 'reservation' | 'delivery' | 'urgent';
+  title: string;
+  message: string;
+  orderId?: string;
+  tableNumber?: number;
+  read: boolean;
+  createdAt: Date;
+  targetRole?: 'waiter' | 'kitchen' | 'admin';
+  targetUserId?: string;
 }
 
 export interface KDSStation {
@@ -66,6 +112,15 @@ export interface KDSStation {
   type: 'soups' | 'pizza' | 'grill' | 'giros';
   color: string;
   icon: string;
+}
+
+export interface DeliveryPlatform {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  enabled: boolean;
+  apiConnected: boolean;
 }
 
 // Mock Users
@@ -87,15 +142,53 @@ export const kdsStations: KDSStation[] = [
   { id: 'giros', name: 'Giros & Doner', type: 'giros', color: 'bg-yellow-500', icon: '🥙' },
 ];
 
-// Menu Items
+// Delivery Platforms
+export const deliveryPlatforms: DeliveryPlatform[] = [
+  { id: 'glovo', name: 'Glovo', icon: '🟡', color: 'bg-yellow-400', enabled: true, apiConnected: true },
+  { id: 'wolt', name: 'Wolt', icon: '🔵', color: 'bg-blue-500', enabled: true, apiConnected: true },
+  { id: 'bolt', name: 'Bolt Food', icon: '🟢', color: 'bg-green-500', enabled: true, apiConnected: false },
+  { id: 'own', name: 'Website propriu', icon: '🏠', color: 'bg-primary', enabled: true, apiConnected: true },
+];
+
+// Menu Items with platform pricing
 export const menuItems: MenuItem[] = [
   // Supe
-  { id: 'm1', name: 'Ciorbă de burtă', description: 'Ciorbă tradițională cu smântână și ardei iute', price: 22, category: 'Supe', kdsStation: 'soups', prepTime: 5, ingredients: ['Burtă', 'Smântână', 'Usturoi', 'Oțet', 'Ardei iute'] },
-  { id: 'm2', name: 'Supă de pui cu tăiței', description: 'Supă de casă cu legume proaspete', price: 18, category: 'Supe', kdsStation: 'soups', prepTime: 5, ingredients: ['Pui', 'Tăiței', 'Morcov', 'Țelină', 'Pătrunjel'] },
+  { 
+    id: 'm1', name: 'Ciorbă de burtă', description: 'Ciorbă tradițională cu smântână și ardei iute', 
+    price: 22, category: 'Supe', kdsStation: 'soups', prepTime: 5, 
+    ingredients: ['Burtă', 'Smântână', 'Usturoi', 'Oțet', 'Ardei iute'],
+    platformPricing: {
+      glovo: { name: 'Ciorbă de Burtă Premium', price: 28, enabled: true },
+      wolt: { name: 'Ciorbă de Burtă', price: 27, enabled: true },
+      bolt: { name: 'Ciorbă Burtă', price: 26, enabled: true },
+      own: { name: 'Ciorbă de burtă', price: 24, enabled: true },
+    }
+  },
+  { 
+    id: 'm2', name: 'Supă de pui cu tăiței', description: 'Supă de casă cu legume proaspete', 
+    price: 18, category: 'Supe', kdsStation: 'soups', prepTime: 5, 
+    ingredients: ['Pui', 'Tăiței', 'Morcov', 'Țelină', 'Pătrunjel'],
+    platformPricing: {
+      glovo: { name: 'Supă Pui cu Tăiței', price: 23, enabled: true },
+      wolt: { name: 'Supă de Pui', price: 22, enabled: true },
+      bolt: { name: 'Supă Pui', price: 21, enabled: true },
+      own: { name: 'Supă de pui cu tăiței', price: 20, enabled: true },
+    }
+  },
   { id: 'm3', name: 'Ciorbă de legume', description: 'Ciorbă vegetariană de sezon', price: 16, category: 'Supe', kdsStation: 'soups', prepTime: 5, ingredients: ['Cartofi', 'Morcov', 'Fasole verde', 'Roșii', 'Leuștean'] },
 
   // Pizza
-  { id: 'm4', name: 'Pizza Margherita', description: 'Sos de roșii, mozzarella, busuioc', price: 32, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Sos roșii', 'Mozzarella', 'Busuioc', 'Ulei de măsline'] },
+  { 
+    id: 'm4', name: 'Pizza Margherita', description: 'Sos de roșii, mozzarella, busuioc', 
+    price: 32, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, 
+    ingredients: ['Sos roșii', 'Mozzarella', 'Busuioc', 'Ulei de măsline'],
+    platformPricing: {
+      glovo: { name: 'Pizza Margherita Classica', price: 42, enabled: true },
+      wolt: { name: 'Margherita', price: 40, enabled: true },
+      bolt: { name: 'Pizza Margherita', price: 39, enabled: true },
+      own: { name: 'Pizza Margherita', price: 36, enabled: true },
+    }
+  },
   { id: 'm5', name: 'Pizza Quattro Formaggi', description: 'Patru tipuri de brânză', price: 42, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Mozzarella', 'Gorgonzola', 'Parmezan', 'Brie'] },
   { id: 'm6', name: 'Pizza Diavola', description: 'Salam picant și ardei', price: 38, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Sos roșii', 'Mozzarella', 'Salam picant', 'Ardei iute'] },
   { id: 'm7', name: 'Pizza Prosciutto', description: 'Șuncă de Parma și rucola', price: 45, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Mozzarella', 'Prosciutto', 'Rucola', 'Parmezan'] },
@@ -108,7 +201,17 @@ export const menuItems: MenuItem[] = [
   { id: 'm12', name: 'Tocăniță de pui', description: 'Cu mămăliguță și smântână', price: 35, category: 'Tradițional', kdsStation: 'grill', prepTime: 10, ingredients: ['Pui', 'Ceapă', 'Boia', 'Mămăligă', 'Smântână'] },
 
   // Giros & Doner
-  { id: 'm13', name: 'Kebab pui', description: 'Kebab cu carne de pui și salată', price: 28, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Pui', 'Salată', 'Roșii', 'Ceapă', 'Sos usturoi'] },
+  { 
+    id: 'm13', name: 'Kebab pui', description: 'Kebab cu carne de pui și salată', 
+    price: 28, category: 'Giros', kdsStation: 'giros', prepTime: 8, 
+    ingredients: ['Pui', 'Salată', 'Roșii', 'Ceapă', 'Sos usturoi'],
+    platformPricing: {
+      glovo: { name: 'Kebab de Pui XXL', price: 36, enabled: true },
+      wolt: { name: 'Kebab Pui', price: 34, enabled: true },
+      bolt: { name: 'Kebab Pui Mare', price: 33, enabled: true },
+      own: { name: 'Kebab pui', price: 30, enabled: true },
+    }
+  },
   { id: 'm14', name: 'Kebab vită', description: 'Kebab cu carne de vită și legume', price: 32, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Vită', 'Salată', 'Roșii', 'Castraveți', 'Sos'] },
   { id: 'm15', name: 'Doner la farfurie', description: 'Doner cu cartofi și salată', price: 38, category: 'Giros', kdsStation: 'giros', prepTime: 10, ingredients: ['Carne doner', 'Cartofi prăjiți', 'Salată', 'Sos'] },
   { id: 'm16', name: 'Shaorma mare', description: 'Shaorma cu de toate', price: 30, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Carne pui', 'Cartofi', 'Varză', 'Morcov', 'Sos'] },
@@ -139,7 +242,70 @@ export const initialTables: Table[] = [
 // Categories for menu
 export const menuCategories = ['Supe', 'Pizza', 'Grill', 'Tradițional', 'Giros', 'Garnituri', 'Băuturi'];
 
-// Sample orders for demo
+// Sample reservations
+export const sampleReservations: Reservation[] = [
+  {
+    id: 'r1',
+    customerName: 'Andrei Marinescu',
+    customerPhone: '0721234567',
+    customerEmail: 'andrei@email.com',
+    date: new Date(),
+    time: '19:00',
+    partySize: 4,
+    tableIds: ['t4'],
+    status: 'confirmed',
+    notes: 'Aniversare',
+    source: 'online',
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60000),
+  },
+  {
+    id: 'r2',
+    customerName: 'Familia Popescu',
+    customerPhone: '0731234567',
+    date: new Date(),
+    time: '20:30',
+    partySize: 6,
+    tableIds: ['t5'],
+    status: 'pending',
+    source: 'phone',
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60000),
+  },
+];
+
+// Sample notifications
+export const sampleNotifications: Notification[] = [
+  {
+    id: 'n1',
+    type: 'order_ready',
+    title: 'Comandă gata',
+    message: 'Pizza Margherita pentru Masa 3 este gata',
+    orderId: 'o1',
+    tableNumber: 3,
+    read: false,
+    createdAt: new Date(),
+    targetRole: 'waiter',
+  },
+  {
+    id: 'n2',
+    type: 'new_order',
+    title: 'Comandă nouă Glovo',
+    message: 'Comandă nouă primită de la Glovo - #GLV12345',
+    read: false,
+    createdAt: new Date(Date.now() - 2 * 60000),
+    targetRole: 'admin',
+  },
+  {
+    id: 'n3',
+    type: 'reservation',
+    title: 'Rezervare nouă',
+    message: 'Rezervare pentru 4 persoane la 19:00',
+    read: false,
+    createdAt: new Date(Date.now() - 5 * 60000),
+    targetRole: 'admin',
+  },
+];
+
+// Sample orders for demo (updated with source)
 export const sampleOrders: Order[] = [
   {
     id: 'o1',
@@ -170,6 +336,7 @@ export const sampleOrders: Order[] = [
     createdAt: new Date(Date.now() - 10 * 60000),
     syncTiming: true,
     totalAmount: 76,
+    source: 'restaurant',
   },
   {
     id: 'o2',
@@ -202,5 +369,74 @@ export const sampleOrders: Order[] = [
     createdAt: new Date(Date.now() - 15 * 60000),
     syncTiming: true,
     totalAmount: 91,
+    source: 'restaurant',
+  },
+  // Sample delivery orders
+  {
+    id: 'o3',
+    waiterId: '1',
+    waiterName: 'Sistem',
+    items: [
+      {
+        id: 'oi5',
+        menuItemId: 'm4',
+        menuItem: menuItems.find(m => m.id === 'm4')!,
+        quantity: 2,
+        modifications: { added: [], removed: [], notes: '' },
+        status: 'pending',
+      },
+      {
+        id: 'oi6',
+        menuItemId: 'm13',
+        menuItem: menuItems.find(m => m.id === 'm13')!,
+        quantity: 1,
+        modifications: { added: ['Extra sos'], removed: [], notes: '' },
+        status: 'pending',
+      },
+    ],
+    status: 'active',
+    createdAt: new Date(Date.now() - 2 * 60000),
+    syncTiming: false,
+    totalAmount: 106,
+    source: 'glovo',
+    platformOrderId: 'GLV-12345',
+    customerName: 'Alexandru Popa',
+    customerPhone: '0741234567',
+    deliveryAddress: 'Str. Victoriei 123, Ap. 4, București',
+    priority: 1,
+  },
+  {
+    id: 'o4',
+    waiterId: '1',
+    waiterName: 'Sistem',
+    items: [
+      {
+        id: 'oi7',
+        menuItemId: 'm16',
+        menuItem: menuItems.find(m => m.id === 'm16')!,
+        quantity: 2,
+        modifications: { added: [], removed: ['Varză'], notes: '' },
+        status: 'pending',
+      },
+    ],
+    status: 'active',
+    createdAt: new Date(Date.now() - 1 * 60000),
+    syncTiming: false,
+    totalAmount: 60,
+    source: 'wolt',
+    platformOrderId: 'WLT-67890',
+    customerName: 'Maria Ionescu',
+    customerPhone: '0751234567',
+    deliveryAddress: 'Bd. Unirii 45, Et. 2, București',
+    priority: 2,
   },
 ];
+
+// Restaurant info for receipts
+export const restaurantInfo = {
+  name: 'Restaurant La Mama',
+  address: 'Strada Florilor 123, București',
+  phone: '021-123-4567',
+  cui: 'RO12345678',
+  regCom: 'J40/1234/2020',
+};
