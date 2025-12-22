@@ -240,18 +240,32 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 <button
                   key={item.id}
                   onClick={() => handleAddItem(item)}
-                  className="p-3 md:p-4 rounded-xl bg-card border border-border hover:border-primary hover:shadow-md transition-all text-left"
+                  className="rounded-xl bg-card border border-border hover:border-primary hover:shadow-md transition-all text-left overflow-hidden"
                 >
-                  <h3 className="font-medium text-xs md:text-sm mb-1 line-clamp-2">{item.name}</h3>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-2 hidden md:block">
-                    {item.description}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-primary text-sm">{item.price} RON</span>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {item.prepTime}'
-                    </span>
+                  {/* Product Image */}
+                  {item.image && (
+                    <div className="aspect-video w-full bg-secondary">
+                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  <div className="p-3 md:p-4">
+                    <h3 className="font-medium text-xs md:text-sm mb-1 line-clamp-2">{item.name}</h3>
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-1 hidden md:block">
+                      {item.description}
+                    </p>
+                    {/* Ingredients / Allergens */}
+                    {item.ingredients && item.ingredients.length > 0 && (
+                      <p className="text-[10px] text-muted-foreground mb-2 line-clamp-1">
+                        Conține: {item.ingredients.slice(0, 3).join(', ')}{item.ingredients.length > 3 ? '...' : ''}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-primary text-sm">{item.price} RON</span>
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {item.prepTime}'
+                      </span>
+                    </div>
                   </div>
                 </button>
               ))}

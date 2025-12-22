@@ -343,19 +343,35 @@ const KioskOrdering: React.FC = () => {
                     key={item.id}
                     onClick={() => addToCartQuick(item)}
                     className={cn(
-                      "p-4 rounded-2xl border-2 text-left transition-all hover:scale-102",
+                      "rounded-2xl border-2 text-left transition-all hover:scale-102 overflow-hidden",
                       inCart ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/50"
                     )}
                   >
-                    <h3 className="font-bold mb-1">{item.name}</h3>
-                    <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{item.description}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xl font-bold text-primary">{item.price} RON</span>
-                      {inCart && (
-                        <span className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
-                          {inCart.quantity}
-                        </span>
+                    {/* Product Image */}
+                    {item.image && (
+                      <div className="aspect-video w-full bg-secondary">
+                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="p-4">
+                      <h3 className="font-bold mb-1">{item.name}</h3>
+                      <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{item.description}</p>
+                      
+                      {/* Ingredients / Allergens */}
+                      {item.ingredients && item.ingredients.length > 0 && (
+                        <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                          <span className="font-medium">Conține:</span> {item.ingredients.join(', ')}
+                        </p>
                       )}
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-xl font-bold text-primary">{item.price} RON</span>
+                        {inCart && (
+                          <span className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
+                            {inCart.quantity}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );

@@ -146,15 +146,15 @@ const KDSDisplay: React.FC<KDSDisplayProps> = ({ station, onLogout }) => {
                   </div>
 
                   {/* View Full Order Button */}
-                  <div className="px-3 py-2 border-b border-kds-border bg-kds-background/50">
+                  <div className="px-3 py-2 border-b border-kds-border bg-kds-card">
                     <Button 
-                      variant="outline" 
+                      variant="default" 
                       size="sm" 
-                      className="w-full text-sm"
+                      className="w-full text-sm font-semibold bg-primary hover:bg-primary/90"
                       onClick={() => setSelectedOrder(getFullOrder(order.id) || null)}
                     >
                       <Eye className="w-4 h-4 mr-2" />
-                      Vezi toata comanda ({order.items.length} produse)
+                      Vezi toată comanda ({order.items.length} produse)
                     </Button>
                   </div>
 

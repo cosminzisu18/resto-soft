@@ -6,19 +6,21 @@ import OrderPanel from './OrderPanel';
 import DeliveryOrders from './DeliveryOrders';
 import NotificationCenter from './NotificationCenter';
 import { Table, Order, OrderItem } from '@/data/mockData';
-import { LogOut, User, Bell, Clock, Check, ChefHat, Truck, Phone, MapPin } from 'lucide-react';
+import { LogOut, User, Bell, Clock, Check, ChefHat, Truck, Phone, MapPin, Edit2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 
 interface WaiterPalmaresProps {
   onLogout: () => void;
 }
 
 const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
-  const { currentUser, orders, notifications, markNotificationRead, clearNotifications, tables } = useRestaurant();
+  const { currentUser, orders, notifications, markNotificationRead, clearNotifications, tables, updateOrder } = useRestaurant();
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [view, setView] = useState<'map' | 'orders' | 'delivery'>('map');
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
+  const { toast } = useToast();
 
   const myOrders = orders.filter(o => o.waiterId === currentUser?.id && o.status === 'active');
   const readyItems = myOrders.flatMap(o => 
@@ -63,6 +65,12 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
               variant="outline" 
               size="sm"
               className="relative border-success text-success text-xs md:text-sm"
+              onClick={() => {
+                if (readyItems.length > 0) {
+                  const firstReady = readyItems[0];
+                  setSelectedOrderDetails(firstReady.order);
+                }
+              }}
             >
               <Bell className="w-3 h-3 md:w-4 md:h-4 mr-1" />
               <span className="hidden sm:inline">{readyItems.length} gata</span>
@@ -196,39 +204,71 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
           </DialogHeader>
           
           <div className="space-y-3">
-            {selectedOrderDetails?.items.map(item => (
-              <div
-                key={item.id}
-                className={cn(
-                  "p-3 rounded-lg border",
-                  item.status === 'ready' && "border-success bg-success/5",
-                  item.status === 'cooking' && "border-warning bg-warning/5",
-                  item.status === 'pending' && "border-border"
-                )}
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="font-medium">
-                      {item.quantity}x {item.menuItem.name}
-                    </p>
-                    {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {item.modifications.added.map(a => `+${a}`).join(', ')}
-                        {item.modifications.added.length > 0 && item.modifications.removed.length > 0 && ', '}
-                        {item.modifications.removed.map(r => `-${r}`).join(', ')}
+            {selectedOrderDetails?.items.map(item => {
+              const canEdit = item.status === 'pending';
+              
+              return (
+                <div
+                  key={item.id}
+                  className={cn(
+                    "p-3 rounded-lg border",
+                    item.status === 'ready' && "border-success bg-success/5",
+                    item.status === 'cooking' && "border-warning bg-warning/5",
+                    item.status === 'pending' && "border-border"
+                  )}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        {item.quantity}x {item.menuItem.name}
                       </p>
-                    )}
-                    {item.modifications.notes && (
-                      <p className="text-xs text-muted-foreground italic">"{item.modifications.notes}"</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(item.status)}
-                    <span className="text-xs text-muted-foreground">{getStatusLabel(item.status)}</span>
+                      {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.modifications.added.map(a => `+${a}`).join(', ')}
+                          {item.modifications.added.length > 0 && item.modifications.removed.length > 0 && ', '}
+                          {item.modifications.removed.map(r => `-${r}`).join(', ')}
+                        </p>
+                      )}
+                      {item.modifications.notes && (
+                        <p className="text-xs text-muted-foreground italic">"{item.modifications.notes}"</p>
+                      )}
+                      
+                      {/* Ingredients/Allergens info */}
+                      {item.menuItem.ingredients && item.menuItem.ingredients.length > 0 && (
+                        <p className="text-xs text-muted-foreground mt-2 p-2 bg-secondary/50 rounded">
+                          <span className="font-medium">Conține:</span> {item.menuItem.ingredients.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(item.status)}
+                        <span className="text-xs text-muted-foreground">{getStatusLabel(item.status)}</span>
+                      </div>
+                      {canEdit && (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            // Remove item from order
+                            if (selectedOrderDetails) {
+                              const updatedItems = selectedOrderDetails.items.filter(i => i.id !== item.id);
+                              const totalAmount = updatedItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+                              updateOrder({ ...selectedOrderDetails, items: updatedItems, totalAmount });
+                              setSelectedOrderDetails({ ...selectedOrderDetails, items: updatedItems, totalAmount });
+                              toast({ title: 'Produs eliminat din comandă' });
+                            }
+                          }}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          Șterge
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div className="pt-3 border-t border-border">
               <div className="flex justify-between font-bold">
@@ -248,7 +288,8 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
                   }
                 }}
               >
-                Deschide comanda
+                <Edit2 className="w-4 h-4 mr-2" />
+                Modifică comanda
               </Button>
             )}
           </div>
