@@ -18,7 +18,6 @@ const buttonVariants = cva(
         success: "bg-success text-success-foreground hover:bg-success/90 shadow-sm",
         warning: "bg-warning text-warning-foreground hover:bg-warning/90 shadow-sm",
         kds: "bg-kds-card text-kds-foreground border border-kds-border hover:bg-kds-border",
-        success: "bg-success text-success-foreground hover:bg-success/90 shadow-sm",
       },
       size: {
         default: "h-10 px-4 py-2",

@@ -7,11 +7,10 @@ import { cn } from '@/lib/utils';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
-  Trash2, Printer
+  Trash2, Printer, FileText
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
 import Receipt from './Receipt';
 
 interface OrderPanelProps {
@@ -22,17 +21,19 @@ interface OrderPanelProps {
 const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const { 
     menu, createOrder, getActiveOrderForTable, addItemToOrder, 
-    updateOrder, completeOrder, updateOrderItemStatus 
+    updateOrder, completeOrder, updateOrderItemStatus, orders
   } = useRestaurant();
   const { toast } = useToast();
   
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
   const [showPayment, setShowPayment] = useState(false);
   const [showModifier, setShowModifier] = useState<MenuItem | null>(null);
+  const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const [modAdditions, setModAdditions] = useState<string[]>([]);
   const [modRemovals, setModRemovals] = useState<string[]>([]);
   const [modNotes, setModNotes] = useState('');
   const [modQuantity, setModQuantity] = useState(1);
+  const [showReceipt, setShowReceipt] = useState(false);
   
   // Payment state
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
@@ -47,6 +48,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const handleAddItem = (item: MenuItem) => {
     if (item.ingredients.length > 0) {
       setShowModifier(item);
+      setEditingItem(null);
       setModAdditions([]);
       setModRemovals([]);
       setModNotes('');
@@ -57,17 +59,64 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     }
   };
 
+  const handleEditItem = (item: OrderItem) => {
+    if (item.status !== 'pending') {
+      toast({ title: 'Nu se poate modifica - deja în preparare', variant: 'destructive' });
+      return;
+    }
+    setEditingItem(item);
+    setShowModifier(item.menuItem);
+    setModAdditions(item.modifications.added);
+    setModRemovals(item.modifications.removed);
+    setModNotes(item.modifications.notes);
+    setModQuantity(item.quantity);
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    if (!order) return;
+    const item = order.items.find(i => i.id === itemId);
+    if (item && item.status !== 'pending') {
+      toast({ title: 'Nu se poate șterge - deja în preparare', variant: 'destructive' });
+      return;
+    }
+    const updatedItems = order.items.filter(i => i.id !== itemId);
+    const totalAmount = updatedItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+    updateOrder({ ...order, items: updatedItems, totalAmount });
+    toast({ title: 'Produs eliminat' });
+  };
+
   const handleConfirmModifier = () => {
     if (!showModifier || !order) return;
     
-    addItemToOrder(order.id, showModifier, modQuantity, {
-      added: modAdditions,
-      removed: modRemovals,
-      notes: modNotes,
-    });
+    if (editingItem) {
+      // Update existing item
+      const updatedItems = order.items.map(item => {
+        if (item.id !== editingItem.id) return item;
+        return {
+          ...item,
+          quantity: modQuantity,
+          modifications: {
+            added: modAdditions,
+            removed: modRemovals,
+            notes: modNotes,
+          }
+        };
+      });
+      const totalAmount = updatedItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+      updateOrder({ ...order, items: updatedItems, totalAmount });
+      toast({ title: 'Produs actualizat' });
+    } else {
+      // Add new item
+      addItemToOrder(order.id, showModifier, modQuantity, {
+        added: modAdditions,
+        removed: modRemovals,
+        notes: modNotes,
+      });
+      toast({ title: `${showModifier.name} adăugat` });
+    }
     
-    toast({ title: `${showModifier.name} adăugat` });
     setShowModifier(null);
+    setEditingItem(null);
   };
 
   const handleSendToKitchen = () => {
@@ -79,16 +128,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       return;
     }
 
-    // Calculate timing for sync
     if (order.syncTiming) {
       const maxPrepTime = Math.max(...pendingItems.map(i => i.menuItem.prepTime));
       
       pendingItems.forEach(item => {
         const delay = maxPrepTime - item.menuItem.prepTime;
-        // In real app, this would schedule the cooking start
         setTimeout(() => {
           updateOrderItemStatus(order!.id, item.id, 'cooking');
-        }, delay * 1000); // Simulating delay
+        }, delay * 1000);
       });
     } else {
       pendingItems.forEach(item => {
@@ -117,7 +164,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       title: 'Plată procesată',
       description: `Total: ${(order.totalAmount + tip).toFixed(2)} RON`,
     });
-    onClose();
+    setShowReceipt(true);
   };
 
   const getStatusIcon = (status: OrderItem['status']) => {
@@ -143,40 +190,41 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between p-3 md:p-4 border-b border-border">
+        <div className="flex items-center gap-2 md:gap-3">
           <Button variant="ghost" size="icon" onClick={onClose}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h2 className="text-xl font-bold">Masa {table.number}</h2>
-            <p className="text-sm text-muted-foreground">{table.seats} locuri</p>
+            <h2 className="text-lg md:text-xl font-bold">Masa {table.number}</h2>
+            <p className="text-xs md:text-sm text-muted-foreground">{table.seats} locuri</p>
           </div>
         </div>
         <div className="flex gap-2">
           <Button 
             variant="outline" 
+            size="sm"
             onClick={() => setShowPayment(true)}
             disabled={!order || order.items.length === 0}
           >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Plată
+            <CreditCard className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Plată</span>
           </Button>
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Menu Section */}
-        <div className="flex-1 flex flex-col overflow-hidden border-r border-border">
+        <div className="flex-1 flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-border">
           {/* Categories */}
-          <div className="flex gap-2 p-3 overflow-x-auto border-b border-border">
+          <div className="flex gap-2 p-2 md:p-3 overflow-x-auto border-b border-border">
             {menuCategories.map(cat => (
               <Button
                 key={cat}
                 variant={activeCategory === cat ? 'default' : 'secondary'}
                 size="sm"
                 onClick={() => setActiveCategory(cat)}
-                className="whitespace-nowrap"
+                className="whitespace-nowrap text-xs md:text-sm"
               >
                 {cat}
               </Button>
@@ -184,20 +232,20 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           </div>
 
           {/* Menu Items */}
-          <div className="flex-1 overflow-auto p-3">
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="flex-1 overflow-auto p-2 md:p-3">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
               {filteredMenu.map(item => (
                 <button
                   key={item.id}
                   onClick={() => handleAddItem(item)}
-                  className="p-4 rounded-xl bg-card border border-border hover:border-primary hover:shadow-md transition-all text-left"
+                  className="p-3 md:p-4 rounded-xl bg-card border border-border hover:border-primary hover:shadow-md transition-all text-left"
                 >
-                  <h3 className="font-medium text-sm mb-1">{item.name}</h3>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                  <h3 className="font-medium text-xs md:text-sm mb-1 line-clamp-2">{item.name}</h3>
+                  <p className="text-xs text-muted-foreground line-clamp-2 mb-2 hidden md:block">
                     {item.description}
                   </p>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-primary">{item.price} RON</span>
+                    <span className="font-bold text-primary text-sm">{item.price} RON</span>
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {item.prepTime}'
@@ -210,14 +258,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
         </div>
 
         {/* Order Summary */}
-        <div className="w-80 flex flex-col bg-secondary/30">
-          <div className="p-3 border-b border-border">
-            <h3 className="font-semibold">Comandă curentă</h3>
+        <div className="h-1/2 md:h-auto md:w-72 lg:w-80 flex flex-col bg-secondary/30">
+          <div className="p-2 md:p-3 border-b border-border">
+            <h3 className="font-semibold text-sm md:text-base">Comandă curentă</h3>
           </div>
 
-          <div className="flex-1 overflow-auto p-3">
+          <div className="flex-1 overflow-auto p-2 md:p-3">
             {order?.items.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
+              <p className="text-center text-muted-foreground py-4 md:py-8 text-xs md:text-sm">
                 Adaugă produse din meniu
               </p>
             ) : (
@@ -226,16 +274,16 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   <div
                     key={item.id}
                     className={cn(
-                      "p-3 rounded-lg bg-card border",
+                      "p-2 md:p-3 rounded-lg bg-card border",
                       item.status === 'ready' && "border-success",
                       item.status === 'cooking' && "border-warning"
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">{item.quantity}x</span>
-                          <span className="font-medium text-sm">{item.menuItem.name}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1 md:gap-2">
+                          <span className="font-medium text-xs md:text-sm">{item.quantity}x</span>
+                          <span className="font-medium text-xs md:text-sm truncate">{item.menuItem.name}</span>
                         </div>
                         {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
                           <div className="text-xs text-muted-foreground mt-1">
@@ -248,21 +296,41 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                           </div>
                         )}
                         {item.modifications.notes && (
-                          <p className="text-xs text-muted-foreground italic mt-1">
+                          <p className="text-xs text-muted-foreground italic mt-1 truncate">
                             "{item.modifications.notes}"
                           </p>
                         )}
-                      </div>
-                      <div className="text-right">
-                        <span className="font-medium text-sm">
-                          {(item.menuItem.price * item.quantity).toFixed(2)}
-                        </span>
                         <div className="flex items-center gap-1 mt-1">
                           {getStatusIcon(item.status)}
                           <span className="text-xs text-muted-foreground">
                             {getStatusLabel(item.status)}
                           </span>
                         </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="font-medium text-xs md:text-sm">
+                          {(item.menuItem.price * item.quantity).toFixed(2)}
+                        </span>
+                        {item.status === 'pending' && (
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleEditItem(item)}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive"
+                              onClick={() => handleRemoveItem(item.id)}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -272,19 +340,19 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           </div>
 
           {order && order.items.length > 0 && (
-            <div className="p-3 border-t border-border space-y-3">
-              <div className="flex items-center justify-between font-bold text-lg">
+            <div className="p-2 md:p-3 border-t border-border space-y-2 md:space-y-3">
+              <div className="flex items-center justify-between font-bold text-base md:text-lg">
                 <span>Total</span>
                 <span>{order.totalAmount.toFixed(2)} RON</span>
               </div>
               
               <Button 
-                className="w-full gradient-primary"
+                className="w-full gradient-primary text-sm"
                 onClick={handleSendToKitchen}
                 disabled={order.items.filter(i => i.status === 'pending').length === 0}
               >
                 <Send className="w-4 h-4 mr-2" />
-                Trimite la bucătărie ({order.items.filter(i => i.status === 'pending').length})
+                Trimite ({order.items.filter(i => i.status === 'pending').length})
               </Button>
             </div>
           )}
@@ -292,10 +360,12 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       </div>
 
       {/* Modifier Dialog */}
-      <Dialog open={!!showModifier} onOpenChange={() => setShowModifier(null)}>
-        <DialogContent className="max-w-md">
+      <Dialog open={!!showModifier} onOpenChange={() => { setShowModifier(null); setEditingItem(null); }}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-auto">
           <DialogHeader>
-            <DialogTitle>{showModifier?.name}</DialogTitle>
+            <DialogTitle>
+              {editingItem ? 'Modifică' : ''} {showModifier?.name}
+            </DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
@@ -325,7 +395,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             {showModifier && showModifier.ingredients.length > 0 && (
               <div>
                 <p className="font-medium mb-2">Ingrediente</p>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-40 overflow-auto">
                   {showModifier.ingredients.map(ing => (
                     <div key={ing} className="flex items-center justify-between p-2 rounded-lg bg-secondary">
                       <span className="text-sm">{ing}</span>
@@ -376,7 +446,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             </div>
 
             <Button className="w-full" onClick={handleConfirmModifier}>
-              Adaugă în comandă - {((showModifier?.price || 0) * modQuantity).toFixed(2)} RON
+              {editingItem ? 'Actualizează' : 'Adaugă în comandă'} - {((showModifier?.price || 0) * modQuantity).toFixed(2)} RON
             </Button>
           </div>
         </DialogContent>
@@ -422,14 +492,12 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   </Button>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <Input
-                  type="number"
-                  value={tipType === 'value' ? tipValue : ''}
-                  onChange={(e) => { setTipType('value'); setTipValue(e.target.value); }}
-                  placeholder="Sumă fixă (RON)"
-                />
-              </div>
+              <Input
+                type="number"
+                value={tipType === 'value' ? tipValue : ''}
+                onChange={(e) => { setTipType('value'); setTipValue(e.target.value); }}
+                placeholder="Sumă fixă (RON)"
+              />
             </div>
 
             {/* CUI */}
@@ -450,13 +518,22 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 Anulează
               </Button>
               <Button className="flex-1 gradient-primary" onClick={handleCompletePayment}>
-                <Receipt className="w-4 h-4 mr-2" />
-                Finalizează plata
+                <FileText className="w-4 h-4 mr-2" />
+                Finalizează
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Receipt */}
+      {order && (
+        <Receipt 
+          order={order} 
+          isOpen={showReceipt} 
+          onClose={() => { setShowReceipt(false); onClose(); }} 
+        />
+      )}
     </div>
   );
 };
