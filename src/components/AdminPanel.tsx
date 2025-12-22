@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, kdsStations as defaultKdsStations, KDSStation } from '@/data/mockData';
+import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -32,7 +32,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const { 
     tables, addTable, updateTable, deleteTable,
     menu, addMenuItem, updateMenuItem, deleteMenuItem,
-    kdsStations, orders, reservations, deleteReservation, updateReservation
+    kdsStations, addKdsStation, updateKdsStation, deleteKdsStation,
+    orders, reservations, deleteReservation, updateReservation
   } = useRestaurant();
   const { t } = useLanguage();
   const { toast } = useToast();
@@ -53,10 +54,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [localKioskSteps, setLocalKioskSteps] = useState(kioskSteps);
   
   // KDS stations state
-  const [localKdsStations, setLocalKdsStations] = useState<KDSStation[]>(defaultKdsStations);
   const [showAddKdsStation, setShowAddKdsStation] = useState(false);
   const [editingKdsStation, setEditingKdsStation] = useState<KDSStation | null>(null);
-  const [kdsForm, setKdsForm] = useState({ name: '', type: 'grill', color: 'bg-orange-500', icon: '🔥' });
+  const [kdsForm, setKdsForm] = useState({ name: '', type: 'grill' as KDSStation['type'], color: 'bg-orange-500', icon: '🔥' });
+
+  const kdsTypeOptions = [
+    { value: 'soups', label: 'Supe', icon: '🍲', color: 'bg-amber-500' },
+    { value: 'pizza', label: 'Pizza', icon: '🍕', color: 'bg-red-500' },
+    { value: 'grill', label: 'Grill', icon: '🔥', color: 'bg-orange-500' },
+    { value: 'giros', label: 'Giros', icon: '🥙', color: 'bg-yellow-500' },
+  ];
 
   // Table form
   const [tableForm, setTableForm] = useState({
@@ -248,6 +255,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const startEditIngredient = (ing: ExtraIngredient) => {
     setEditingIngredient(ing);
     setIngredientForm({ name: ing.name, price: ing.price.toString(), category: ing.category });
+  };
+
+  // KDS handlers
+  const handleAddKdsStation = () => {
+    addKdsStation({
+      name: kdsForm.name,
+      type: kdsForm.type,
+      color: kdsForm.color,
+      icon: kdsForm.icon,
+    });
+    toast({ title: 'Stație KDS adăugată' });
+    setShowAddKdsStation(false);
+    resetKdsForm();
+  };
+
+  const handleUpdateKdsStation = () => {
+    if (!editingKdsStation) return;
+    updateKdsStation({
+      ...editingKdsStation,
+      name: kdsForm.name,
+      type: kdsForm.type,
+      color: kdsForm.color,
+      icon: kdsForm.icon,
+    });
+    toast({ title: 'Stație KDS actualizată' });
+    setEditingKdsStation(null);
+    resetKdsForm();
+  };
+
+  const handleDeleteKdsStation = (id: string) => {
+    deleteKdsStation(id);
+    toast({ title: 'Stație KDS ștearsă' });
+  };
+
+  const startEditKdsStation = (station: KDSStation) => {
+    setEditingKdsStation(station);
+    setKdsForm({ name: station.name, type: station.type, color: station.color, icon: station.icon });
+  };
+
+  const resetKdsForm = () => {
+    setKdsForm({ name: '', type: 'grill', color: 'bg-orange-500', icon: '🔥' });
   };
 
   const navItems = [
@@ -605,7 +653,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
         {/* KDS Configuration */}
         {activeView === 'kds' && (
           <div className="p-4 md:p-6">
-            <h2 className="text-2xl font-bold mb-6">{t('kds.title')}</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">{t('kds.title')}</h2>
+              <Button onClick={() => setShowAddKdsStation(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Adaugă stație KDS
+              </Button>
+            </div>
+            
+            <p className="text-muted-foreground mb-6">
+              Stațiile KDS sunt ecranele din bucătărie unde se afișează comenzile pentru fiecare secție de preparare.
+            </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {kdsStations.map(station => {
@@ -613,13 +671,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 
                 return (
                   <div key={station.id} className="rounded-xl bg-card border border-border overflow-hidden">
-                    <div className={cn("px-4 py-3 text-white", station.color)}>
+                    <div className={cn("px-4 py-3 text-white flex items-center justify-between", station.color)}>
                       <div className="flex items-center gap-3">
                         <span className="text-2xl">{station.icon}</span>
                         <div>
                           <h3 className="font-bold">{station.name}</h3>
                           <p className="text-sm opacity-80">{stationItems.length} {t('kds.products')}</p>
                         </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="text-white/80 hover:text-white hover:bg-white/20" onClick={() => startEditKdsStation(station)}>
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-white/80 hover:text-white hover:bg-white/20" onClick={() => handleDeleteKdsStation(station.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                     
@@ -640,6 +706,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   </div>
                 );
               })}
+              
+              {kdsStations.length === 0 && (
+                <div className="col-span-2 text-center py-12 text-muted-foreground">
+                  <Monitor className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Nu există stații KDS definite.</p>
+                  <Button className="mt-4" onClick={() => setShowAddKdsStation(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adaugă prima stație
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1264,6 +1341,83 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <Button className="w-full" onClick={editingIngredient ? handleUpdateIngredient : handleAddIngredient}>
               <Save className="w-4 h-4 mr-2" />
               {editingIngredient ? 'Salvează' : 'Adaugă'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit KDS Station Dialog */}
+      <Dialog open={showAddKdsStation || !!editingKdsStation} onOpenChange={(open) => {
+        if (!open) { setShowAddKdsStation(false); setEditingKdsStation(null); resetKdsForm(); }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingKdsStation ? 'Editează stație KDS' : 'Adaugă stație KDS'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Nume stație</label>
+              <Input value={kdsForm.name} onChange={e => setKdsForm({...kdsForm, name: e.target.value})} placeholder="ex: Grill & Mâncare Gătită" />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Tip stație</label>
+              <div className="grid grid-cols-2 gap-2">
+                {kdsTypeOptions.map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setKdsForm({...kdsForm, type: option.value as KDSStation['type'], color: option.color, icon: option.icon})}
+                    className={cn(
+                      "p-3 rounded-lg border-2 flex items-center gap-2 transition-all",
+                      kdsForm.type === option.value
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <span className="text-xl">{option.icon}</span>
+                    <span className="font-medium">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Culoare</label>
+              <div className="flex gap-2">
+                {['bg-amber-500', 'bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500', 'bg-blue-500', 'bg-purple-500'].map(color => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => setKdsForm({...kdsForm, color})}
+                    className={cn(
+                      "w-10 h-10 rounded-lg border-2 transition-all",
+                      color,
+                      kdsForm.color === color ? "border-foreground scale-110" : "border-transparent"
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Icon</label>
+              <div className="flex gap-2 flex-wrap">
+                {['🔥', '🍕', '🍲', '🥙', '🍝', '🥗', '🍳', '🍖', '🧁', '🍨'].map(icon => (
+                  <button
+                    key={icon}
+                    type="button"
+                    onClick={() => setKdsForm({...kdsForm, icon})}
+                    className={cn(
+                      "w-10 h-10 rounded-lg border-2 flex items-center justify-center text-xl transition-all",
+                      kdsForm.icon === icon ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    {icon}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button className="w-full" onClick={editingKdsStation ? handleUpdateKdsStation : handleAddKdsStation}>
+              <Save className="w-4 h-4 mr-2" />
+              {editingKdsStation ? 'Salvează' : 'Adaugă'}
             </Button>
           </div>
         </DialogContent>
