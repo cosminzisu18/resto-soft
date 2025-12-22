@@ -7,17 +7,21 @@ import { menuItems, menuCategories, MenuItem, Table } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, Send, ArrowLeft, ArrowRight,
-  Home, Package, UtensilsCrossed, QrCode, Check
+  Home, Package, UtensilsCrossed, QrCode, Check, Edit2, X
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import LanguageSelector from '@/components/LanguageSelector';
 
-type KioskStep = 'mode' | 'table' | 'menu' | 'cart' | 'confirm';
+type KioskStep = 'mode' | 'table' | 'menu' | 'cart' | 'customize' | 'confirm';
 type OrderMode = 'dine-in' | 'takeaway';
 
 interface CartItem {
   menuItem: MenuItem;
   quantity: number;
+  modifications: {
+    added: string[];
+    removed: string[];
+  };
 }
 
 const KioskOrdering: React.FC = () => {
@@ -28,8 +32,15 @@ const KioskOrdering: React.FC = () => {
   const [step, setStep] = useState<KioskStep>('mode');
   const [orderMode, setOrderMode] = useState<OrderMode | null>(null);
   const [selectedTable, setSelectedTable] = useState<number | null>(null);
+  const [tableNumberInput, setTableNumberInput] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
+  
+  // Customization state
+  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
+  const [tempAdditions, setTempAdditions] = useState<string[]>([]);
+  const [tempRemovals, setTempRemovals] = useState<string[]>([]);
+  const [editingCartItemId, setEditingCartItemId] = useState<string | null>(null);
 
   // Available table numbers for dine-in
   const availableNumbers = Array.from({ length: 50 }, (_, i) => i + 1);
@@ -58,14 +69,67 @@ const KioskOrdering: React.FC = () => {
     return suggestedItems.slice(0, 4);
   }, [cart, menu]);
 
-  const addToCart = (item: MenuItem) => {
-    setCart(prev => {
-      const existing = prev.find(c => c.menuItem.id === item.id);
-      if (existing) {
-        return prev.map(c => c.menuItem.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+  const openCustomization = (item: MenuItem, isEditing: boolean = false, cartItemId?: string) => {
+    setCustomizingItem(item);
+    setTempAdditions([]);
+    setTempRemovals([]);
+    setEditingCartItemId(cartItemId || null);
+    
+    if (isEditing && cartItemId) {
+      const cartItem = cart.find(c => c.menuItem.id === cartItemId);
+      if (cartItem) {
+        setTempAdditions(cartItem.modifications.added);
+        setTempRemovals(cartItem.modifications.removed);
       }
-      return [...prev, { menuItem: item, quantity: 1 }];
-    });
+    }
+    setStep('customize');
+  };
+
+  const confirmCustomization = () => {
+    if (!customizingItem) return;
+    
+    if (editingCartItemId) {
+      // Update existing cart item
+      setCart(prev => prev.map(c => 
+        c.menuItem.id === editingCartItemId 
+          ? { ...c, modifications: { added: tempAdditions, removed: tempRemovals } }
+          : c
+      ));
+    } else {
+      // Add new item to cart
+      setCart(prev => {
+        const existing = prev.find(c => 
+          c.menuItem.id === customizingItem.id && 
+          JSON.stringify(c.modifications) === JSON.stringify({ added: tempAdditions, removed: tempRemovals })
+        );
+        if (existing) {
+          return prev.map(c => c === existing ? { ...c, quantity: c.quantity + 1 } : c);
+        }
+        return [...prev, { 
+          menuItem: customizingItem, 
+          quantity: 1, 
+          modifications: { added: tempAdditions, removed: tempRemovals } 
+        }];
+      });
+    }
+    
+    setCustomizingItem(null);
+    setEditingCartItemId(null);
+    setStep('menu');
+  };
+
+  const addToCartQuick = (item: MenuItem) => {
+    if (item.ingredients && item.ingredients.length > 0) {
+      openCustomization(item);
+    } else {
+      setCart(prev => {
+        const existing = prev.find(c => c.menuItem.id === item.id);
+        if (existing) {
+          return prev.map(c => c.menuItem.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+        }
+        return [...prev, { menuItem: item, quantity: 1, modifications: { added: [], removed: [] } }];
+      });
+    }
   };
 
   const updateQuantity = (itemId: string, delta: number) => {
@@ -151,8 +215,23 @@ const KioskOrdering: React.FC = () => {
     );
   }
 
-  // Table Number Selection (for dine-in)
+  // Table Number Selection (for dine-in) - with manual input
   if (step === 'table') {
+    const handleTableSelect = (num: number) => {
+      setSelectedTable(num);
+      setTableNumberInput(num.toString());
+    };
+
+    const handleInputChange = (value: string) => {
+      setTableNumberInput(value);
+      const num = parseInt(value);
+      if (!isNaN(num) && num >= 1 && num <= 50) {
+        setSelectedTable(num);
+      } else {
+        setSelectedTable(null);
+      }
+    };
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-primary/20 via-background to-primary/10 flex flex-col">
         <header className="p-6 flex justify-between items-center border-b border-border">
@@ -160,19 +239,34 @@ const KioskOrdering: React.FC = () => {
             <ArrowLeft className="w-5 h-5 mr-2" />
             Înapoi
           </Button>
-          <h1 className="text-2xl font-bold">Selectează numărul de la masă</h1>
+          <h1 className="text-2xl font-bold">Introdu numărul mesei</h1>
           <LanguageSelector />
         </header>
         
         <div className="flex-1 p-8">
-          <p className="text-center text-muted-foreground mb-8">
-            Uită-te la numărul de pe suportul de pe masă și selectează-l mai jos
-          </p>
+          {/* Manual Input */}
+          <div className="max-w-md mx-auto mb-8">
+            <p className="text-center text-muted-foreground mb-4">
+              Introdu numărul de pe suportul de pe masă
+            </p>
+            <Input
+              type="number"
+              value={tableNumberInput}
+              onChange={(e) => handleInputChange(e.target.value)}
+              placeholder="Ex: 12"
+              className="text-center text-4xl h-20 font-bold"
+              min={1}
+              max={50}
+            />
+          </div>
+
+          <p className="text-center text-muted-foreground mb-4">sau selectează din listă</p>
+          
           <div className="grid grid-cols-5 md:grid-cols-10 gap-3 max-w-4xl mx-auto">
             {availableNumbers.map(num => (
               <button
                 key={num}
-                onClick={() => setSelectedTable(num)}
+                onClick={() => handleTableSelect(num)}
                 className={cn(
                   "aspect-square rounded-xl text-2xl font-bold transition-all border-2",
                   selectedTable === num
@@ -240,7 +334,7 @@ const KioskOrdering: React.FC = () => {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => addToCart(item)}
+                    onClick={() => addToCartQuick(item)}
                     className={cn(
                       "p-4 rounded-2xl border-2 text-left transition-all hover:scale-102",
                       inCart ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/50"
@@ -269,7 +363,7 @@ const KioskOrdering: React.FC = () => {
                   {suggestions.map(item => (
                     <button
                       key={item.id}
-                      onClick={() => addToCart(item)}
+                      onClick={() => addToCartQuick(item)}
                       className="flex-shrink-0 w-48 p-4 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:border-primary transition-all"
                     >
                       <p className="font-medium text-sm">{item.name}</p>
@@ -314,23 +408,46 @@ const KioskOrdering: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {cart.map(item => (
-                  <div key={item.menuItem.id} className="flex items-center gap-4 p-3 rounded-xl bg-secondary/50">
-                    <div className="flex-1">
-                      <p className="font-medium">{item.menuItem.name}</p>
-                      <p className="text-sm text-primary font-bold">{(item.menuItem.price * item.quantity).toFixed(2)} RON</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, -1)}>
-                        <Minus className="w-4 h-4" />
-                      </Button>
-                      <span className="w-8 text-center font-bold">{item.quantity}</span>
-                      <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, 1)}>
-                        <Plus className="w-4 h-4" />
-                      </Button>
-                      <Button size="icon" variant="destructive" className="h-8 w-8" onClick={() => removeFromCart(item.menuItem.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                {cart.map((item, idx) => (
+                  <div key={`${item.menuItem.id}-${idx}`} className="p-4 rounded-xl bg-secondary/50">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1">
+                        <p className="font-medium text-lg">{item.menuItem.name}</p>
+                        {/* Show modifications */}
+                        {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
+                          <div className="text-sm mt-1 space-x-2">
+                            {item.modifications.added.map(a => (
+                              <span key={a} className="text-emerald-500">+{a}</span>
+                            ))}
+                            {item.modifications.removed.map(r => (
+                              <span key={r} className="text-destructive">-{r}</span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-primary font-bold mt-1">{(item.menuItem.price * item.quantity).toFixed(2)} RON</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {item.menuItem.ingredients && item.menuItem.ingredients.length > 0 && (
+                          <Button 
+                            size="icon" 
+                            variant="outline" 
+                            className="h-8 w-8" 
+                            onClick={() => openCustomization(item.menuItem, true, item.menuItem.id)}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, -1)}>
+                          <Minus className="w-4 h-4" />
+                        </Button>
+                        <span className="w-8 text-center font-bold">{item.quantity}</span>
+                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, 1)}>
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                        <Button size="icon" variant="destructive" className="h-8 w-8" onClick={() => removeFromCart(item.menuItem.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -346,6 +463,141 @@ const KioskOrdering: React.FC = () => {
             <Button className="w-full h-14 text-lg" disabled={cart.length === 0} onClick={handleConfirmOrder}>
               Plasează comanda
               <Send className="w-5 h-5 ml-2" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Ingredient Customization Screen
+  if (step === 'customize' && customizingItem) {
+    const ingredients = customizingItem.ingredients || [];
+    
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <header className="p-6 border-b border-border flex items-center justify-between">
+          <Button variant="ghost" onClick={() => { setStep('menu'); setCustomizingItem(null); }}>
+            <X className="w-5 h-5 mr-2" />
+            Anulează
+          </Button>
+          <h1 className="text-2xl font-bold">Personalizează</h1>
+          <div className="w-24" />
+        </header>
+
+        <div className="flex-1 overflow-auto p-6">
+          <div className="max-w-2xl mx-auto">
+            {/* Product Info */}
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold mb-2">{customizingItem.name}</h2>
+              <p className="text-muted-foreground mb-2">{customizingItem.description}</p>
+              <p className="text-2xl font-bold text-primary">{customizingItem.price} RON</p>
+            </div>
+
+            {/* Ingredients List */}
+            {ingredients.length > 0 ? (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <UtensilsCrossed className="w-5 h-5" />
+                    Ingrediente ({ingredients.length})
+                  </h3>
+                  <div className="grid gap-3">
+                    {ingredients.map(ing => {
+                      const isRemoved = tempRemovals.includes(ing);
+                      const isExtra = tempAdditions.includes(ing);
+                      
+                      return (
+                        <div 
+                          key={ing}
+                          className={cn(
+                            "p-4 rounded-xl border-2 flex items-center justify-between transition-all",
+                            isRemoved && "border-destructive/50 bg-destructive/10",
+                            isExtra && "border-primary bg-primary/10",
+                            !isRemoved && !isExtra && "border-border bg-card"
+                          )}
+                        >
+                          <span className={cn(
+                            "text-lg font-medium",
+                            isRemoved && "line-through text-muted-foreground"
+                          )}>
+                            {ing}
+                          </span>
+                          <div className="flex gap-2">
+                            <Button
+                              size="lg"
+                              variant={isRemoved ? 'destructive' : 'outline'}
+                              onClick={() => {
+                                if (isRemoved) {
+                                  setTempRemovals(tempRemovals.filter(r => r !== ing));
+                                } else {
+                                  setTempRemovals([...tempRemovals, ing]);
+                                  setTempAdditions(tempAdditions.filter(a => a !== ing));
+                                }
+                              }}
+                              className="min-w-[100px]"
+                            >
+                              {isRemoved ? '✓ Fără' : 'Fără'}
+                            </Button>
+                            <Button
+                              size="lg"
+                              variant={isExtra ? 'default' : 'outline'}
+                              onClick={() => {
+                                if (isExtra) {
+                                  setTempAdditions(tempAdditions.filter(a => a !== ing));
+                                } else {
+                                  setTempAdditions([...tempAdditions, ing]);
+                                  setTempRemovals(tempRemovals.filter(r => r !== ing));
+                                }
+                              }}
+                              className="min-w-[100px]"
+                            >
+                              {isExtra ? '✓ Extra' : 'Extra'}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Modifications Summary */}
+                {(tempAdditions.length > 0 || tempRemovals.length > 0) && (
+                  <div className="p-4 rounded-xl bg-secondary/50 border border-border">
+                    <h4 className="font-semibold mb-2">Modificări selectate:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {tempAdditions.map(a => (
+                        <span key={a} className="px-3 py-1 rounded-full bg-primary/20 text-primary text-sm font-medium">
+                          + Extra {a}
+                        </span>
+                      ))}
+                      {tempRemovals.map(r => (
+                        <span key={r} className="px-3 py-1 rounded-full bg-destructive/20 text-destructive text-sm font-medium">
+                          - Fără {r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>Acest produs nu are ingrediente personalizabile</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Confirm Button */}
+        <div className="p-6 border-t border-border">
+          <div className="max-w-2xl mx-auto">
+            <Button 
+              size="lg" 
+              className="w-full h-16 text-xl"
+              onClick={confirmCustomization}
+            >
+              <Check className="w-6 h-6 mr-2" />
+              {editingCartItemId ? 'Actualizează produsul' : 'Adaugă în coș'} - {customizingItem.price} RON
             </Button>
           </div>
         </div>

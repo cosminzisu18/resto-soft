@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
-  Trash2, Printer, FileText
+  Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -39,6 +39,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
   const [tipValue, setTipValue] = useState('');
   const [cui, setCui] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'usage_card'>('cash');
+  const [usageCardCode, setUsageCardCode] = useState('');
 
   let order = getActiveOrderForTable(table.id);
   if (!order) {
@@ -454,7 +456,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
 
       {/* Payment Dialog */}
       <Dialog open={showPayment} onOpenChange={setShowPayment}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Procesare plată - Masa {table.number}</DialogTitle>
           </DialogHeader>
@@ -476,6 +478,68 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 <span>{((order?.totalAmount || 0) + calculateTip()).toFixed(2)} RON</span>
               </div>
             </div>
+
+            {/* Payment Method Selection */}
+            <div>
+              <p className="font-medium mb-3">Metodă de plată</p>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setPaymentMethod('cash')}
+                  className={cn(
+                    "p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    paymentMethod === 'cash'
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <Banknote className={cn("w-8 h-8", paymentMethod === 'cash' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-sm font-medium", paymentMethod === 'cash' && "text-primary")}>Cash</span>
+                </button>
+                <button
+                  onClick={() => setPaymentMethod('card')}
+                  className={cn(
+                    "p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    paymentMethod === 'card'
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <CardIcon className={cn("w-8 h-8", paymentMethod === 'card' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-sm font-medium", paymentMethod === 'card' && "text-primary")}>Card</span>
+                </button>
+                <button
+                  onClick={() => setPaymentMethod('usage_card')}
+                  className={cn(
+                    "p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    paymentMethod === 'usage_card'
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <Barcode className={cn("w-8 h-8", paymentMethod === 'usage_card' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-sm font-medium text-center", paymentMethod === 'usage_card' && "text-primary")}>Card Utilizare</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Usage Card Code Input */}
+            {paymentMethod === 'usage_card' && (
+              <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+                <p className="font-medium mb-2 flex items-center gap-2">
+                  <Barcode className="w-4 h-4" />
+                  Cod card de utilizare
+                </p>
+                <Input
+                  value={usageCardCode}
+                  onChange={(e) => setUsageCardCode(e.target.value)}
+                  placeholder="Scanează sau introdu codul"
+                  className="font-mono text-lg"
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  Scanează codul de bare al cardului sau introdu-l manual
+                </p>
+              </div>
+            )}
 
             {/* Tip */}
             <div>
@@ -517,8 +581,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               <Button variant="outline" className="flex-1" onClick={() => setShowPayment(false)}>
                 Anulează
               </Button>
-              <Button className="flex-1 gradient-primary" onClick={handleCompletePayment}>
-                <FileText className="w-4 h-4 mr-2" />
+              <Button 
+                className="flex-1 gradient-primary" 
+                onClick={handleCompletePayment}
+                disabled={paymentMethod === 'usage_card' && !usageCardCode}
+              >
+                {paymentMethod === 'cash' && <Banknote className="w-4 h-4 mr-2" />}
+                {paymentMethod === 'card' && <CardIcon className="w-4 h-4 mr-2" />}
+                {paymentMethod === 'usage_card' && <Barcode className="w-4 h-4 mr-2" />}
                 Finalizează
               </Button>
             </div>
