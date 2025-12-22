@@ -16,8 +16,9 @@ export interface Table {
   shape: 'round' | 'square' | 'rectangle';
   currentOrderId?: string;
   reservationId?: string;
-  currentGuests?: number; // Number of people currently at the table
-  mergedWith?: string[]; // IDs of tables merged with this one
+  currentGuests?: number;
+  mergedWith?: string[];
+  qrCode?: string;
 }
 
 export interface MenuItem {
