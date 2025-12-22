@@ -8,21 +8,24 @@ import { cn } from '@/lib/utils';
 import { 
   LogOut, Settings, UtensilsCrossed, LayoutGrid, 
   Monitor, Plus, Trash2, Edit2, Save, Users, CalendarDays,
-  Truck, BarChart3, Map, ShoppingCart, Phone, Wifi, WifiOff, Salad
+  Truck, BarChart3, Map, ShoppingCart, Phone, Wifi, WifiOff, Salad,
+  Image, Smartphone, Store, Globe, Package, GripVertical, Check, X
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients } from '@/data/mockData';
+import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import LanguageSelector from '@/components/LanguageSelector';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 interface AdminPanelProps {
   onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'extraIngredients' | 'kds' | 'reservations' | 'delivery' | 'waiters' | 'customers';
+type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'extraIngredients' | 'kioskConfig' | 'kds' | 'reservations' | 'delivery' | 'waiters' | 'customers';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const isMobile = useIsMobile();
@@ -39,6 +42,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(isMobile);
+  
+  // Extra ingredients state
+  const [localExtraIngredients, setLocalExtraIngredients] = useState<ExtraIngredient[]>(extraIngredients);
+  const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [editingIngredient, setEditingIngredient] = useState<ExtraIngredient | null>(null);
+  const [ingredientForm, setIngredientForm] = useState({ name: '', price: '', category: extraIngredientCategories[0] });
+  
+  // Kiosk config state
+  const [localKioskSteps, setLocalKioskSteps] = useState(kioskSteps);
 
   // Table form
   const [tableForm, setTableForm] = useState({
@@ -160,6 +172,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     };
   });
 
+  // Extra ingredient handlers
+  const handleAddIngredient = () => {
+    const newIngredient: ExtraIngredient = {
+      id: `ei${Date.now()}`,
+      name: ingredientForm.name,
+      price: parseFloat(ingredientForm.price),
+      category: ingredientForm.category
+    };
+    setLocalExtraIngredients([...localExtraIngredients, newIngredient]);
+    toast({ title: 'Ingredient adăugat' });
+    setShowAddIngredient(false);
+    setIngredientForm({ name: '', price: '', category: extraIngredientCategories[0] });
+  };
+
+  const handleUpdateIngredient = () => {
+    if (!editingIngredient) return;
+    setLocalExtraIngredients(localExtraIngredients.map(ing => 
+      ing.id === editingIngredient.id 
+        ? { ...ing, name: ingredientForm.name, price: parseFloat(ingredientForm.price), category: ingredientForm.category }
+        : ing
+    ));
+    toast({ title: 'Ingredient actualizat' });
+    setEditingIngredient(null);
+    setIngredientForm({ name: '', price: '', category: extraIngredientCategories[0] });
+  };
+
+  const handleDeleteIngredient = (id: string) => {
+    setLocalExtraIngredients(localExtraIngredients.filter(ing => ing.id !== id));
+    toast({ title: 'Ingredient șters' });
+  };
+
+  const startEditIngredient = (ing: ExtraIngredient) => {
+    setEditingIngredient(ing);
+    setIngredientForm({ name: ing.name, price: ing.price.toString(), category: ing.category });
+  };
+
   const navItems = [
     { id: 'dashboard' as AdminView, label: t('nav.dashboard'), icon: BarChart3 },
     { id: 'tables' as AdminView, label: t('nav.tables'), icon: LayoutGrid },
@@ -167,6 +215,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     { id: 'orders' as AdminView, label: t('nav.orders'), icon: ShoppingCart },
     { id: 'menu' as AdminView, label: t('nav.menu'), icon: UtensilsCrossed },
     { id: 'extraIngredients' as AdminView, label: 'Ingrediente Extra', icon: Salad },
+    { id: 'kioskConfig' as AdminView, label: 'Kiosk/App Config', icon: Smartphone },
     { id: 'kds' as AdminView, label: t('nav.kds'), icon: Monitor },
     { id: 'reservations' as AdminView, label: t('nav.reservations'), icon: CalendarDays },
     { id: 'delivery' as AdminView, label: t('nav.delivery'), icon: Truck },
@@ -455,6 +504,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {categoryItems.map(item => (
                       <div key={item.id} className="p-4 rounded-xl bg-card border border-border">
+                        {item.image && (
+                          <div className="mb-3 aspect-video rounded-lg overflow-hidden bg-secondary">
+                            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                          </div>
+                        )}
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
                             <h4 className="font-semibold">{item.name}</h4>
@@ -462,7 +516,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                           </div>
                           <span className="font-bold text-primary ml-2">{item.price} RON</span>
                         </div>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground mt-3">
+                        
+                        {/* Availability badges */}
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {item.availability?.restaurant && <Badge variant="outline" className="text-xs"><Store className="w-3 h-3 mr-1" />Restaurant</Badge>}
+                          {item.availability?.kiosk && <Badge variant="outline" className="text-xs"><Package className="w-3 h-3 mr-1" />Kiosk</Badge>}
+                          {item.availability?.app && <Badge variant="outline" className="text-xs"><Smartphone className="w-3 h-3 mr-1" />App</Badge>}
+                          {item.availability?.delivery && <Badge variant="outline" className="text-xs"><Truck className="w-3 h-3 mr-1" />Delivery</Badge>}
+                        </div>
+                        
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
                           <span>KDS: {kdsStations.find(k => k.id === item.kdsStation)?.name}</span>
                           <span>{item.prepTime} min</span>
                         </div>
@@ -581,49 +644,251 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           <div className="p-4 md:p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold">Ingrediente Extra</h2>
-              <Button>
+              <Button onClick={() => setShowAddIngredient(true)}>
                 <Plus className="w-4 h-4 mr-2" />
-                Adauga ingredient
+                Adaugă ingredient
               </Button>
             </div>
             
             <p className="text-muted-foreground mb-6">
-              Ingredientele extra pot fi adaugate de clienti la produse contra cost.
+              Ingredientele extra pot fi adăugate de clienți la produse contra cost. Acestea apar în kiosk, aplicație și comenzi telefonice.
             </p>
 
             {/* Group by category */}
-            {Object.entries(
-              extraIngredients.reduce((acc, ing) => {
-                if (!acc[ing.category]) acc[ing.category] = [];
-                acc[ing.category].push(ing);
-                return acc;
-              }, {} as Record<string, typeof extraIngredients>)
-            ).map(([category, items]) => (
-              <div key={category} className="mb-6">
-                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <Salad className="w-5 h-5 text-primary" />
-                  {category}
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {items.map(ing => (
-                    <div key={ing.id} className="p-4 rounded-xl bg-card border border-border flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{ing.name}</p>
-                        <p className="text-primary font-bold">+{ing.price} RON</p>
+            {extraIngredientCategories.map(category => {
+              const items = localExtraIngredients.filter(ing => ing.category === category);
+              if (items.length === 0) return null;
+              
+              return (
+                <div key={category} className="mb-6">
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <Salad className="w-5 h-5 text-primary" />
+                    {category}
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {items.map(ing => (
+                      <div key={ing.id} className="p-4 rounded-xl bg-card border border-border flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{ing.name}</p>
+                          <p className="text-primary font-bold">+{ing.price} RON</p>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => startEditIngredient(ing)}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteIngredient(ing.id)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon">
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {localExtraIngredients.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <Salad className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Nu există ingrediente extra definite.</p>
+                <Button className="mt-4" onClick={() => setShowAddIngredient(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Adaugă primul ingredient
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Kiosk/App Configuration */}
+        {activeView === 'kioskConfig' && (
+          <div className="p-4 md:p-6">
+            <h2 className="text-2xl font-bold mb-6">Configurare Kiosk & Aplicație Client</h2>
+            
+            <Tabs defaultValue="menu">
+              <TabsList className="mb-6">
+                <TabsTrigger value="menu">Disponibilitate Meniu</TabsTrigger>
+                <TabsTrigger value="steps">Pași Kiosk</TabsTrigger>
+                <TabsTrigger value="appearance">Aspect</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="menu">
+                <p className="text-muted-foreground mb-6">
+                  Setează care preparate sunt disponibile pe fiecare canal de vânzare.
+                </p>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left p-3 font-semibold">Preparat</th>
+                        <th className="text-center p-3 font-semibold">
+                          <div className="flex items-center justify-center gap-1">
+                            <Store className="w-4 h-4" />
+                            Restaurant
+                          </div>
+                        </th>
+                        <th className="text-center p-3 font-semibold">
+                          <div className="flex items-center justify-center gap-1">
+                            <Package className="w-4 h-4" />
+                            Kiosk
+                          </div>
+                        </th>
+                        <th className="text-center p-3 font-semibold">
+                          <div className="flex items-center justify-center gap-1">
+                            <Smartphone className="w-4 h-4" />
+                            App
+                          </div>
+                        </th>
+                        <th className="text-center p-3 font-semibold">
+                          <div className="flex items-center justify-center gap-1">
+                            <Truck className="w-4 h-4" />
+                            Delivery
+                          </div>
+                        </th>
+                        <th className="text-center p-3 font-semibold">
+                          <Image className="w-4 h-4 mx-auto" />
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {menu.map(item => (
+                        <tr key={item.id} className="border-b border-border hover:bg-secondary/30">
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              {item.image && (
+                                <img src={item.image} alt={item.name} className="w-10 h-10 rounded object-cover" />
+                              )}
+                              <div>
+                                <p className="font-medium">{item.name}</p>
+                                <p className="text-xs text-muted-foreground">{item.category}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex justify-center">
+                              <Switch checked={item.availability?.restaurant ?? true} />
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex justify-center">
+                              <Switch checked={item.availability?.kiosk ?? true} />
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex justify-center">
+                              <Switch checked={item.availability?.app ?? true} />
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex justify-center">
+                              <Switch checked={item.availability?.delivery ?? true} />
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            {item.image ? (
+                              <Check className="w-4 h-4 text-green-500 mx-auto" />
+                            ) : (
+                              <Button variant="ghost" size="sm" className="text-muted-foreground">
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="steps">
+                <p className="text-muted-foreground mb-6">
+                  Configurează pașii care apar în fluxul de comandă kiosk/aplicație.
+                </p>
+                
+                <div className="space-y-3 max-w-xl">
+                  {localKioskSteps.sort((a, b) => a.order - b.order).map((step, index) => (
+                    <div key={step.id} className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border">
+                      <GripVertical className="w-5 h-5 text-muted-foreground cursor-move" />
+                      <div className="flex-1">
+                        <p className="font-medium">{step.name}</p>
+                        <p className="text-xs text-muted-foreground">Pas {step.order}</p>
                       </div>
+                      <Switch 
+                        checked={step.enabled}
+                        onCheckedChange={(checked) => {
+                          setLocalKioskSteps(localKioskSteps.map(s => 
+                            s.id === step.id ? { ...s, enabled: checked } : s
+                          ));
+                        }}
+                      />
                     </div>
                   ))}
                 </div>
-              </div>
-            ))}
+              </TabsContent>
+              
+              <TabsContent value="appearance">
+                <p className="text-muted-foreground mb-6">
+                  Personalizează aspectul kiosk-ului și aplicației client.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Logo Restaurant</Label>
+                      <div className="mt-2 border-2 border-dashed border-border rounded-xl p-8 text-center">
+                        <Image className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">Încarcă logo (PNG, JPG)</p>
+                        <Button variant="outline" size="sm" className="mt-2">Selectează fișier</Button>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label>Imagine de fundal</Label>
+                      <div className="mt-2 border-2 border-dashed border-border rounded-xl p-8 text-center">
+                        <Image className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">Încarcă imagine fundal</p>
+                        <Button variant="outline" size="sm" className="mt-2">Selectează fișier</Button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Culoare principală</Label>
+                      <div className="mt-2 flex gap-2">
+                        {['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6'].map(color => (
+                          <button 
+                            key={color}
+                            className="w-10 h-10 rounded-lg border-2 border-border hover:scale-110 transition-transform"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <Label>Mesaj de bun venit</Label>
+                      <Input className="mt-2" defaultValue="Bine ați venit!" />
+                    </div>
+                    
+                    <div>
+                      <Label>Limbă implicită</Label>
+                      <Select defaultValue="ro">
+                        <SelectTrigger className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ro">Română</SelectItem>
+                          <SelectItem value="en">English</SelectItem>
+                          <SelectItem value="de">Deutsch</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
         )}
 
@@ -837,6 +1102,42 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <Button className="w-full" onClick={editingItem ? handleUpdateMenuItem : handleAddMenuItem}>
               <Save className="w-4 h-4 mr-2" />
               {editingItem ? t('app.save') : t('menu.add')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Ingredient Dialog */}
+      <Dialog open={showAddIngredient || !!editingIngredient} onOpenChange={(open) => {
+        if (!open) { setShowAddIngredient(false); setEditingIngredient(null); setIngredientForm({ name: '', price: '', category: extraIngredientCategories[0] }); }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingIngredient ? 'Editează ingredient' : 'Adaugă ingredient extra'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Nume</label>
+              <Input value={ingredientForm.name} onChange={e => setIngredientForm({...ingredientForm, name: e.target.value})} placeholder="ex: Mozzarella extra" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Preț (RON)</label>
+                <Input type="number" value={ingredientForm.price} onChange={e => setIngredientForm({...ingredientForm, price: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Categorie</label>
+                <Select value={ingredientForm.category} onValueChange={v => setIngredientForm({...ingredientForm, category: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {extraIngredientCategories.map(cat => (<SelectItem key={cat} value={cat}>{cat}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <Button className="w-full" onClick={editingIngredient ? handleUpdateIngredient : handleAddIngredient}>
+              <Save className="w-4 h-4 mr-2" />
+              {editingIngredient ? 'Salvează' : 'Adaugă'}
             </Button>
           </div>
         </DialogContent>

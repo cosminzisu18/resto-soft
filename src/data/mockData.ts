@@ -31,6 +31,12 @@ export interface MenuItem {
   prepTime: number;
   ingredients: string[];
   image?: string;
+  availability?: {
+    restaurant: boolean;
+    kiosk: boolean;
+    app: boolean;
+    delivery: boolean;
+  };
   platformPricing?: {
     glovo?: { name: string; price: number; enabled: boolean };
     wolt?: { name: string; price: number; enabled: boolean };
@@ -38,6 +44,25 @@ export interface MenuItem {
     own?: { name: string; price: number; enabled: boolean };
   };
 }
+
+export interface ExtraIngredient {
+  id: string;
+  name: string;
+  price: number;
+  category: string;
+}
+
+export const extraIngredientCategories = ['Brânzeturi', 'Carne', 'Legume', 'Sosuri', 'Altele'];
+
+export const kioskSteps = [
+  { id: 'welcome', name: 'Bun venit', enabled: true, order: 1 },
+  { id: 'categories', name: 'Categorii', enabled: true, order: 2 },
+  { id: 'menu', name: 'Meniu', enabled: true, order: 3 },
+  { id: 'customize', name: 'Personalizare', enabled: true, order: 4 },
+  { id: 'cart', name: 'Coș', enabled: true, order: 5 },
+  { id: 'payment', name: 'Plată', enabled: true, order: 6 },
+  { id: 'confirmation', name: 'Confirmare', enabled: true, order: 7 },
+];
 
 export interface OrderItem {
   id: string;
@@ -249,13 +274,15 @@ export const mockCustomers: Customer[] = [
   },
 ];
 
-// Menu Items with platform pricing
+// Menu Items with platform pricing and availability
 export const menuItems: MenuItem[] = [
   // Supe
   { 
     id: 'm1', name: 'Ciorbă de burtă', description: 'Ciorbă tradițională cu smântână și ardei iute', 
     price: 22, category: 'Supe', kdsStation: 'soups', prepTime: 5, 
     ingredients: ['Burtă', 'Smântână', 'Usturoi', 'Oțet', 'Ardei iute'],
+    image: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?w=400',
+    availability: { restaurant: true, kiosk: true, app: true, delivery: true },
     platformPricing: {
       glovo: { name: 'Ciorbă de Burtă Premium', price: 28, enabled: true },
       wolt: { name: 'Ciorbă de Burtă', price: 27, enabled: true },
@@ -281,6 +308,8 @@ export const menuItems: MenuItem[] = [
     id: 'm4', name: 'Pizza Margherita', description: 'Sos de roșii, mozzarella, busuioc', 
     price: 32, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, 
     ingredients: ['Sos roșii', 'Mozzarella', 'Busuioc', 'Ulei de măsline'],
+    image: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=400',
+    availability: { restaurant: true, kiosk: true, app: true, delivery: true },
     platformPricing: {
       glovo: { name: 'Pizza Margherita Classica', price: 42, enabled: true },
       wolt: { name: 'Margherita', price: 40, enabled: true },
@@ -288,22 +317,24 @@ export const menuItems: MenuItem[] = [
       own: { name: 'Pizza Margherita', price: 36, enabled: true },
     }
   },
-  { id: 'm5', name: 'Pizza Quattro Formaggi', description: 'Patru tipuri de brânză', price: 42, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Mozzarella', 'Gorgonzola', 'Parmezan', 'Brie'] },
-  { id: 'm6', name: 'Pizza Diavola', description: 'Salam picant și ardei', price: 38, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Sos roșii', 'Mozzarella', 'Salam picant', 'Ardei iute'] },
-  { id: 'm7', name: 'Pizza Prosciutto', description: 'Șuncă de Parma și rucola', price: 45, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Mozzarella', 'Prosciutto', 'Rucola', 'Parmezan'] },
+  { id: 'm5', name: 'Pizza Quattro Formaggi', description: 'Patru tipuri de brânză', price: 42, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Mozzarella', 'Gorgonzola', 'Parmezan', 'Brie'], image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm6', name: 'Pizza Diavola', description: 'Salam picant și ardei', price: 38, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Sos roșii', 'Mozzarella', 'Salam picant', 'Ardei iute'], image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?w=400', availability: { restaurant: true, kiosk: true, app: false, delivery: true } },
+  { id: 'm7', name: 'Pizza Prosciutto', description: 'Șuncă de Parma și rucola', price: 45, category: 'Pizza', kdsStation: 'pizza', prepTime: 15, ingredients: ['Mozzarella', 'Prosciutto', 'Rucola', 'Parmezan'], image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400', availability: { restaurant: true, kiosk: false, app: true, delivery: true } },
 
   // Grill & Mâncare Gătită
-  { id: 'm8', name: 'Mici (10 buc)', description: 'Mititei tradiționali la grătar', price: 35, category: 'Grill', kdsStation: 'grill', prepTime: 12, ingredients: ['Carne de vită', 'Carne de porc', 'Condimente', 'Muștar'] },
-  { id: 'm9', name: 'Cotlet de porc', description: 'Cotlet la grătar cu garnitură', price: 42, category: 'Grill', kdsStation: 'grill', prepTime: 18, ingredients: ['Cotlet porc', 'Rozmarin', 'Usturoi', 'Cartofi'] },
-  { id: 'm10', name: 'Ceafă de porc', description: 'Ceafă la grătar marinată', price: 45, category: 'Grill', kdsStation: 'grill', prepTime: 20, ingredients: ['Ceafă porc', 'Condimente', 'Ceapă', 'Mujdei'] },
-  { id: 'm11', name: 'Sarmale (5 buc)', description: 'Sarmale în foi de varză cu smântână', price: 38, category: 'Tradițional', kdsStation: 'grill', prepTime: 8, ingredients: ['Carne tocată', 'Orez', 'Varză', 'Smântână', 'Mămăligă'] },
-  { id: 'm12', name: 'Tocăniță de pui', description: 'Cu mămăliguță și smântână', price: 35, category: 'Tradițional', kdsStation: 'grill', prepTime: 10, ingredients: ['Pui', 'Ceapă', 'Boia', 'Mămăligă', 'Smântână'] },
+  { id: 'm8', name: 'Mici (10 buc)', description: 'Mititei tradiționali la grătar', price: 35, category: 'Grill', kdsStation: 'grill', prepTime: 12, ingredients: ['Carne de vită', 'Carne de porc', 'Condimente', 'Muștar'], image: 'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: false } },
+  { id: 'm9', name: 'Cotlet de porc', description: 'Cotlet la grătar cu garnitură', price: 42, category: 'Grill', kdsStation: 'grill', prepTime: 18, ingredients: ['Cotlet porc', 'Rozmarin', 'Usturoi', 'Cartofi'], image: 'https://images.unsplash.com/photo-1432139555190-58524dae6a55?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm10', name: 'Ceafă de porc', description: 'Ceafă la grătar marinată', price: 45, category: 'Grill', kdsStation: 'grill', prepTime: 20, ingredients: ['Ceafă porc', 'Condimente', 'Ceapă', 'Mujdei'], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm11', name: 'Sarmale (5 buc)', description: 'Sarmale în foi de varză cu smântână', price: 38, category: 'Tradițional', kdsStation: 'grill', prepTime: 8, ingredients: ['Carne tocată', 'Orez', 'Varză', 'Smântână', 'Mămăligă'], image: 'https://images.unsplash.com/photo-1534939561126-855b8675edd7?w=400', availability: { restaurant: true, kiosk: false, app: true, delivery: true } },
+  { id: 'm12', name: 'Tocăniță de pui', description: 'Cu mămăliguță și smântână', price: 35, category: 'Tradițional', kdsStation: 'grill', prepTime: 10, ingredients: ['Pui', 'Ceapă', 'Boia', 'Mămăligă', 'Smântână'], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
 
   // Giros & Doner
   { 
     id: 'm13', name: 'Kebab pui', description: 'Kebab cu carne de pui și salată', 
     price: 28, category: 'Giros', kdsStation: 'giros', prepTime: 8, 
     ingredients: ['Pui', 'Salată', 'Roșii', 'Ceapă', 'Sos usturoi'],
+    image: 'https://images.unsplash.com/photo-1561651823-34feb02250e4?w=400',
+    availability: { restaurant: true, kiosk: true, app: true, delivery: true },
     platformPricing: {
       glovo: { name: 'Kebab de Pui XXL', price: 36, enabled: true },
       wolt: { name: 'Kebab Pui', price: 34, enabled: true },
@@ -311,18 +342,18 @@ export const menuItems: MenuItem[] = [
       own: { name: 'Kebab pui', price: 30, enabled: true },
     }
   },
-  { id: 'm14', name: 'Kebab vită', description: 'Kebab cu carne de vită și legume', price: 32, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Vită', 'Salată', 'Roșii', 'Castraveți', 'Sos'] },
-  { id: 'm15', name: 'Doner la farfurie', description: 'Doner cu cartofi și salată', price: 38, category: 'Giros', kdsStation: 'giros', prepTime: 10, ingredients: ['Carne doner', 'Cartofi prăjiți', 'Salată', 'Sos'] },
-  { id: 'm16', name: 'Shaorma mare', description: 'Shaorma cu de toate', price: 30, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Carne pui', 'Cartofi', 'Varză', 'Morcov', 'Sos'] },
+  { id: 'm14', name: 'Kebab vită', description: 'Kebab cu carne de vită și legume', price: 32, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Vită', 'Salată', 'Roșii', 'Castraveți', 'Sos'], image: 'https://images.unsplash.com/photo-1529006557810-274b9b2fc783?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm15', name: 'Doner la farfurie', description: 'Doner cu cartofi și salată', price: 38, category: 'Giros', kdsStation: 'giros', prepTime: 10, ingredients: ['Carne doner', 'Cartofi prăjiți', 'Salată', 'Sos'], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm16', name: 'Shaorma mare', description: 'Shaorma cu de toate', price: 30, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Carne pui', 'Cartofi', 'Varză', 'Morcov', 'Sos'], image: 'https://images.unsplash.com/photo-1561758033-d89a9ad46330?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
 
   // Garnituri
-  { id: 'm17', name: 'Cartofi prăjiți', description: 'Porție cartofi aurii', price: 12, category: 'Garnituri', kdsStation: 'grill', prepTime: 8, ingredients: ['Cartofi', 'Sare'] },
-  { id: 'm18', name: 'Salată mixtă', description: 'Salată de sezon', price: 14, category: 'Garnituri', kdsStation: 'grill', prepTime: 3, ingredients: ['Roșii', 'Castraveți', 'Ceapă', 'Măsline'] },
+  { id: 'm17', name: 'Cartofi prăjiți', description: 'Porție cartofi aurii', price: 12, category: 'Garnituri', kdsStation: 'grill', prepTime: 8, ingredients: ['Cartofi', 'Sare'], image: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm18', name: 'Salată mixtă', description: 'Salată de sezon', price: 14, category: 'Garnituri', kdsStation: 'grill', prepTime: 3, ingredients: ['Roșii', 'Castraveți', 'Ceapă', 'Măsline'], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
 
   // Băuturi
-  { id: 'm19', name: 'Cola 330ml', description: '', price: 8, category: 'Băuturi', kdsStation: 'grill', prepTime: 0, ingredients: [] },
-  { id: 'm20', name: 'Apă plată 500ml', description: '', price: 6, category: 'Băuturi', kdsStation: 'grill', prepTime: 0, ingredients: [] },
-  { id: 'm21', name: 'Bere Ursus 500ml', description: '', price: 12, category: 'Băuturi', kdsStation: 'grill', prepTime: 0, ingredients: [] },
+  { id: 'm19', name: 'Cola 330ml', description: '', price: 8, category: 'Băuturi', kdsStation: 'grill', prepTime: 0, ingredients: [], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm20', name: 'Apă plată 500ml', description: '', price: 6, category: 'Băuturi', kdsStation: 'grill', prepTime: 0, ingredients: [], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm21', name: 'Bere Ursus 500ml', description: '', price: 12, category: 'Băuturi', kdsStation: 'grill', prepTime: 0, ingredients: [], availability: { restaurant: true, kiosk: false, app: false, delivery: false } },
 ];
 
 // Tables
@@ -342,7 +373,7 @@ export const initialTables: Table[] = [
 export const menuCategories = ['Supe', 'Pizza', 'Grill', 'Tradițional', 'Giros', 'Garnituri', 'Băuturi'];
 
 // Extra ingredients that can be added (defined by admin)
-export const extraIngredients: { id: string; name: string; price: number; category: string }[] = [
+export const extraIngredients: ExtraIngredient[] = [
   { id: 'ei1', name: 'Mozzarella extra', price: 5, category: 'Brânzeturi' },
   { id: 'ei2', name: 'Parmezan', price: 4, category: 'Brânzeturi' },
   { id: 'ei3', name: 'Gorgonzola', price: 6, category: 'Brânzeturi' },
