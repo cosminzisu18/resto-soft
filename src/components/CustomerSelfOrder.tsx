@@ -314,27 +314,39 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                     <div 
                       key={item.id}
                       className={cn(
-                        "p-4 rounded-xl border transition-all",
+                        "rounded-xl border transition-all overflow-hidden",
                         totalQty > 0 ? "border-primary bg-primary/5" : "border-border"
                       )}
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex-1">
-                          <h3 className="font-semibold">{item.name}</h3>
-                          <p className="text-sm text-muted-foreground">{item.description}</p>
-                          {item.ingredients && item.ingredients.length > 0 && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Ingrediente: {item.ingredients.join(', ')}
-                            </p>
-                          )}
+                      {/* Product Image */}
+                      {item.image && (
+                        <div className="aspect-video w-full bg-secondary">
+                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
                         </div>
-                        <span className="text-lg font-bold text-primary ml-4">{item.price} RON</span>
-                      </div>
+                      )}
                       
-                      <Button size="sm" className="mt-3" onClick={() => addToCartQuick(item)}>
-                        <Plus className="w-4 h-4 mr-1" />
-                        {item.ingredients?.length ? 'Personalizează' : 'Adaugă'}
-                      </Button>
+                      <div className="p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <h3 className="font-semibold">{item.name}</h3>
+                            <p className="text-sm text-muted-foreground">{item.description}</p>
+                          </div>
+                          <span className="text-lg font-bold text-primary ml-4">{item.price} RON</span>
+                        </div>
+                        
+                        {/* Ingredients / Allergens */}
+                        {item.ingredients && item.ingredients.length > 0 && (
+                          <div className="mb-3 p-2 rounded-lg bg-secondary/50">
+                            <p className="text-xs font-medium text-foreground">Conține:</p>
+                            <p className="text-xs text-muted-foreground">{item.ingredients.join(', ')}</p>
+                          </div>
+                        )}
+                        
+                        <Button size="sm" className="w-full" onClick={() => addToCartQuick(item)}>
+                          <Plus className="w-4 h-4 mr-1" />
+                          {item.ingredients?.length ? 'Personalizează' : 'Adaugă în coș'}
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
