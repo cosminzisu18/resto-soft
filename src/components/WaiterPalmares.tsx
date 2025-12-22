@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useRestaurant } from '@/context/RestaurantContext';
 import TableMap from './TableMap';
 import OrderPanel from './OrderPanel';
 import DeliveryOrders from './DeliveryOrders';
 import NotificationCenter from './NotificationCenter';
 import { Table, Order, OrderItem } from '@/data/mockData';
-import { LogOut, User, Bell, Clock, Check, ChefHat, Truck, Phone, MapPin, Edit2 } from 'lucide-react';
+import { LogOut, User, Bell, Clock, Check, ChefHat, Truck, Phone, MapPin, Edit2, CalendarDays, Plus, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 
 interface WaiterPalmaresProps {
@@ -16,10 +18,20 @@ interface WaiterPalmaresProps {
 }
 
 const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
-  const { currentUser, orders, notifications, markNotificationRead, clearNotifications, tables, updateOrder } = useRestaurant();
+  const { currentUser, orders, notifications, markNotificationRead, clearNotifications, tables, updateOrder, createReservation } = useRestaurant();
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
-  const [view, setView] = useState<'map' | 'orders' | 'delivery'>('map');
+  const [view, setView] = useState<'map' | 'orders' | 'delivery' | 'reservations'>('map');
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
+  const [showAddReservation, setShowAddReservation] = useState(false);
+  const [reservationForm, setReservationForm] = useState({
+    customerName: '',
+    customerPhone: '',
+    date: new Date().toISOString().split('T')[0],
+    time: '19:00',
+    partySize: '2',
+    tableIds: [] as string[],
+    notes: '',
+  });
   const { toast } = useToast();
 
   const myOrders = orders.filter(o => o.waiterId === currentUser?.id && o.status === 'active');
@@ -129,6 +141,16 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
           <Truck className="w-3 h-3 md:w-4 md:h-4" />
           <span className="hidden sm:inline">Livrări</span>
         </button>
+        <button
+          onClick={() => setView('reservations')}
+          className={cn(
+            "flex-1 py-2 md:py-3 text-xs md:text-sm font-medium transition-colors flex items-center justify-center gap-1 md:gap-2",
+            view === 'reservations' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+          )}
+        >
+          <CalendarDays className="w-3 h-3 md:w-4 md:h-4" />
+          <span className="hidden sm:inline">Rezervări</span>
+        </button>
       </div>
 
       {/* Main Content */}
@@ -139,6 +161,69 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
           <DeliveryOrders />
         ) : view === 'map' ? (
           <TableMap onTableSelect={setSelectedTable} />
+        ) : view === 'reservations' ? (
+          /* Reservations View */
+          <div className="h-full overflow-auto p-3 md:p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Rezervări</h2>
+              <Button size="sm" onClick={() => setShowAddReservation(true)}>
+                <Plus className="w-4 h-4 mr-1" />
+                Rezervă masă
+              </Button>
+            </div>
+            
+            {/* Available tables for reservation */}
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold mb-3 text-muted-foreground">Mese libere</h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                {tables.filter(t => t.status === 'free').map(table => (
+                  <button
+                    key={table.id}
+                    onClick={() => {
+                      setReservationForm(prev => ({
+                        ...prev,
+                        tableIds: prev.tableIds.includes(table.id)
+                          ? prev.tableIds.filter(id => id !== table.id)
+                          : [...prev.tableIds, table.id]
+                      }));
+                      setShowAddReservation(true);
+                    }}
+                    className={cn(
+                      "p-3 rounded-lg border-2 text-center transition-all",
+                      reservationForm.tableIds.includes(table.id)
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <span className="font-bold text-lg">{table.number}</span>
+                    <p className="text-xs text-muted-foreground">{table.seats} loc.</p>
+                  </button>
+                ))}
+              </div>
+              {tables.filter(t => t.status === 'free').length === 0 && (
+                <p className="text-muted-foreground text-sm">Nu există mese libere momentan</p>
+              )}
+            </div>
+
+            {/* Reserved tables */}
+            <div>
+              <h3 className="text-sm font-semibold mb-3 text-muted-foreground">Mese rezervate</h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                {tables.filter(t => t.status === 'reserved').map(table => (
+                  <div
+                    key={table.id}
+                    className="p-3 rounded-lg border-2 border-amber-500 bg-amber-500/10 text-center"
+                  >
+                    <span className="font-bold text-lg">{table.number}</span>
+                    <p className="text-xs text-amber-600">Rezervat</p>
+                  </div>
+                ))}
+              </div>
+              {tables.filter(t => t.status === 'reserved').length === 0 && (
+                <p className="text-muted-foreground text-sm">Nu există rezervări active</p>
+              )}
+            </div>
+          </div>
         ) : (
           /* Orders List */
           <div className="h-full overflow-auto p-3 md:p-4">
@@ -292,6 +377,87 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
                 Modifică comanda
               </Button>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Reservation Dialog */}
+      <Dialog open={showAddReservation} onOpenChange={setShowAddReservation}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rezervă masă</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium">Nume client</label>
+                <Input value={reservationForm.customerName} onChange={e => setReservationForm({...reservationForm, customerName: e.target.value})} placeholder="Ion Popescu" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Telefon</label>
+                <Input value={reservationForm.customerPhone} onChange={e => setReservationForm({...reservationForm, customerPhone: e.target.value})} placeholder="0740..." />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-sm font-medium">Data</label>
+                <Input type="date" value={reservationForm.date} onChange={e => setReservationForm({...reservationForm, date: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Ora</label>
+                <Input type="time" value={reservationForm.time} onChange={e => setReservationForm({...reservationForm, time: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Persoane</label>
+                <Input type="number" value={reservationForm.partySize} onChange={e => setReservationForm({...reservationForm, partySize: e.target.value})} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Mese selectate</label>
+              <div className="flex flex-wrap gap-2">
+                {reservationForm.tableIds.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Selectează mese de pe harta de mai sus</p>
+                ) : (
+                  reservationForm.tableIds.map(id => {
+                    const table = tables.find(t => t.id === id);
+                    return (
+                      <span key={id} className="px-3 py-1 rounded-full bg-primary text-primary-foreground text-sm flex items-center gap-1">
+                        Masa {table?.number}
+                        <button onClick={() => setReservationForm({...reservationForm, tableIds: reservationForm.tableIds.filter(t => t !== id)})}>
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Note</label>
+              <Input value={reservationForm.notes} onChange={e => setReservationForm({...reservationForm, notes: e.target.value})} placeholder="Ex: aniversare, fereastră..." />
+            </div>
+            <Button 
+              className="w-full" 
+              disabled={!reservationForm.customerName || !reservationForm.customerPhone || reservationForm.tableIds.length === 0}
+              onClick={() => {
+                createReservation({
+                  customerName: reservationForm.customerName,
+                  customerPhone: reservationForm.customerPhone,
+                  date: new Date(reservationForm.date),
+                  time: reservationForm.time,
+                  partySize: parseInt(reservationForm.partySize),
+                  tableIds: reservationForm.tableIds,
+                  status: 'confirmed',
+                  notes: reservationForm.notes,
+                  source: 'walk-in',
+                });
+                toast({ title: 'Rezervare creată cu succes' });
+                setShowAddReservation(false);
+                setReservationForm({ customerName: '', customerPhone: '', date: new Date().toISOString().split('T')[0], time: '19:00', partySize: '2', tableIds: [], notes: '' });
+              }}
+            >
+              Creează rezervarea
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

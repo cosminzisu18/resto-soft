@@ -44,8 +44,11 @@ interface RestaurantContextType {
   markNotificationRead: (id: string) => void;
   clearNotifications: () => void;
   
-  // KDS
+// KDS
   kdsStations: KDSStation[];
+  addKdsStation: (station: Omit<KDSStation, 'id'>) => void;
+  updateKdsStation: (station: KDSStation) => void;
+  deleteKdsStation: (stationId: string) => void;
   getOrdersForStation: (stationId: string) => { order: Order; items: OrderItem[] }[];
   
   // Delivery
@@ -62,6 +65,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [orders, setOrders] = useState<Order[]>(sampleOrders);
   const [reservations, setReservations] = useState<Reservation[]>(sampleReservations);
   const [notifications, setNotifications] = useState<Notification[]>(sampleNotifications);
+  const [kdsStationsList, setKdsStationsList] = useState<KDSStation[]>(kdsStations);
 
   // Auth
   const login = useCallback((userId: string, pin: string): boolean => {
@@ -305,7 +309,20 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setNotifications([]);
   }, []);
 
-  // KDS
+// KDS
+  const addKdsStation = useCallback((station: Omit<KDSStation, 'id'>) => {
+    const newStation: KDSStation = { ...station, id: `kds${Date.now()}` };
+    setKdsStationsList(prev => [...prev, newStation]);
+  }, []);
+
+  const updateKdsStation = useCallback((station: KDSStation) => {
+    setKdsStationsList(prev => prev.map(s => s.id === station.id ? station : s));
+  }, []);
+
+  const deleteKdsStation = useCallback((stationId: string) => {
+    setKdsStationsList(prev => prev.filter(s => s.id !== stationId));
+  }, []);
+
   const getOrdersForStation = useCallback((stationId: string): { order: Order; items: OrderItem[] }[] => {
     const result: { order: Order; items: OrderItem[] }[] = [];
     
@@ -377,7 +394,10 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       addNotification,
       markNotificationRead,
       clearNotifications,
-      kdsStations,
+      kdsStations: kdsStationsList,
+      addKdsStation,
+      updateKdsStation,
+      deleteKdsStation,
       getOrdersForStation,
       getDeliveryOrders,
       getPhoneOrders,
