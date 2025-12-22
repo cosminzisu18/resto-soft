@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRestaurant } from '@/context/RestaurantContext';
@@ -7,11 +7,12 @@ import OrderPanel from './OrderPanel';
 import DeliveryOrders from './DeliveryOrders';
 import NotificationCenter from './NotificationCenter';
 import { Table, Order, OrderItem } from '@/data/mockData';
-import { LogOut, User, Bell, Clock, Check, ChefHat, Truck, Phone, MapPin, Edit2, CalendarDays, Plus, X } from 'lucide-react';
+import { LogOut, User, Bell, Clock, Check, ChefHat, Truck, Phone, MapPin, Edit2, CalendarDays, Plus, X, Volume2, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import useNotificationSound from '@/hooks/useNotificationSound';
 
 interface WaiterPalmaresProps {
   onLogout: () => void;
@@ -23,6 +24,7 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
   const [view, setView] = useState<'map' | 'orders' | 'delivery' | 'reservations'>('map');
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [showAddReservation, setShowAddReservation] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [reservationForm, setReservationForm] = useState({
     customerName: '',
     customerPhone: '',
@@ -33,11 +35,53 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
     notes: '',
   });
   const { toast } = useToast();
+  const { playOrderReady, playNewOrder, setEnabled, initAudioContext } = useNotificationSound();
+  
+  // Track previous notifications count to detect new ones
+  const prevNotificationsRef = useRef<number>(0);
+  const prevReadyItemsRef = useRef<number>(0);
 
   const myOrders = orders.filter(o => o.waiterId === currentUser?.id && o.status === 'active');
   const readyItems = myOrders.flatMap(o => 
     o.items.filter(i => i.status === 'ready').map(i => ({ order: o, item: i }))
   );
+
+  // Play sound when new ready items appear
+  useEffect(() => {
+    if (readyItems.length > prevReadyItemsRef.current && soundEnabled) {
+      playOrderReady();
+      toast({
+        title: '🔔 Preparat gata!',
+        description: `${readyItems.length - prevReadyItemsRef.current} preparat(e) gata de servit`,
+      });
+    }
+    prevReadyItemsRef.current = readyItems.length;
+  }, [readyItems.length, soundEnabled, playOrderReady, toast]);
+
+  // Play sound for new notifications
+  useEffect(() => {
+    const unreadCount = notifications.filter(n => !n.read).length;
+    if (unreadCount > prevNotificationsRef.current && soundEnabled) {
+      const latestNotification = notifications[0];
+      if (latestNotification && !latestNotification.read) {
+        if (latestNotification.type === 'order_ready') {
+          playOrderReady();
+        } else if (latestNotification.type === 'new_order') {
+          playNewOrder();
+        }
+      }
+    }
+    prevNotificationsRef.current = unreadCount;
+  }, [notifications, soundEnabled, playOrderReady, playNewOrder]);
+
+  // Toggle sound and initialize audio context
+  const toggleSound = () => {
+    if (!soundEnabled) {
+      initAudioContext(); // Initialize on first enable (requires user interaction)
+    }
+    setSoundEnabled(!soundEnabled);
+    setEnabled(!soundEnabled);
+  };
 
   const getStatusIcon = (status: OrderItem['status']) => {
     switch (status) {
@@ -90,6 +134,16 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
               <span className="absolute -top-1 -right-1 w-2 h-2 md:w-3 md:h-3 bg-success rounded-full animate-pulse" />
             </Button>
           )}
+          {/* Sound toggle button */}
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={toggleSound}
+            className={cn("h-8 w-8 md:h-10 md:w-10", soundEnabled ? "text-primary" : "text-muted-foreground")}
+            title={soundEnabled ? "Dezactivează sunetele" : "Activează sunetele"}
+          >
+            {soundEnabled ? <Volume2 className="w-4 h-4 md:w-5 md:h-5" /> : <VolumeX className="w-4 h-4 md:w-5 md:h-5" />}
+          </Button>
           <NotificationCenter
             notifications={notifications}
             onMarkRead={markNotificationRead}
