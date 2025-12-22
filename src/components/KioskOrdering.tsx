@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { menuItems, menuCategories, MenuItem, Table, extraIngredients } from '@/data/mockData';
+import { menuItems, menuCategories, MenuItem, Table, extraIngredients as extraIngredientsData } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, Send, ArrowLeft, ArrowRight,
@@ -481,6 +481,13 @@ const KioskOrdering: React.FC = () => {
   if (step === 'customize' && customizingItem) {
     const ingredients = customizingItem.ingredients || [];
     
+    // Group extra ingredients by category
+    const extraIngredientsByCategory = extraIngredientsData.reduce((acc, ing) => {
+      if (!acc[ing.category]) acc[ing.category] = [];
+      acc[ing.category].push(ing);
+      return acc;
+    }, {} as Record<string, typeof extraIngredientsData>);
+    
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <header className="p-6 border-b border-border flex items-center justify-between">
@@ -502,94 +509,144 @@ const KioskOrdering: React.FC = () => {
             </div>
 
             {/* Ingredients List */}
-            {ingredients.length > 0 ? (
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                    <UtensilsCrossed className="w-5 h-5" />
-                    Ingrediente ({ingredients.length})
-                  </h3>
-                  <div className="grid gap-3">
-                    {ingredients.map(ing => {
-                      const isRemoved = tempRemovals.includes(ing);
-                      const isExtra = tempAdditions.includes(ing);
-                      
+            {ingredients.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <UtensilsCrossed className="w-5 h-5" />
+                  Ingrediente ({ingredients.length})
+                </h3>
+                <div className="grid gap-3">
+                  {ingredients.map(ing => {
+                    const isRemoved = tempRemovals.includes(ing);
+                    const isExtra = tempAdditions.includes(ing);
+                    
+                    return (
+                      <div 
+                        key={ing}
+                        className={cn(
+                          "p-4 rounded-xl border-2 flex items-center justify-between transition-all",
+                          isRemoved && "border-destructive/50 bg-destructive/10",
+                          isExtra && "border-primary bg-primary/10",
+                          !isRemoved && !isExtra && "border-border bg-card"
+                        )}
+                      >
+                        <span className={cn(
+                          "text-lg font-medium",
+                          isRemoved && "line-through text-muted-foreground"
+                        )}>
+                          {ing}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            size="lg"
+                            variant={isRemoved ? 'destructive' : 'outline'}
+                            onClick={() => {
+                              if (isRemoved) {
+                                setTempRemovals(tempRemovals.filter(r => r !== ing));
+                              } else {
+                                setTempRemovals([...tempRemovals, ing]);
+                                setTempAdditions(tempAdditions.filter(a => a !== ing));
+                              }
+                            }}
+                            className="min-w-[100px]"
+                          >
+                            {isRemoved ? '✓ Fără' : 'Fără'}
+                          </Button>
+                          <Button
+                            size="lg"
+                            variant={isExtra ? 'default' : 'outline'}
+                            onClick={() => {
+                              if (isExtra) {
+                                setTempAdditions(tempAdditions.filter(a => a !== ing));
+                              } else {
+                                setTempAdditions([...tempAdditions, ing]);
+                                setTempRemovals(tempRemovals.filter(r => r !== ing));
+                              }
+                            }}
+                            className="min-w-[100px]"
+                          >
+                            {isExtra ? '✓ Extra' : 'Extra'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Extra Ingredients */}
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                <Plus className="w-5 h-5" />
+                Adaugă ingrediente extra
+              </h3>
+              {Object.entries(extraIngredientsByCategory).map(([category, items]) => (
+                <div key={category} className="mb-4">
+                  <p className="text-sm text-muted-foreground mb-2">{category}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {items.map(ing => {
+                      const isSelected = tempExtraIngredients.includes(ing.id);
                       return (
-                        <div 
-                          key={ing}
+                        <button
+                          key={ing.id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setTempExtraIngredients(tempExtraIngredients.filter(id => id !== ing.id));
+                            } else {
+                              setTempExtraIngredients([...tempExtraIngredients, ing.id]);
+                            }
+                          }}
                           className={cn(
-                            "p-4 rounded-xl border-2 flex items-center justify-between transition-all",
-                            isRemoved && "border-destructive/50 bg-destructive/10",
-                            isExtra && "border-primary bg-primary/10",
-                            !isRemoved && !isExtra && "border-border bg-card"
+                            "px-4 py-3 rounded-xl border-2 text-sm transition-all",
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-card hover:border-primary/50"
                           )}
                         >
-                          <span className={cn(
-                            "text-lg font-medium",
-                            isRemoved && "line-through text-muted-foreground"
-                          )}>
-                            {ing}
-                          </span>
-                          <div className="flex gap-2">
-                            <Button
-                              size="lg"
-                              variant={isRemoved ? 'destructive' : 'outline'}
-                              onClick={() => {
-                                if (isRemoved) {
-                                  setTempRemovals(tempRemovals.filter(r => r !== ing));
-                                } else {
-                                  setTempRemovals([...tempRemovals, ing]);
-                                  setTempAdditions(tempAdditions.filter(a => a !== ing));
-                                }
-                              }}
-                              className="min-w-[100px]"
-                            >
-                              {isRemoved ? '✓ Fără' : 'Fără'}
-                            </Button>
-                            <Button
-                              size="lg"
-                              variant={isExtra ? 'default' : 'outline'}
-                              onClick={() => {
-                                if (isExtra) {
-                                  setTempAdditions(tempAdditions.filter(a => a !== ing));
-                                } else {
-                                  setTempAdditions([...tempAdditions, ing]);
-                                  setTempRemovals(tempRemovals.filter(r => r !== ing));
-                                }
-                              }}
-                              className="min-w-[100px]"
-                            >
-                              {isExtra ? '✓ Extra' : 'Extra'}
-                            </Button>
-                          </div>
-                        </div>
+                          {ing.name} <span className="text-primary font-bold">+{ing.price} RON</span>
+                        </button>
                       );
                     })}
                   </div>
                 </div>
+              ))}
+            </div>
 
-                {/* Modifications Summary */}
-                {(tempAdditions.length > 0 || tempRemovals.length > 0) && (
-                  <div className="p-4 rounded-xl bg-secondary/50 border border-border">
-                    <h4 className="font-semibold mb-2">Modificări selectate:</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {tempAdditions.map(a => (
-                        <span key={a} className="px-3 py-1 rounded-full bg-primary/20 text-primary text-sm font-medium">
-                          + Extra {a}
-                        </span>
-                      ))}
-                      {tempRemovals.map(r => (
-                        <span key={r} className="px-3 py-1 rounded-full bg-destructive/20 text-destructive text-sm font-medium">
-                          - Fără {r}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+            {/* Modifications Summary */}
+            {(tempAdditions.length > 0 || tempRemovals.length > 0 || tempExtraIngredients.length > 0) && (
+              <div className="p-4 rounded-xl bg-secondary/50 border border-border">
+                <h4 className="font-semibold mb-2">Modificări selectate:</h4>
+                <div className="flex flex-wrap gap-2">
+                  {tempAdditions.map(a => (
+                    <span key={a} className="px-3 py-1 rounded-full bg-primary/20 text-primary text-sm font-medium">
+                      + Extra {a}
+                    </span>
+                  ))}
+                  {tempRemovals.map(r => (
+                    <span key={r} className="px-3 py-1 rounded-full bg-destructive/20 text-destructive text-sm font-medium">
+                      - Fără {r}
+                    </span>
+                  ))}
+                  {tempExtraIngredients.map(id => {
+                    const ing = extraIngredientsData.find(e => e.id === id);
+                    return ing ? (
+                      <span key={id} className="px-3 py-1 rounded-full bg-primary/20 text-primary text-sm font-medium">
+                        + {ing.name} (+{ing.price} RON)
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+                {tempExtraIngredients.length > 0 && (
+                  <p className="text-sm mt-2">
+                    Cost extra: <span className="font-bold text-primary">
+                      +{tempExtraIngredients.reduce((sum, id) => {
+                        const ing = extraIngredientsData.find(e => e.id === id);
+                        return sum + (ing?.price || 0);
+                      }, 0)} RON
+                    </span>
+                  </p>
                 )}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>Acest produs nu are ingrediente personalizabile</p>
               </div>
             )}
           </div>
