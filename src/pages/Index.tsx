@@ -24,6 +24,7 @@ import KioskModule from '@/components/modules/KioskModule';
 import HRModule from '@/components/modules/HRModule';
 import CustomersModule from '@/components/modules/CustomersModule';
 import SuppliersModule from '@/components/modules/SuppliersModule';
+import AIModule from '@/components/modules/AIModule';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -237,6 +238,8 @@ const RestaurantApp: React.FC = () => {
         return <CustomersModule />;
       case 'suppliers':
         return <SuppliersModule />;
+      case 'ai':
+        return <AIModule />;
       default:
         const config = moduleConfig[activeModule];
         return (
