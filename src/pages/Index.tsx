@@ -54,10 +54,11 @@ import {
   PanelLeftClose,
   PanelRightClose,
   Calendar,
-  Wifi
+  Wifi,
+  Eye
 } from 'lucide-react';
 
-type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard';
+type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard' | 'order-monitor';
 
 const moduleConfig: Record<ModuleType, { title: string; description: string; icon: any; features: string[] }> = {
   dashboard: { title: '', description: '', icon: null, features: [] },
@@ -305,6 +306,15 @@ const RestaurantApp: React.FC = () => {
           >
             <MonitorIcon className="w-4 h-4" />
             Dashboard Nou
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setView('order-monitor')}
+            className="flex items-center gap-2 border-primary/50 text-primary"
+          >
+            <Eye className="w-4 h-4" />
+            Monitorizare Comenzi
           </Button>
         </div>
       </div>
