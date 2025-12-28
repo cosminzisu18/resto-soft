@@ -118,7 +118,7 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
   // Generate unique device ID
   const [deviceId] = useState(() => `device-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
   
-  const [step, setStep] = useState<SelfOrderStep>(initialTableId ? 'menu' : 'idle');
+  const [step, setStep] = useState<SelfOrderStep>('mode');
   const [orderMode, setOrderMode] = useState<OrderMode | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
@@ -810,7 +810,12 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
       <div className="min-h-screen flex flex-col bg-slate-100">
         {/* Header */}
         <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between sticky top-0 z-20">
-          <Button variant="ghost" size="sm" onClick={() => setStep(orderMode === 'delivery' ? 'delivery-form' : 'scan')}>
+          <Button variant="ghost" size="sm" onClick={() => {
+            // Reset order and go back to mode selection
+            setOrderMode(null);
+            setScannedTableId(null);
+            setStep('mode');
+          }}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="text-center">
