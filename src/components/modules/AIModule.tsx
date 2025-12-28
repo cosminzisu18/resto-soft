@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
 import {
   Brain,
   TrendingUp,
@@ -27,7 +29,12 @@ import {
   Settings,
   Eye,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  FileDown,
+  Bell,
+  BellRing,
+  X,
+  Volume2
 } from 'lucide-react';
 import {
   LineChart,
@@ -244,17 +251,33 @@ const aiInsights = [
 export const AIModule: React.FC = () => {
   const [insights, setInsights] = useState(aiInsights);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [notifications, setNotifications] = useState([
+    { id: 1, type: 'critical', title: 'Pierderi Critice Detectate', message: 'Legume proaspete - 15% rata pierdere', time: '2 min', read: false },
+    { id: 2, type: 'warning', title: 'Anomalie Inventar', message: 'Diferență 12 unități băuturi alcoolice', time: '15 min', read: false },
+    { id: 3, type: 'info', title: 'Sugestie Nouă', message: 'Oportunitate creștere venituri +18%', time: '1 oră', read: true },
+  ]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [animatingInsights, setAnimatingInsights] = useState<Record<number, 'applying' | 'ignoring' | null>>({});
 
   const handleApplyInsight = (id: number) => {
-    setInsights(prev => prev.map(insight => 
-      insight.id === id ? { ...insight, status: 'applied' } : insight
-    ));
+    setAnimatingInsights(prev => ({ ...prev, [id]: 'applying' }));
+    setTimeout(() => {
+      setInsights(prev => prev.map(insight => 
+        insight.id === id ? { ...insight, status: 'applied' } : insight
+      ));
+      setAnimatingInsights(prev => ({ ...prev, [id]: null }));
+      toast({ title: "Sugestie aplicată", description: "Modificările au fost salvate cu succes." });
+    }, 500);
   };
 
   const handleIgnoreInsight = (id: number) => {
-    setInsights(prev => prev.map(insight => 
-      insight.id === id ? { ...insight, status: 'ignored' } : insight
-    ));
+    setAnimatingInsights(prev => ({ ...prev, [id]: 'ignoring' }));
+    setTimeout(() => {
+      setInsights(prev => prev.map(insight => 
+        insight.id === id ? { ...insight, status: 'ignored' } : insight
+      ));
+      setAnimatingInsights(prev => ({ ...prev, [id]: null }));
+    }, 500);
   };
 
   const handleRefresh = () => {
@@ -262,6 +285,23 @@ export const AIModule: React.FC = () => {
     setTimeout(() => setIsRefreshing(false), 2000);
   };
 
+  const handleExportPDF = () => {
+    toast({ title: "Export PDF", description: "Raportul AI se generează..." });
+    setTimeout(() => {
+      toast({ title: "Export Complet", description: "Raportul a fost descărcat cu succes." });
+    }, 2000);
+  };
+
+  const markNotificationRead = (id: number) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const clearNotifications = () => {
+    setNotifications([]);
+    setShowNotifications(false);
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
   const pendingInsights = insights.filter(i => i.status === 'pending');
   const appliedInsights = insights.filter(i => i.status === 'applied');
 
@@ -284,6 +324,93 @@ export const AIModule: React.FC = () => {
               <Sparkles className="h-4 w-4 text-primary" />
               <span>{pendingInsights.length} sugestii noi</span>
             </Badge>
+            
+            {/* Notifications Bell */}
+            <div className="relative">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative"
+              >
+                {unreadCount > 0 ? (
+                  <BellRing className="h-4 w-4 text-destructive animate-pulse" />
+                ) : (
+                  <Bell className="h-4 w-4" />
+                )}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </Button>
+              
+              {/* Notifications Dropdown */}
+              {showNotifications && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-xl shadow-xl z-50 animate-scale-in">
+                  <div className="p-3 border-b border-border flex items-center justify-between">
+                    <span className="font-semibold text-foreground">Alerte AI</span>
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={clearNotifications}>
+                        Șterge tot
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowNotifications(false)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="max-h-80 overflow-auto">
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-muted-foreground">
+                        <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p>Nicio alertă nouă</p>
+                      </div>
+                    ) : (
+                      notifications.map((notif) => (
+                        <div 
+                          key={notif.id}
+                          className={cn(
+                            "p-3 border-b border-border last:border-0 cursor-pointer transition-colors hover:bg-muted/50",
+                            !notif.read && "bg-primary/5"
+                          )}
+                          onClick={() => markNotificationRead(notif.id)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className={cn(
+                              "p-2 rounded-lg",
+                              notif.type === 'critical' && "bg-destructive/20",
+                              notif.type === 'warning' && "bg-warning/20",
+                              notif.type === 'info' && "bg-info/20"
+                            )}>
+                              {notif.type === 'critical' ? (
+                                <AlertTriangle className="h-4 w-4 text-destructive" />
+                              ) : notif.type === 'warning' ? (
+                                <AlertTriangle className="h-4 w-4 text-warning" />
+                              ) : (
+                                <Lightbulb className="h-4 w-4 text-info" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-foreground text-sm">{notif.title}</span>
+                                {!notif.read && <span className="h-2 w-2 bg-primary rounded-full" />}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate">{notif.message}</p>
+                              <span className="text-xs text-muted-foreground">{notif.time}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <Button variant="outline" size="sm" onClick={handleExportPDF}>
+              <FileDown className="h-4 w-4 mr-2" />
+              Export PDF
+            </Button>
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Actualizează
@@ -746,16 +873,18 @@ export const AIModule: React.FC = () => {
                 <CardContent className="space-y-4">
                   {insights.map((insight) => {
                     const Icon = insight.icon;
+                    const isAnimating = animatingInsights[insight.id];
                     return (
                       <div
                         key={insight.id}
-                        className={`p-5 rounded-xl border transition-all ${
-                          insight.status === 'applied' 
-                            ? 'border-success/30 bg-success/5 opacity-75' 
-                            : insight.status === 'ignored'
-                            ? 'border-border bg-muted/30 opacity-50'
-                            : 'border-border bg-card hover:border-primary/30 hover:shadow-md'
-                        }`}
+                        className={cn(
+                          "p-5 rounded-xl border transition-all duration-500",
+                          insight.status === 'applied' && 'border-success/30 bg-success/5 opacity-75',
+                          insight.status === 'ignored' && 'border-border bg-muted/30 opacity-50',
+                          insight.status === 'pending' && 'border-border bg-card hover:border-primary/30 hover:shadow-md',
+                          isAnimating === 'applying' && 'scale-[0.98] border-success bg-success/10 animate-pulse',
+                          isAnimating === 'ignoring' && 'scale-[0.98] opacity-50 translate-x-2'
+                        )}
                       >
                         <div className="flex items-start gap-4">
                           <div className={`p-3 rounded-lg ${
