@@ -478,14 +478,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     
     return (
       <div key={item.id} className="flex flex-col">
-        {/* ÎNCEPE ACUM Alert Banner */}
-        {shouldAlertStart && (
-          <div className="mx-3 mt-2 p-3 rounded-lg bg-orange-500 text-white font-bold animate-pulse flex items-center justify-center gap-2">
-            <AlertTriangle className="w-5 h-5 animate-bounce" />
-            <span className="text-lg">ÎNCEPE ACUM!</span>
-            <AlertTriangle className="w-5 h-5 animate-bounce" />
-          </div>
-        )}
+        {/* Removed alert banner - using button animation instead */}
         
         {/* Sync timing indicator for pending items */}
         {isPending && syncInfo.syncActive && !syncInfo.shouldStartNow && syncInfo.startTime && (
@@ -693,29 +686,30 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 </Badge>
               </div>
               
-              {/* Timer */}
+            </CardHeader>
+
+            <CardContent className="p-0">
+              {/* Timer moved inside content */}
               <div className={cn(
-                "flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg text-sm font-bold",
+                "flex items-center gap-2 mx-3 mt-2 px-3 py-1.5 rounded-lg text-sm font-bold",
                 totalTime.status === 'urgent' && "bg-red-100 text-red-700",
                 totalTime.status === 'warning' && "bg-yellow-100 text-yellow-700",
                 totalTime.status === 'normal' && "bg-slate-100 text-slate-700"
               )}>
                 <Timer className="w-4 h-4" />
-                <span>Timp total: {totalTime.display}</span>
+                <span>{totalTime.display}</span>
               </div>
               
               {/* Progress Bar */}
-              <div className="mt-2">
+              <div className="mx-3 mt-2">
                 <div className="flex justify-between text-xs text-slate-500 mb-1">
                   <span>Progres</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} className="h-2" />
               </div>
-            </CardHeader>
-
-            <CardContent className="p-0">
-              <ScrollArea className="max-h-[300px]">
+              
+              <ScrollArea className="max-h-[300px] mt-2">
                 <div className="divide-y divide-slate-100">
                   {items.map(item => renderItemRow(order, item, items))}
                 </div>
@@ -725,17 +719,17 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 <div className="p-2 border-t border-slate-200">
                   <Button 
                     className={cn(
-                      "w-full font-bold transition-transform hover:scale-[1.02]",
+                      "w-full font-bold transition-all duration-1000",
                       hasItemToStartNow 
-                        ? "bg-orange-500 hover:bg-orange-600 text-white animate-pulse" 
-                        : "bg-green-600 hover:bg-green-700 text-white"
+                        ? "bg-orange-500 hover:bg-orange-600 text-white animate-[pulse_2s_ease-in-out_infinite]" 
+                        : "bg-green-600 hover:bg-green-700 text-white hover:scale-[1.02]"
                     )}
                     size="sm"
                     onClick={() => handleStartAllItems(order.id, items)}
                   >
                     {hasItemToStartNow ? (
                       <>
-                        <AlertTriangle className="w-4 h-4 mr-2 animate-bounce" />
+                        <AlertTriangle className="w-4 h-4 mr-2" />
                         ÎNCEPE ACUM!
                       </>
                     ) : (
@@ -821,15 +815,16 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 <Button 
                   size="sm" 
                   className={cn(
+                    "transition-all duration-1000",
                     hasItemToStartNow 
-                      ? "bg-orange-500 hover:bg-orange-600 animate-pulse" 
+                      ? "bg-orange-500 hover:bg-orange-600 animate-[pulse_2s_ease-in-out_infinite]" 
                       : "bg-green-600 hover:bg-green-700"
                   )} 
                   onClick={() => handleStartAllItems(order.id, items)}
                 >
                   {hasItemToStartNow ? (
                     <>
-                      <AlertTriangle className="w-4 h-4 mr-1 animate-bounce" /> ÎNCEPE ACUM!
+                      <AlertTriangle className="w-4 h-4 mr-1" /> ÎNCEPE ACUM!
                     </>
                   ) : (
                     <>
