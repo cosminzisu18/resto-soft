@@ -23,7 +23,11 @@ import {
   ChevronRight,
   Edit,
   Trash2,
-  X
+  X,
+  CreditCard,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Wallet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,8 +41,40 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+// Chart colors
+const CHART_COLORS = ['hsl(217, 91%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)', 'hsl(0, 84%, 60%)', 'hsl(199, 89%, 48%)'];
+
+// Customer spending chart data
+const customerSpendingData = [
+  { month: 'Ian', value: 4200 },
+  { month: 'Feb', value: 3800 },
+  { month: 'Mar', value: 5100 },
+  { month: 'Apr', value: 4600 },
+  { month: 'Mai', value: 5800 },
+  { month: 'Iun', value: 6200 },
+];
+
+// Customer acquisition data
+const customerAcquisitionData = [
+  { month: 'Ian', newCustomers: 45, returning: 120 },
+  { month: 'Feb', newCustomers: 52, returning: 135 },
+  { month: 'Mar', newCustomers: 38, returning: 142 },
+  { month: 'Apr', newCustomers: 65, returning: 158 },
+  { month: 'Mai', newCustomers: 48, returning: 165 },
+  { month: 'Iun', newCustomers: 72, returning: 180 },
+];
+
+// Loyalty level distribution
+const loyaltyDistribution = [
+  { name: 'Bronze', value: 450, color: '#CD7F32' },
+  { name: 'Silver', value: 280, color: '#C0C0C0' },
+  { name: 'Gold', value: 150, color: '#FFD700' },
+  { name: 'Platinum', value: 45, color: '#E5E4E2' },
+];
 
 // Mock data for customers
 const mockCustomers = [
@@ -64,7 +100,24 @@ const mockCustomers = [
       { id: 'O3', date: '2024-01-02', total: 156, items: 5, status: 'Livrat' },
       { id: 'O4', date: '2023-12-25', total: 210, items: 6, status: 'Livrat' },
       { id: 'O5', date: '2023-12-18', total: 78, items: 2, status: 'Livrat' },
-    ]
+    ],
+    // Credit card data
+    creditCard: {
+      balance: 450,
+      cardNumber: '**** **** **** 4582',
+      transactions: [
+        { id: 'T1', date: '2024-01-15', type: 'topup', amount: 200, description: 'Încărcare card' },
+        { id: 'T2', date: '2024-01-15', type: 'payment', amount: -125, description: 'Comanda #O1' },
+        { id: 'T3', date: '2024-01-10', type: 'topup', amount: 500, description: 'Încărcare card' },
+        { id: 'T4', date: '2024-01-08', type: 'payment', amount: -89, description: 'Comanda #O2' },
+        { id: 'T5', date: '2024-01-05', type: 'bonus', amount: 50, description: 'Bonus fidelitate' },
+      ],
+      purchases: [
+        { id: 'P1', date: '2024-01-15', items: ['Pizza Margherita', 'Tiramisu'], total: 125 },
+        { id: 'P2', date: '2024-01-08', items: ['Paste Carbonara', 'Vin roșu'], total: 89 },
+        { id: 'P3', date: '2024-01-02', items: ['Burger Special', 'Cartofi', 'Cola'], total: 65 },
+      ]
+    }
   },
   {
     id: '2',
@@ -86,7 +139,20 @@ const mockCustomers = [
       { id: 'O1', date: '2024-01-14', total: 180, items: 3, status: 'Livrat' },
       { id: 'O2', date: '2024-01-12', total: 95, items: 2, status: 'Livrat' },
       { id: 'O3', date: '2024-01-10', total: 220, items: 4, status: 'Livrat' },
-    ]
+    ],
+    creditCard: {
+      balance: 1250,
+      cardNumber: '**** **** **** 7891',
+      transactions: [
+        { id: 'T1', date: '2024-01-14', type: 'payment', amount: -180, description: 'Comanda #O1' },
+        { id: 'T2', date: '2024-01-12', type: 'topup', amount: 1000, description: 'Încărcare card' },
+        { id: 'T3', date: '2024-01-12', type: 'payment', amount: -95, description: 'Comanda #O2' },
+      ],
+      purchases: [
+        { id: 'P1', date: '2024-01-14', items: ['Sushi Set Deluxe', 'Sake'], total: 180 },
+        { id: 'P2', date: '2024-01-12', items: ['Ramen Tonkotsu', 'Gyoza'], total: 95 },
+      ]
+    }
   },
   {
     id: '3',
@@ -107,7 +173,18 @@ const mockCustomers = [
     orders: [
       { id: 'O1', date: '2024-01-10', total: 65, items: 2, status: 'Livrat' },
       { id: 'O2', date: '2023-12-15', total: 85, items: 3, status: 'Livrat' },
-    ]
+    ],
+    creditCard: {
+      balance: 75,
+      cardNumber: '**** **** **** 3456',
+      transactions: [
+        { id: 'T1', date: '2024-01-10', type: 'payment', amount: -65, description: 'Comanda #O1' },
+        { id: 'T2', date: '2024-01-05', type: 'topup', amount: 100, description: 'Încărcare card' },
+      ],
+      purchases: [
+        { id: 'P1', date: '2024-01-10', items: ['Burger Classic', 'Cartofi Prăjiți'], total: 65 },
+      ]
+    }
   },
   {
     id: '4',
@@ -128,7 +205,20 @@ const mockCustomers = [
     orders: [
       { id: 'O1', date: '2024-01-13', total: 145, items: 4, status: 'Livrat' },
       { id: 'O2', date: '2024-01-06', total: 120, items: 3, status: 'Livrat' },
-    ]
+    ],
+    creditCard: {
+      balance: 320,
+      cardNumber: '**** **** **** 9012',
+      transactions: [
+        { id: 'T1', date: '2024-01-13', type: 'payment', amount: -145, description: 'Comanda #O1' },
+        { id: 'T2', date: '2024-01-10', type: 'topup', amount: 300, description: 'Încărcare card' },
+        { id: 'T3', date: '2024-01-06', type: 'payment', amount: -120, description: 'Comanda #O2' },
+      ],
+      purchases: [
+        { id: 'P1', date: '2024-01-13', items: ['Salată Caesar', 'Paste Carbonara', 'Desert', 'Vin'], total: 145 },
+        { id: 'P2', date: '2024-01-06', items: ['Pizza Quattro Formaggi', 'Tiramisu'], total: 120 },
+      ]
+    }
   }
 ];
 
@@ -443,6 +533,97 @@ const CustomersModule: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Credit Card Section */}
+        {selectedCustomer.creditCard && (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <CreditCard className="h-5 w-5" />
+                Card de Credit Restaurant
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-3 gap-6">
+                {/* Card Balance */}
+                <div className="bg-gradient-to-br from-primary to-primary/80 rounded-xl p-6 text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+                  <div className="relative">
+                    <Wallet className="h-8 w-8 mb-4 opacity-80" />
+                    <div className="text-sm opacity-80">Sold Disponibil</div>
+                    <div className="text-4xl font-bold mb-2">{selectedCustomer.creditCard.balance} Lei</div>
+                    <div className="text-sm opacity-80">{selectedCustomer.creditCard.cardNumber}</div>
+                  </div>
+                  <Button variant="secondary" size="sm" className="mt-4">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Încarcă Card
+                  </Button>
+                </div>
+
+                {/* Transactions */}
+                <div>
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Mișcări Recente
+                  </h4>
+                  <ScrollArea className="h-[200px]">
+                    <div className="space-y-2 pr-2">
+                      {selectedCustomer.creditCard.transactions.map(tx => (
+                        <div key={tx.id} className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
+                          <div className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center",
+                            tx.type === 'topup' && "bg-success/10 text-success",
+                            tx.type === 'payment' && "bg-destructive/10 text-destructive",
+                            tx.type === 'bonus' && "bg-warning/10 text-warning"
+                          )}>
+                            {tx.type === 'topup' && <ArrowDownLeft className="h-4 w-4" />}
+                            {tx.type === 'payment' && <ArrowUpRight className="h-4 w-4" />}
+                            {tx.type === 'bonus' && <Gift className="h-4 w-4" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{tx.description}</div>
+                            <div className="text-xs text-muted-foreground">{tx.date}</div>
+                          </div>
+                          <div className={cn(
+                            "font-semibold",
+                            tx.amount > 0 ? "text-success" : "text-destructive"
+                          )}>
+                            {tx.amount > 0 ? '+' : ''}{tx.amount} Lei
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                {/* Purchases */}
+                <div>
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <ShoppingBag className="h-4 w-4" />
+                    Cumpărături pe Card
+                  </h4>
+                  <ScrollArea className="h-[200px]">
+                    <div className="space-y-2 pr-2">
+                      {selectedCustomer.creditCard.purchases.map(purchase => (
+                        <div key={purchase.id} className="p-3 rounded-lg border bg-card">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-xs text-muted-foreground">{purchase.date}</span>
+                            <span className="font-semibold text-primary">{purchase.total} Lei</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {purchase.items.map((item, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">{item}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   };

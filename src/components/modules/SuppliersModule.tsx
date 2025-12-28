@@ -42,6 +42,25 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+// B2B Revenue chart data
+const b2bRevenueData = [
+  { month: 'Ian', revenue: 45000, orders: 32 },
+  { month: 'Feb', revenue: 52000, orders: 38 },
+  { month: 'Mar', revenue: 48000, orders: 35 },
+  { month: 'Apr', revenue: 61000, orders: 42 },
+  { month: 'Mai', revenue: 55000, orders: 40 },
+  { month: 'Iun', revenue: 68000, orders: 48 },
+];
+
+// Top clients data
+const topClientsData = [
+  { name: 'Trattoria', value: 78500 },
+  { name: 'Piazzetta', value: 45600 },
+  { name: 'Bistro', value: 32400 },
+  { name: 'Cafe Vienna', value: 8900 },
+];
 
 // Mock data for supplier portal
 const mockSupplierStats = {
@@ -309,6 +328,55 @@ const SuppliersModule: React.FC = () => {
                 <div className="text-2xl font-bold">{mockSupplierStats.avgOrderValue}</div>
                 <div className="text-sm text-muted-foreground">Valoare Medie</div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Venituri B2B</CardTitle>
+            <CardDescription>Evoluție lunară</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={b2bRevenueData}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" className="text-xs" />
+                  <YAxis className="text-xs" />
+                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
+                  <Area type="monotone" dataKey="revenue" stroke="hsl(142, 76%, 36%)" fillOpacity={1} fill="url(#colorRevenue)" name="Venituri (Lei)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Top Clienți</CardTitle>
+            <CardDescription>După valoare comenzi</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topClientsData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis type="number" className="text-xs" />
+                  <YAxis dataKey="name" type="category" className="text-xs" width={80} />
+                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
+                  <Bar dataKey="value" fill="hsl(217, 91%, 60%)" radius={[0, 4, 4, 0]} name="Lei" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
