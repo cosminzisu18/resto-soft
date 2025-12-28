@@ -161,6 +161,42 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     return 'normal';
   };
 
+  // Calculate sync timing - when to start cooking based on longest prep time in order
+  const getSyncStartTime = (item: OrderItem, order: Order): { 
+    shouldStartNow: boolean; 
+    minutesUntilStart: number; 
+    syncActive: boolean;
+    startTime: Date | null;
+  } => {
+    // Get all items from the full order across all stations
+    const fullOrder = orders.find(o => o.id === order.id);
+    if (!fullOrder || !fullOrder.syncTiming) {
+      return { shouldStartNow: true, minutesUntilStart: 0, syncActive: false, startTime: null };
+    }
+
+    // Find max prep time across ALL items in order (all stations)
+    const maxPrepTime = Math.max(...fullOrder.items.map(i => i.menuItem.prepTime));
+    const itemPrepTime = item.menuItem.prepTime;
+    
+    // Calculate delay for this item to finish at the same time as longest item
+    const delayMinutes = maxPrepTime - itemPrepTime;
+    
+    if (delayMinutes <= 0) {
+      // This is the longest prep item, start immediately
+      return { shouldStartNow: true, minutesUntilStart: 0, syncActive: true, startTime: null };
+    }
+
+    // Calculate when this item should start
+    const orderCreatedAt = new Date(fullOrder.createdAt);
+    const startTime = new Date(orderCreatedAt.getTime() + delayMinutes * 60000);
+    const minutesUntilStart = (startTime.getTime() - currentTime.getTime()) / 60000;
+    
+    // Should start if less than 1 minute until start time
+    const shouldStartNow = minutesUntilStart <= 1;
+
+    return { shouldStartNow, minutesUntilStart, syncActive: true, startTime };
+  };
+
   // Calculate order progress
   const getOrderProgress = (items: OrderItem[]): number => {
     const completed = items.filter(i => i.status === 'ready' || i.status === 'served').length;
@@ -436,16 +472,42 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     const isCompleted = isItemCompleted(item);
     const isActive = !!activeItem;
     const hasModifications = item.modifications.added.length > 0 || item.modifications.removed.length > 0;
+    const syncInfo = getSyncStartTime(item, order);
+    const isPending = item.status === 'pending';
+    const shouldAlertStart = isPending && syncInfo.syncActive && syncInfo.shouldStartNow;
     
     return (
       <div key={item.id} className="flex flex-col">
+        {/* ÎNCEPE ACUM Alert Banner */}
+        {shouldAlertStart && (
+          <div className="mx-3 mt-2 p-3 rounded-lg bg-orange-500 text-white font-bold animate-pulse flex items-center justify-center gap-2">
+            <AlertTriangle className="w-5 h-5 animate-bounce" />
+            <span className="text-lg">ÎNCEPE ACUM!</span>
+            <AlertTriangle className="w-5 h-5 animate-bounce" />
+          </div>
+        )}
+        
+        {/* Sync timing indicator for pending items */}
+        {isPending && syncInfo.syncActive && !syncInfo.shouldStartNow && syncInfo.startTime && (
+          <div className="mx-3 mt-2 p-2 rounded-lg bg-blue-100 border border-blue-300 text-blue-700 text-sm flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            <span>
+              Sincronizat - Începe la: {syncInfo.startTime.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+              <span className="font-bold ml-2">
+                (în {Math.ceil(syncInfo.minutesUntilStart)} min)
+              </span>
+            </span>
+          </div>
+        )}
+        
         <div
           onClick={() => !isCompleted && handleItemTap(order.id, item.id)}
           className={cn(
             "flex items-center justify-between px-3 py-2 cursor-pointer transition-all duration-200",
             isCompleted && "bg-slate-100 opacity-60",
             isActive && !isCompleted && "bg-green-50 border-l-4 border-green-500",
-            !isActive && !isCompleted && "hover:bg-slate-50"
+            !isActive && !isCompleted && "hover:bg-slate-50",
+            shouldAlertStart && "bg-orange-100 border-l-4 border-orange-500"
           )}
         >
           {/* Product Image */}
@@ -592,6 +654,15 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         const config = platformConfig[order.source] || platformConfig.restaurant;
         const totalTime = getTotalOrderTime(items);
         const hasPendingItems = items.some(i => i.status === 'pending');
+        const fullOrder = orders.find(o => o.id === order.id);
+        const isSyncOrder = fullOrder?.syncTiming;
+        
+        // Check if any pending item should start now (for alert)
+        const hasItemToStartNow = items.some(item => {
+          if (item.status !== 'pending') return false;
+          const syncInfo = getSyncStartTime(item, order);
+          return syncInfo.syncActive && syncInfo.shouldStartNow;
+        });
         
         return (
           <Card 
@@ -599,7 +670,8 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             className={cn(
               "bg-white text-slate-900 border-0 shadow-lg overflow-hidden transition-all duration-300 animate-fade-in",
               status === 'urgent' && "ring-2 ring-red-500 animate-pulse",
-              status === 'delayed' && "ring-2 ring-yellow-500"
+              status === 'delayed' && "ring-2 ring-yellow-500",
+              hasItemToStartNow && "ring-2 ring-orange-500"
             )}
           >
             <CardHeader className="p-3 pb-2 border-b border-slate-200">
@@ -609,6 +681,11 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                     #{order.tableNumber || order.id.slice(-4)}
                   </span>
                   {status === 'urgent' && <AlertTriangle className="w-5 h-5 text-red-500 animate-bounce" />}
+                  {isSyncOrder && (
+                    <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                      SYNC
+                    </Badge>
+                  )}
                 </div>
                 <Badge className={cn("h-7 text-xs font-bold px-2 flex items-center gap-1", config.color, "text-white")}>
                   {getSourceIcon(order.source)}
@@ -647,12 +724,26 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               {hasPendingItems && (
                 <div className="p-2 border-t border-slate-200">
                   <Button 
-                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold transition-transform hover:scale-[1.02]"
+                    className={cn(
+                      "w-full font-bold transition-transform hover:scale-[1.02]",
+                      hasItemToStartNow 
+                        ? "bg-orange-500 hover:bg-orange-600 text-white animate-pulse" 
+                        : "bg-green-600 hover:bg-green-700 text-white"
+                    )}
                     size="sm"
                     onClick={() => handleStartAllItems(order.id, items)}
                   >
-                    <Play className="w-4 h-4 mr-2" />
-                    Start
+                    {hasItemToStartNow ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4 mr-2 animate-bounce" />
+                        ÎNCEPE ACUM!
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" />
+                        Start
+                      </>
+                    )}
                   </Button>
                 </div>
               )}
@@ -672,6 +763,15 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         const config = platformConfig[order.source] || platformConfig.restaurant;
         const totalTime = getTotalOrderTime(items);
         const hasPendingItems = items.some(i => i.status === 'pending');
+        const fullOrder = orders.find(o => o.id === order.id);
+        const isSyncOrder = fullOrder?.syncTiming;
+        
+        // Check if any pending item should start now (for alert)
+        const hasItemToStartNow = items.some(item => {
+          if (item.status !== 'pending') return false;
+          const syncInfo = getSyncStartTime(item, order);
+          return syncInfo.syncActive && syncInfo.shouldStartNow;
+        });
         
         return (
           <Card 
@@ -679,7 +779,8 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             className={cn(
               "bg-white text-slate-900 shadow-md transition-all duration-300 animate-fade-in overflow-hidden",
               status === 'urgent' && "ring-2 ring-red-500",
-              status === 'delayed' && "ring-2 ring-yellow-500"
+              status === 'delayed' && "ring-2 ring-yellow-500",
+              hasItemToStartNow && "ring-2 ring-orange-500"
             )}
           >
             {/* Header Row */}
@@ -687,6 +788,11 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               <div className="flex items-center gap-3">
                 <span className="text-2xl font-black text-primary">#{order.tableNumber || order.id.slice(-4)}</span>
                 {status === 'urgent' && <AlertTriangle className="w-5 h-5 text-red-500" />}
+                {isSyncOrder && (
+                  <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                    SYNC
+                  </Badge>
+                )}
               </div>
               
               <Badge className={cn("h-7 px-3", config.color, "text-white")}>
@@ -712,8 +818,24 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               </div>
               
               {hasPendingItems && (
-                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleStartAllItems(order.id, items)}>
-                  <Play className="w-4 h-4 mr-1" /> Start
+                <Button 
+                  size="sm" 
+                  className={cn(
+                    hasItemToStartNow 
+                      ? "bg-orange-500 hover:bg-orange-600 animate-pulse" 
+                      : "bg-green-600 hover:bg-green-700"
+                  )} 
+                  onClick={() => handleStartAllItems(order.id, items)}
+                >
+                  {hasItemToStartNow ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 mr-1 animate-bounce" /> ÎNCEPE ACUM!
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-1" /> Start
+                    </>
+                  )}
                 </Button>
               )}
             </div>
