@@ -139,9 +139,9 @@ const RestaurantApp: React.FC = () => {
       setView('new-dashboard');
       setActiveModule('dashboard');
     } else if (currentUser?.role === 'kitchen') {
-      // Direct to first KDS station for kitchen staff
-      setSelectedStation(kdsStations[0]);
-      setView('kds');
+      // Kitchen staff goes to new dashboard with KDS module
+      setView('new-dashboard');
+      setActiveModule('kds');
     } else {
       setView('waiter');
     }
@@ -466,26 +466,7 @@ const RestaurantApp: React.FC = () => {
     );
   }
 
-  if (view === 'kds-select') {
-    return (
-      <KDSSelectorInline 
-        onSelectStation={handleKdsSelect}
-        onBack={handleLogout}
-      />
-    );
-  }
-
-  if (view === 'kds' && selectedStation) {
-    return (
-      <KDSDisplay 
-        station={selectedStation} 
-        onLogout={() => {
-          setSelectedStation(null);
-          setView('kds-select');
-        }} 
-      />
-    );
-  }
+  // Old KDS views removed - now using new dashboard KDS module
 
   return null;
 };
