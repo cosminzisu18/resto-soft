@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
-  Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode, Search, ChevronUp, ChevronDown
+  Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode, Search, ChevronUp, ChevronDown,
+  PanelLeftClose, PanelRightClose, ShoppingCart
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -29,6 +30,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [orderCollapsed, setOrderCollapsed] = useState(false);
+  const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [showPayment, setShowPayment] = useState(false);
   const [showModifier, setShowModifier] = useState<MenuItem | null>(null);
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
@@ -225,10 +227,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <div className={cn(
+        "flex-1 flex flex-col md:flex-row overflow-hidden",
+        sidebarPosition === 'left' && "md:flex-row-reverse"
+      )}>
         {/* Menu Section */}
         <div className={cn(
-          "flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-border transition-all",
+          "flex flex-col overflow-hidden border-b md:border-b-0 border-border transition-all",
+          sidebarPosition === 'left' ? "md:border-l" : "md:border-r",
           orderCollapsed ? "flex-1" : "flex-1 md:flex-[2]"
         )}>
           {/* Search */}
@@ -313,38 +319,73 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           </div>
         </div>
 
-        {/* Order Summary - Collapsible */}
+        {/* Order Summary - Collapsible with Position Toggle */}
         <div className={cn(
           "flex flex-col bg-secondary/30 transition-all duration-300",
           orderCollapsed 
             ? "h-14 md:h-auto md:w-14" 
             : "h-1/2 md:h-auto md:w-72 lg:w-80"
         )}>
-          <button 
-            className="p-2 md:p-3 border-b border-border flex items-center justify-between cursor-pointer hover:bg-secondary/50"
-            onClick={() => setOrderCollapsed(!orderCollapsed)}
-          >
+          {/* Header with Position Toggle */}
+          <div className="p-2 md:p-3 border-b border-border flex items-center justify-between bg-muted/50">
             {!orderCollapsed && (
-              <h3 className="font-semibold text-sm md:text-base">Comandă curentă</h3>
+              <>
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4" />
+                  <h3 className="font-semibold text-sm md:text-base">Comandă</h3>
+                </div>
+                <div className="flex items-center gap-1">
+                  {/* Position Toggle Button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 hidden md:flex"
+                    onClick={() => setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left')}
+                    title={sidebarPosition === 'left' ? 'Mută la dreapta' : 'Mută la stânga'}
+                  >
+                    {sidebarPosition === 'left' ? (
+                      <PanelRightClose className="w-4 h-4" />
+                    ) : (
+                      <PanelLeftClose className="w-4 h-4" />
+                    )}
+                  </Button>
+                  {/* Collapse Button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setOrderCollapsed(!orderCollapsed)}
+                  >
+                    {orderCollapsed ? (
+                      <ChevronUp className="w-4 h-4 md:hidden" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 md:hidden" />
+                    )}
+                    <ChevronDown className={cn(
+                      "w-4 h-4 hidden md:block transition-transform",
+                      sidebarPosition === 'left' ? "-rotate-90" : "rotate-90",
+                      !orderCollapsed && (sidebarPosition === 'left' ? "rotate-90" : "-rotate-90")
+                    )} />
+                  </Button>
+                </div>
+              </>
             )}
-            <div className="flex items-center gap-2">
-              {order && order.items.length > 0 && (
-                <span className="text-xs font-bold text-primary">
-                  {order.totalAmount.toFixed(0)} RON
-                </span>
-              )}
-              {orderCollapsed ? (
-                <ChevronUp className="w-4 h-4 md:hidden" />
-              ) : (
-                <ChevronDown className="w-4 h-4 md:hidden" />
-              )}
-              {orderCollapsed ? (
-                <ChevronDown className="w-4 h-4 hidden md:block rotate-90" />
-              ) : (
-                <ChevronUp className="w-4 h-4 hidden md:block rotate-90" />
-              )}
-            </div>
-          </button>
+            {orderCollapsed && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 mx-auto"
+                onClick={() => setOrderCollapsed(false)}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {order && order.items.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] rounded-full flex items-center justify-center">
+                    {order.items.length}
+                  </span>
+                )}
+              </Button>
+            )}
+          </div>
 
           {!orderCollapsed && (
             <div className="flex-1 overflow-auto p-2 md:p-3">

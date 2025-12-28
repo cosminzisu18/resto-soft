@@ -178,84 +178,86 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
               .map(reservation => (
                 <div
                   key={reservation.id}
-                  className="p-4 rounded-xl bg-card border border-border"
+                  className="p-3 rounded-xl bg-card border border-border"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-2xl font-bold">{reservation.time}</span>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded-full text-xs font-medium border",
-                          getStatusColor(reservation.status)
-                        )}>
-                          {getStatusLabel(reservation.status)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {reservation.source === 'online' ? '🌐 Online' : '📞 Telefon'}
-                        </span>
-                      </div>
+                  {/* Header Row - Time, Status, Source */}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="text-xl font-bold">{reservation.time}</span>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-full text-xs font-medium border shrink-0",
+                      getStatusColor(reservation.status)
+                    )}>
+                      {getStatusLabel(reservation.status)}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {reservation.source === 'online' ? '🌐 Online' : '📞 Telefon'}
+                    </span>
+                  </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Users className="w-4 h-4 text-muted-foreground" />
-                          <span className="font-medium">{reservation.customerName}</span>
-                          <span className="text-muted-foreground">({reservation.partySize} pers.)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-4 h-4 text-muted-foreground" />
-                          <span>{reservation.customerPhone}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-muted-foreground" />
-                          <span>
-                            Mese: {reservation.tableIds.map(id => {
-                              const table = tables.find(t => t.id === id);
-                              return table?.number;
-                            }).join(', ')}
-                          </span>
-                        </div>
-                        {reservation.customerEmail && (
-                          <div className="flex items-center gap-2">
-                            <Mail className="w-4 h-4 text-muted-foreground" />
-                            <span>{reservation.customerEmail}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {reservation.notes && (
-                        <p className="text-sm text-muted-foreground mt-2 italic">
-                          "{reservation.notes}"
-                        </p>
-                      )}
+                  {/* Customer Info */}
+                  <div className="space-y-1 text-sm mb-2">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="font-medium truncate">{reservation.customerName}</span>
+                      <span className="text-muted-foreground shrink-0">({reservation.partySize} pers.)</span>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="truncate">{reservation.customerPhone}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="truncate">
+                        Mese: {reservation.tableIds.map(id => {
+                          const table = tables.find(t => t.id === id);
+                          return table?.number;
+                        }).join(', ')}
+                      </span>
+                    </div>
+                    {reservation.customerEmail && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <span className="truncate">{reservation.customerEmail}</span>
+                      </div>
+                    )}
+                  </div>
 
-                    <div className="flex flex-col gap-2">
-                      {reservation.status === 'pending' && (
-                        <Button
-                          size="sm"
-                          onClick={() => onUpdateReservation({ ...reservation, status: 'confirmed' })}
-                        >
-                          <Check className="w-4 h-4 mr-1" />
-                          Confirmă
-                        </Button>
-                      )}
-                      {reservation.status === 'confirmed' && (
-                        <Button
-                          size="sm"
-                          variant="success"
-                          onClick={() => onUpdateReservation({ ...reservation, status: 'arrived' })}
-                        >
-                          Sosit
-                        </Button>
-                      )}
+                  {reservation.notes && (
+                    <p className="text-sm text-muted-foreground mb-2 italic truncate">
+                      "{reservation.notes}"
+                    </p>
+                  )}
+
+                  {/* Action Buttons - Stacked on small screens */}
+                  <div className="flex flex-wrap gap-2">
+                    {reservation.status === 'pending' && (
                       <Button
                         size="sm"
-                        variant="destructive"
-                        onClick={() => onDeleteReservation(reservation.id)}
+                        className="flex-1 min-w-[80px]"
+                        onClick={() => onUpdateReservation({ ...reservation, status: 'confirmed' })}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Check className="w-4 h-4 mr-1" />
+                        Confirmă
                       </Button>
-                    </div>
+                    )}
+                    {reservation.status === 'confirmed' && (
+                      <Button
+                        size="sm"
+                        variant="success"
+                        className="flex-1 min-w-[80px]"
+                        onClick={() => onUpdateReservation({ ...reservation, status: 'arrived' })}
+                      >
+                        Sosit
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="shrink-0"
+                      onClick={() => onDeleteReservation(reservation.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
