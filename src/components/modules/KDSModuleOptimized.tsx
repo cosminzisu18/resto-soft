@@ -307,6 +307,28 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
     setRecipeViewItem(item.menuItem);
   };
 
+  // Print label for a specific item (before completing)
+  const handlePrintLabelForItem = (order: Order, item: OrderItem, stationItems: OrderItem[], e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const productIndex = stationItems.findIndex(i => i.id === item.id) + 1;
+    const activeItem = getActiveItemInfo(order.id, item.id);
+
+    const labelData: LabelData = {
+      orderNumber: order.tableNumber?.toString() || order.id.slice(-4),
+      productNumber: productIndex,
+      totalProducts: stationItems.length,
+      productName: item.menuItem.name,
+      quantity: item.quantity,
+      modifications: item.modifications,
+      station: station.name,
+      preparedBy: activeItem?.employeeName || 'N/A',
+      timestamp: new Date()
+    };
+
+    setLabelPreview(labelData);
+  };
+
   const getOrderNotes = (order: Order): string | null => {
     const itemNotes = order.items
       .filter(i => i.modifications.notes)
@@ -474,23 +496,43 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                                     </span>
                                     
                                     {!isCompleted && (
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-6 w-6 text-slate-400 hover:text-primary"
-                                              onClick={(e) => handleShowRecipe(item, e)}
-                                            >
-                                              <Book className="w-4 h-4" />
-                                            </Button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            <p>Vezi rețetar</p>
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
+                                      <div className="flex items-center gap-0.5">
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-slate-400 hover:text-primary"
+                                                onClick={(e) => handleShowRecipe(item, e)}
+                                              >
+                                                <Book className="w-4 h-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Vezi rețetar</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                        
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-slate-400 hover:text-orange-500"
+                                                onClick={(e) => handlePrintLabelForItem(order, item, items, e)}
+                                              >
+                                                <Printer className="w-4 h-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Printează etichetă</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      </div>
                                     )}
                                   </div>
 
