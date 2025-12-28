@@ -16,6 +16,9 @@ import DashboardModule from '@/components/modules/DashboardModule';
 import ReportsModule from '@/components/modules/ReportsModule';
 import StocksModule from '@/components/modules/StocksModule';
 import PlaceholderModule from '@/components/modules/PlaceholderModule';
+import KDSModuleOptimized from '@/components/modules/KDSModuleOptimized';
+import POSModule from '@/components/modules/POSModule';
+import KioskModule from '@/components/modules/KioskModule';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
@@ -121,6 +124,7 @@ const RestaurantApp: React.FC = () => {
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [selectedStation, setSelectedStation] = useState<KDSStation | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
+  const [kdsModuleStation, setKdsModuleStation] = useState<KDSStation | null>(null);
 
   const handleLoginSuccess = () => {
     if (currentUser?.role === 'admin') {
@@ -137,6 +141,7 @@ const RestaurantApp: React.FC = () => {
     setView('login');
     setSelectedTable(null);
     setSelectedStation(null);
+    setKdsModuleStation(null);
   };
 
   const handleTableSelect = (table: Table) => {
@@ -164,17 +169,34 @@ const RestaurantApp: React.FC = () => {
       case 'stocks':
         return <StocksModule />;
       case 'pos':
-        return (
-          <div className="h-full">
-            <TableMap onTableSelect={handleTableSelect} />
-          </div>
-        );
+        return <POSModule />;
+      case 'kiosk':
+        return <KioskModule />;
       case 'kds':
+        if (kdsModuleStation) {
+          return (
+            <KDSModuleOptimized 
+              station={kdsModuleStation}
+              onLogout={() => setKdsModuleStation(null)}
+            />
+          );
+        }
         return (
-          <KDSSelectorInline 
-            onSelectStation={handleKdsSelect} 
-            onBack={() => setActiveModule('dashboard')} 
-          />
+          <div className="p-6">
+            <h2 className="text-2xl font-bold mb-6">Selectează stația KDS</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {kdsStations.map(station => (
+                <button
+                  key={station.id}
+                  onClick={() => setKdsModuleStation(station)}
+                  className="p-6 rounded-xl border-2 border-border hover:border-primary transition-all bg-card hover:scale-105"
+                >
+                  <span className="text-4xl block mb-3">{station.icon}</span>
+                  <h3 className="font-bold">{station.name}</h3>
+                </button>
+              ))}
+            </div>
+          </div>
         );
       case 'delivery':
         return <DeliveryOrders />;
