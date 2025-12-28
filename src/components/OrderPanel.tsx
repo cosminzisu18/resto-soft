@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import Receipt from './Receipt';
 import AllergenBadges from './AllergenBadges';
+import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 
 interface OrderPanelProps {
   table: Table;
@@ -46,6 +47,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [cui, setCui] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'usage_card'>('cash');
   const [usageCardCode, setUsageCardCode] = useState('');
+
+  // Swipe gesture for sidebar position on mobile
+  const swipeHandlers = useSwipeGesture({
+    onSwipeLeft: () => setSidebarPosition('right'),
+    onSwipeRight: () => setSidebarPosition('left'),
+    threshold: 75,
+    enabled: true,
+  });
 
   let order = getActiveOrderForTable(table.id);
   if (!order) {
@@ -202,7 +211,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   });
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background" {...swipeHandlers}>
       {/* Header */}
       <div className="flex items-center justify-between p-3 md:p-4 border-b border-border">
         <div className="flex items-center gap-2 md:gap-3">

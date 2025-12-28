@@ -24,6 +24,7 @@ import KioskModule from '@/components/modules/KioskModule';
 import HRModule from '@/components/modules/HRModule';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { 
   ShoppingCart, 
   Store, 
@@ -133,6 +134,14 @@ const RestaurantApp: React.FC = () => {
   const [kdsModuleStation, setKdsModuleStation] = useState<KDSStation | null>(null);
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Swipe gesture for sidebar position on mobile
+  const swipeHandlers = useSwipeGesture({
+    onSwipeLeft: () => setSidebarPosition('right'),
+    onSwipeRight: () => setSidebarPosition('left'),
+    threshold: 75,
+    enabled: sidebarOpen,
+  });
 
   const handleLoginSuccess = () => {
     if (currentUser?.role === 'admin') {
@@ -371,7 +380,7 @@ const RestaurantApp: React.FC = () => {
     );
 
     return (
-      <div className="h-screen flex flex-col">
+      <div className="h-screen flex flex-col" {...swipeHandlers}>
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
           <h1 className="font-semibold">RestoPOS - Ospătar</h1>
           <div className="flex items-center gap-2">
