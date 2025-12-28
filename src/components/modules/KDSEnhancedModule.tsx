@@ -472,26 +472,28 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 {item.menuItem.name}
               </span>
               
-              {/* Recipe & Label Buttons */}
-              {showButtons && !isCompleted && (
+              {/* Recipe & Label Buttons - always show for print, recipe only when not completed */}
+              {showButtons && (
                 <div className="flex items-center gap-0.5">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-slate-400 hover:text-primary"
-                          onClick={(e) => handleShowRecipe(item, e)}
-                        >
-                          <Book className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Vezi rețetar</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  {!isCompleted && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-slate-400 hover:text-primary"
+                            onClick={(e) => handleShowRecipe(item, e)}
+                          >
+                            <Book className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Vezi rețetar</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                   
                   <TooltipProvider>
                     <Tooltip>
@@ -499,7 +501,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 text-slate-400 hover:text-orange-500"
+                          className={cn("h-6 w-6", isCompleted ? "text-green-500 hover:text-green-600" : "text-slate-400 hover:text-orange-500")}
                           onClick={(e) => handlePrintLabelForItem(order, item, items, e)}
                         >
                           <Printer className="w-4 h-4" />
@@ -853,11 +855,46 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="p-3 pt-0">
+              <CardContent className="p-3 pt-0 space-y-1">
                 {stationItems.map(item => (
-                  <div key={item.id} className="flex items-center gap-2 text-sm text-green-700">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span className="line-through">{item.quantity}x {item.menuItem.name}</span>
+                  <div key={item.id} className="flex items-center justify-between text-sm text-green-700">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="line-through">{item.quantity}x {item.menuItem.name}</span>
+                    </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const productIndex = stationItems.findIndex(i => i.id === item.id) + 1;
+                              const labelData: LabelData = {
+                                orderNumber: order.tableNumber?.toString() || order.id.slice(-4),
+                                productNumber: productIndex,
+                                totalProducts: stationItems.length,
+                                productName: item.menuItem.name,
+                                quantity: item.quantity,
+                                modifications: item.modifications,
+                                station: station.name,
+                                preparedBy: 'Finalizat',
+                                timestamp: new Date(),
+                                allergenIds: item.menuItem.allergenIds
+                              };
+                              setLabelPreview(labelData);
+                            }}
+                          >
+                            <Printer className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Printează etichetă</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 ))}
               </CardContent>
