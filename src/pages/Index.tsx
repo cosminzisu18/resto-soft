@@ -53,7 +53,8 @@ import {
   ArrowLeft,
   PanelLeftClose,
   PanelRightClose,
-  Calendar
+  Calendar,
+  Wifi
 } from 'lucide-react';
 
 type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard';
@@ -74,6 +75,8 @@ const moduleConfig: Record<ModuleType, { title: string; description: string; ico
   admin: { title: 'Admin & Multi-Locație', description: 'Setări și configurări', icon: Settings, features: ['Multi-locație', 'Meniuri diferite', 'Prețuri per locație'] },
   branding: { title: 'Branding & Custom', description: 'Personalizare aplicație', icon: Palette, features: ['Logo custom', 'Culori', 'Template-uri'] },
   subscriptions: { title: 'Abonamente', description: 'Gestionare abonamente clienți', icon: CreditCard, features: ['Facturare', 'Status plăți', 'Rapoarte'] },
+  communication: { title: 'Comunicare', description: 'Chat intern și suport', icon: MessageSquare, features: ['Chat echipă', 'Suport', 'Tickete'] },
+  offline: { title: 'Mod Offline', description: 'Gestionare conectivitate', icon: Wifi, features: ['Sincronizare', 'Queue local', 'Status conexiune'] },
   chat: { title: 'Chat Intern', description: 'Comunicare internă', icon: MessageSquare, features: ['Chat echipă', 'Suport', 'Notificări'] },
 };
 
@@ -251,6 +254,10 @@ const RestaurantApp: React.FC = () => {
         return <BrandingModule />;
       case 'subscriptions':
         return <SubscriptionsAdminModule />;
+      case 'communication':
+        return <CommunicationModule />;
+      case 'offline':
+        return <OfflineModeModule />;
       default:
         const config = moduleConfig[activeModule];
         return (

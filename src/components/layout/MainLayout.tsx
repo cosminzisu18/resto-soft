@@ -44,6 +44,8 @@ export type ModuleType =
   | 'admin'
   | 'branding'
   | 'subscriptions'
+  | 'communication'
+  | 'offline'
   | 'chat';
 
 interface NavItem {
@@ -69,7 +71,8 @@ const navItems: NavItem[] = [
   { id: 'admin', label: 'Admin', icon: Settings },
   { id: 'branding', label: 'Branding', icon: Palette },
   { id: 'subscriptions', label: 'Abonamente', icon: CreditCard },
-  { id: 'chat', label: 'Chat Intern', icon: MessageSquare },
+  { id: 'communication', label: 'Comunicare', icon: MessageSquare },
+  { id: 'offline', label: 'Mod Offline', icon: Wifi },
 ];
 
 interface MainLayoutProps {
