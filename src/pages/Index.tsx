@@ -28,6 +28,8 @@ import AIModule from '@/components/modules/AIModule';
 import AdminConfigModule from '@/components/modules/AdminConfigModule';
 import BrandingModule from '@/components/modules/BrandingModule';
 import SubscriptionsAdminModule from '@/components/modules/SubscriptionsAdminModule';
+import CommunicationModule from '@/components/modules/CommunicationModule';
+import OfflineModeModule from '@/components/modules/OfflineModeModule';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
