@@ -12,14 +12,16 @@ import {
   ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
   Check, X, CreditCard, Loader2, CheckCircle, Clock, Sparkles,
   Volume2, VolumeX, ChevronRight, Banknote, QrCode, Truck, 
-  UtensilsCrossed, MapPin, Phone, User, History, Users
+  UtensilsCrossed, MapPin, Phone, User, History, Users, Scan,
+  Camera, Coins
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import AllergenBadges from '@/components/AllergenBadges';
 
-type SelfOrderStep = 'idle' | 'mode' | 'scan' | 'delivery-form' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
+type SelfOrderStep = 'idle' | 'mode' | 'scan' | 'scanning' | 'delivery-form' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
 type OrderMode = 'dine-in' | 'delivery';
 type PaymentMethod = 'cash' | 'card' | 'online';
+type CashPaymentType = 'exact' | 'need-change';
 
 interface CartItem {
   id: string;
@@ -30,7 +32,7 @@ interface CartItem {
     removed: string[];
   };
   extras: { name: string; quantity: number; price: number }[];
-  addedBy?: string; // Device/user identifier for sync
+  addedBy?: string;
   timestamp?: number;
 }
 
@@ -124,11 +126,18 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   
+  // Cash payment options
+  const [cashPaymentType, setCashPaymentType] = useState<CashPaymentType>('exact');
+  const [customerCashAmount, setCustomerCashAmount] = useState<string>('');
+  
   // Table ordering
   const [scannedTableId, setScannedTableId] = useState<string | null>(initialTableId || null);
   const [qrInput, setQrInput] = useState('');
   const [tableOrder, setTableOrder] = useState<TableOrder | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  
+  // Scanning animation
+  const [scanningProgress, setScanningProgress] = useState(0);
   
   // Delivery form
   const [deliveryForm, setDeliveryForm] = useState({
@@ -524,6 +533,33 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     );
   }
 
+  // Start scanning animation
+  const startScanning = () => {
+    setStep('scanning');
+    setScanningProgress(0);
+    
+    // Simulate scanning progress
+    const interval = setInterval(() => {
+      setScanningProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          // Find a table and redirect
+          const freeTable = tables.find(t => t.status === 'free' || t.status === 'occupied');
+          if (freeTable) {
+            setTimeout(() => {
+              setScannedTableId(freeTable.id);
+              setOrderMode('dine-in');
+              setStep('menu');
+              toast({ title: `Masa ${freeTable.number} detectată!` });
+            }, 500);
+          }
+          return 100;
+        }
+        return prev + 5;
+      });
+    }, 100);
+  };
+
   // ============ QR SCAN ============
   if (step === 'scan') {
     return (
@@ -560,20 +596,112 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
 
             <Button 
               variant="outline" 
-              className="w-full h-14"
-              onClick={() => {
-                const freeTable = tables.find(t => t.status === 'free' || t.status === 'occupied');
-                if (freeTable) {
-                  setScannedTableId(freeTable.id);
-                  setOrderMode('dine-in');
-                  setStep('menu');
-                  toast({ title: `Masa ${freeTable.number} detectată!` });
-                }
-              }}
+              className="w-full h-14 gap-3"
+              onClick={startScanning}
             >
-              <QrCode className="w-5 h-5 mr-2" />
-              Deschide camera
+              <Camera className="w-6 h-6" />
+              Deschide camera pentru scanare
             </Button>
+            
+            <p className="text-center text-xs text-slate-400">
+              Poziționează camera deasupra codului QR de pe masă
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============ SCANNING ANIMATION ============
+  if (step === 'scanning') {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-900">
+        <div className="p-4 flex items-center justify-between">
+          <Button variant="ghost" className="text-white" onClick={() => setStep('scan')}>
+            <ArrowLeft className="w-5 h-5 mr-2" />
+            Anulează
+          </Button>
+          <h1 className="text-lg font-bold text-white">Scanare QR</h1>
+          <div className="w-16" />
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          {/* Fake camera viewfinder */}
+          <div className="relative w-72 h-72 mb-8">
+            {/* Background simulating camera feed */}
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-700 rounded-3xl overflow-hidden">
+              <div className="absolute inset-0 opacity-30">
+                <div className="w-full h-full bg-[url('https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400')] bg-cover bg-center blur-sm" />
+              </div>
+            </div>
+            
+            {/* QR Frame corners */}
+            <div className="absolute inset-8 border-4 border-transparent">
+              {/* Top-left corner */}
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-lg" />
+              {/* Top-right corner */}
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-lg" />
+              {/* Bottom-left corner */}
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-lg" />
+              {/* Bottom-right corner */}
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-lg" />
+            </div>
+            
+            {/* Scanning line animation */}
+            <div 
+              className="absolute left-8 right-8 h-1 bg-gradient-to-r from-transparent via-green-400 to-transparent rounded-full transition-all duration-100"
+              style={{ 
+                top: `${8 + (scanningProgress / 100) * 56}%`,
+                boxShadow: '0 0 20px rgba(74, 222, 128, 0.8)'
+              }}
+            />
+            
+            {/* Center QR icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className={cn(
+                "w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center transition-all",
+                scanningProgress > 80 && "bg-green-500/30 scale-110"
+              )}>
+                <QrCode className={cn(
+                  "w-10 h-10 transition-colors",
+                  scanningProgress > 80 ? "text-green-400" : "text-white"
+                )} />
+              </div>
+            </div>
+          </div>
+          
+          {/* Progress info */}
+          <div className="text-center text-white">
+            <div className="flex items-center gap-3 mb-4">
+              {scanningProgress < 100 ? (
+                <>
+                  <Scan className="w-5 h-5 animate-pulse" />
+                  <span className="text-lg">Se scanează...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-5 h-5 text-green-400" />
+                  <span className="text-lg text-green-400">Cod detectat!</span>
+                </>
+              )}
+            </div>
+            
+            {/* Progress bar */}
+            <div className="w-64 h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div 
+                className={cn(
+                  "h-full rounded-full transition-all duration-100",
+                  scanningProgress < 100 ? "bg-primary" : "bg-green-500"
+                )}
+                style={{ width: `${scanningProgress}%` }}
+              />
+            </div>
+            <p className="mt-2 text-sm text-slate-400">
+              {scanningProgress < 100 
+                ? 'Menține camera stabilă' 
+                : 'Redirecționare...'
+              }
+            </p>
           </div>
         </div>
       </div>
@@ -1131,11 +1259,24 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
 
   // ============ PAYMENT ============
   if (step === 'payment') {
+    const finalTotal = totalAmount + (orderMode === 'delivery' && totalAmount < 50 ? 10 : 0);
+    const customerCash = parseFloat(customerCashAmount) || 0;
+    const changeAmount = customerCash - finalTotal;
+    
     const processPayment = () => {
       setStep('processing');
       setTimeout(() => {
         handleConfirmOrder();
       }, 2000);
+    };
+
+    const canPlaceOrder = () => {
+      if (paymentMethod === 'cash' && orderMode === 'delivery') {
+        if (cashPaymentType === 'need-change') {
+          return customerCash >= finalTotal;
+        }
+      }
+      return true;
     };
 
     return (
@@ -1149,8 +1290,8 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
           <div className="w-16" />
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center p-4">
-          <div className="max-w-md w-full space-y-6">
+        <ScrollArea className="flex-1">
+          <div className="p-4 max-w-md mx-auto space-y-6">
             {/* Order Summary */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200">
               <h3 className="font-semibold mb-4">Rezumat comandă</h3>
@@ -1169,29 +1310,31 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                 </div>
               )}
               <div className="border-t border-slate-200 pt-4 flex justify-between text-xl font-bold">
-                <span>Total</span>
-                <span className="text-primary">
-                  {(totalAmount + (orderMode === 'delivery' && totalAmount < 50 ? 10 : 0)).toFixed(2)} RON
-                </span>
+                <span>Total de plată</span>
+                <span className="text-primary">{finalTotal.toFixed(2)} RON</span>
               </div>
             </div>
 
             {/* Payment Methods */}
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                onClick={() => setPaymentMethod('card')}
-                className={cn(
-                  "p-4 rounded-2xl border-4 flex flex-col items-center gap-2 transition-all",
-                  paymentMethod === 'card'
-                    ? "border-primary bg-primary/10"
-                    : "border-slate-200 bg-white hover:border-primary/50"
-                )}
-              >
-                <CreditCard className={cn("w-8 h-8", paymentMethod === 'card' ? "text-primary" : "text-slate-400")} />
-                <span className="text-sm font-bold">Card</span>
-              </button>
+            <div>
+              <h3 className="font-semibold mb-3">Metodă de plată</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setPaymentMethod('card')}
+                  className={cn(
+                    "p-4 rounded-2xl border-4 flex flex-col items-center gap-2 transition-all",
+                    paymentMethod === 'card'
+                      ? "border-primary bg-primary/10"
+                      : "border-slate-200 bg-white hover:border-primary/50"
+                  )}
+                >
+                  <CreditCard className={cn("w-8 h-8", paymentMethod === 'card' ? "text-primary" : "text-slate-400")} />
+                  <span className="text-sm font-bold">Card</span>
+                  <span className="text-xs text-slate-500">
+                    {orderMode === 'delivery' ? 'Online' : 'La masă'}
+                  </span>
+                </button>
 
-              {orderMode === 'dine-in' && (
                 <button
                   onClick={() => setPaymentMethod('cash')}
                   className={cn(
@@ -1203,32 +1346,153 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                 >
                   <Banknote className={cn("w-8 h-8", paymentMethod === 'cash' ? "text-primary" : "text-slate-400")} />
                   <span className="text-sm font-bold">Cash</span>
+                  <span className="text-xs text-slate-500">
+                    {orderMode === 'delivery' ? 'La livrare' : 'La masă'}
+                  </span>
                 </button>
-              )}
-
-              {orderMode === 'delivery' && (
-                <button
-                  onClick={() => setPaymentMethod('online')}
-                  className={cn(
-                    "p-4 rounded-2xl border-4 flex flex-col items-center gap-2 transition-all",
-                    paymentMethod === 'online'
-                      ? "border-primary bg-primary/10"
-                      : "border-slate-200 bg-white hover:border-primary/50"
-                  )}
-                >
-                  <CreditCard className={cn("w-8 h-8", paymentMethod === 'online' ? "text-primary" : "text-slate-400")} />
-                  <span className="text-sm font-bold">Online</span>
-                </button>
-              )}
+              </div>
             </div>
 
-            {/* Confirm Button */}
+            {/* Cash Payment Options for Delivery */}
+            {paymentMethod === 'cash' && orderMode === 'delivery' && (
+              <div className="bg-white rounded-2xl p-4 border border-slate-200 space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Coins className="w-5 h-5 text-amber-500" />
+                  Detalii plată cash
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setCashPaymentType('exact')}
+                    className={cn(
+                      "p-3 rounded-xl border-2 text-center transition-all",
+                      cashPaymentType === 'exact'
+                        ? "border-green-500 bg-green-50"
+                        : "border-slate-200 hover:border-slate-300"
+                    )}
+                  >
+                    <Check className={cn(
+                      "w-6 h-6 mx-auto mb-1",
+                      cashPaymentType === 'exact' ? "text-green-600" : "text-slate-400"
+                    )} />
+                    <span className="text-sm font-bold block">Sumă exactă</span>
+                    <span className="text-xs text-slate-500">Am {finalTotal.toFixed(2)} RON</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => setCashPaymentType('need-change')}
+                    className={cn(
+                      "p-3 rounded-xl border-2 text-center transition-all",
+                      cashPaymentType === 'need-change'
+                        ? "border-amber-500 bg-amber-50"
+                        : "border-slate-200 hover:border-slate-300"
+                    )}
+                  >
+                    <Coins className={cn(
+                      "w-6 h-6 mx-auto mb-1",
+                      cashPaymentType === 'need-change' ? "text-amber-600" : "text-slate-400"
+                    )} />
+                    <span className="text-sm font-bold block">Am nevoie de rest</span>
+                    <span className="text-xs text-slate-500">Introduceți suma</span>
+                  </button>
+                </div>
+
+                {cashPaymentType === 'need-change' && (
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Cu ce sumă vei plăti?
+                      </label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          value={customerCashAmount}
+                          onChange={e => setCustomerCashAmount(e.target.value)}
+                          placeholder="Ex: 100"
+                          className="h-14 text-xl font-bold text-center pr-16"
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">
+                          RON
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Quick amount buttons */}
+                    <div className="flex gap-2">
+                      {[50, 100, 200].map(amount => (
+                        <button
+                          key={amount}
+                          onClick={() => setCustomerCashAmount(amount.toString())}
+                          className={cn(
+                            "flex-1 py-2 rounded-lg border-2 font-bold transition-all",
+                            customerCashAmount === amount.toString()
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-slate-200 hover:border-slate-300"
+                          )}
+                        >
+                          {amount} RON
+                        </button>
+                      ))}
+                    </div>
+
+                    {customerCash > 0 && (
+                      <div className={cn(
+                        "p-4 rounded-xl",
+                        customerCash >= finalTotal ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"
+                      )}>
+                        {customerCash >= finalTotal ? (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-green-700">
+                              <Check className="w-5 h-5" />
+                              <span className="font-medium">Rest de primit:</span>
+                            </div>
+                            <span className="text-2xl font-black text-green-700">
+                              {changeAmount.toFixed(2)} RON
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-red-700">
+                            <X className="w-5 h-5" />
+                            <span className="font-medium">
+                              Suma introdusă ({customerCash} RON) este mai mică decât totalul ({finalTotal.toFixed(2)} RON)
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Cash info for dine-in */}
+            {paymentMethod === 'cash' && orderMode === 'dine-in' && (
+              <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200">
+                <div className="flex items-center gap-3">
+                  <Banknote className="w-6 h-6 text-amber-600" />
+                  <div>
+                    <p className="font-bold text-amber-800">Plată la masă</p>
+                    <p className="text-sm text-amber-700">Chelnerul va veni să încaseze {finalTotal.toFixed(2)} RON</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        <div className="p-4 bg-white border-t border-slate-200">
+          <div className="max-w-md mx-auto">
             <Button 
               size="lg" 
               className="w-full h-14 text-lg bg-green-600 hover:bg-green-700"
               onClick={processPayment}
+              disabled={!canPlaceOrder()}
             >
-              Plasează comanda
+              {paymentMethod === 'cash' && orderMode === 'delivery' && cashPaymentType === 'need-change' && customerCash >= finalTotal ? (
+                <>Plasează comanda (Rest: {changeAmount.toFixed(2)} RON)</>
+              ) : (
+                <>Plasează comanda - {finalTotal.toFixed(2)} RON</>
+              )}
             </Button>
           </div>
         </div>
