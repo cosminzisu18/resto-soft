@@ -145,48 +145,49 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           </div>
 
           {/* Navigation */}
-          <ScrollArea className="flex-1 py-4">
-            <nav className="flex flex-col gap-1 px-2">
+          <ScrollArea className="flex-1 py-2">
+            <nav className="flex flex-col gap-0.5 px-3">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeModule === item.id;
 
                 const button = (
-                  <Button
+                  <button
                     key={item.id}
-                    variant={isActive ? "default" : "ghost"}
                     className={cn(
-                      "w-full justify-start gap-3 h-11",
-                      collapsed && "justify-center px-0",
-                      isActive && "shadow-sm"
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                      collapsed && "justify-center px-2",
+                      isActive 
+                        ? "bg-primary/10 text-primary border-r-2 border-primary" 
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                     onClick={() => {
                       onModuleChange(item.id);
                       setMobileMenuOpen(false);
                     }}
                   >
-                    <Icon className={cn("h-5 w-5 shrink-0", isActive && "text-primary-foreground")} />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    <Icon className={cn("h-[18px] w-[18px] shrink-0", isActive && "text-primary")} />
+                    {!collapsed && <span className="truncate text-[13px]">{item.label}</span>}
                     {!collapsed && item.badge && (
-                      <span className="ml-auto bg-destructive text-destructive-foreground text-xs rounded-full px-2 py-0.5">
+                      <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] rounded-full px-1.5 py-0.5">
                         {item.badge}
                       </span>
                     )}
-                  </Button>
+                  </button>
                 );
 
                 if (collapsed) {
                   return (
                     <Tooltip key={item.id}>
                       <TooltipTrigger asChild>{button}</TooltipTrigger>
-                      <TooltipContent side="right" className="font-medium">
+                      <TooltipContent side="right" className="text-xs font-medium">
                         {item.label}
                       </TooltipContent>
                     </Tooltip>
                   );
                 }
 
-                return button;
+                return <div key={item.id}>{button}</div>;
               })}
             </nav>
           </ScrollArea>
