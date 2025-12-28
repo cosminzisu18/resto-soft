@@ -122,7 +122,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
   const [employeeSelectItem, setEmployeeSelectItem] = useState<{ orderId: string; itemId: string } | null>(null);
   const [recipeViewItem, setRecipeViewItem] = useState<MenuItem | null>(null);
   const [labelPreview, setLabelPreview] = useState<LabelData | null>(null);
-  const [showAllergenLabel, setShowAllergenLabel] = useState(false);
+  
   const labelRef = useRef<HTMLDivElement>(null);
   const allergenLabelRef = useRef<HTMLDivElement>(null);
 
@@ -312,8 +312,9 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     setLabelPreview(labelData);
   };
 
-  // Print product label
-  const handlePrintLabel = () => {
+  // Print all labels (product + allergen)
+  const handlePrintAllLabels = () => {
+    // Print product label
     if (labelRef.current) {
       const printContent = labelRef.current.innerHTML;
       const printWindow = window.open('', '', 'width=400,height=600');
@@ -344,51 +345,44 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
       }
     }
     
-    toast({
-      title: "Etichetă produs trimisă la imprimantă",
-      description: `Produs: ${labelPreview?.productName}`,
-    });
-    
-    // Show allergen label
-    setShowAllergenLabel(true);
-  };
-
-  // Print allergen label
-  const handlePrintAllergenLabel = () => {
+    // Print allergen label
     if (allergenLabelRef.current) {
-      const printContent = allergenLabelRef.current.innerHTML;
-      const printWindow = window.open('', '', 'width=400,height=600');
-      if (printWindow) {
-        printWindow.document.write(`
-          <html>
-            <head>
-              <title>Etichetă Alergeni</title>
-              <style>
-                body { font-family: 'Courier New', monospace; padding: 10mm; margin: 0; }
-                .label { width: 60mm; border: 2px solid #000; padding: 5mm; }
-                .header { text-align: center; font-size: 14pt; font-weight: bold; border-bottom: 2px dashed #000; padding-bottom: 3mm; margin-bottom: 3mm; background: #ff6b6b; color: white; margin: -5mm -5mm 3mm -5mm; padding: 3mm; }
-                .product-name { font-size: 12pt; font-weight: bold; text-align: center; margin: 3mm 0; }
-                .allergen-list { margin: 3mm 0; }
-                .allergen-item { display: flex; align-items: center; gap: 2mm; padding: 2mm; margin: 1mm 0; background: #fff3cd; border-radius: 3mm; font-size: 11pt; }
-                .warning { text-align: center; font-size: 10pt; font-weight: bold; color: #dc3545; margin-top: 3mm; padding: 2mm; border: 1px solid #dc3545; }
-                .footer { text-align: center; font-size: 8pt; border-top: 2px dashed #000; padding-top: 3mm; margin-top: 3mm; }
-              </style>
-            </head>
-            <body>${printContent}</body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.print();
-        printWindow.close();
-      }
+      setTimeout(() => {
+        const printContent = allergenLabelRef.current?.innerHTML;
+        if (printContent) {
+          const printWindow = window.open('', '', 'width=400,height=600');
+          if (printWindow) {
+            printWindow.document.write(`
+              <html>
+                <head>
+                  <title>Etichetă Alergeni</title>
+                  <style>
+                    body { font-family: 'Courier New', monospace; padding: 10mm; margin: 0; }
+                    .label { width: 60mm; border: 2px solid #000; padding: 5mm; }
+                    .header { text-align: center; font-size: 14pt; font-weight: bold; background: #ff6b6b; color: white; padding: 3mm; border-radius: 3mm 3mm 0 0; }
+                    .product-name { font-size: 12pt; font-weight: bold; text-align: center; margin: 3mm 0; }
+                    .allergen-list { margin: 3mm 0; }
+                    .allergen-item { display: flex; align-items: center; gap: 2mm; padding: 2mm; margin: 1mm 0; background: #fff3cd; border-radius: 3mm; font-size: 11pt; }
+                    .warning { text-align: center; font-size: 10pt; font-weight: bold; color: #dc3545; margin-top: 3mm; padding: 2mm; border: 1px solid #dc3545; }
+                    .footer { text-align: center; font-size: 8pt; border-top: 2px dashed #000; padding-top: 3mm; margin-top: 3mm; }
+                  </style>
+                </head>
+                <body>${printContent}</body>
+              </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+            printWindow.close();
+          }
+        }
+      }, 500);
     }
     
     toast({
-      title: "Etichetă alergeni trimisă la imprimantă",
-      description: `Produs: ${labelPreview?.productName}`,
+      title: "Etichete trimise la imprimantă",
+      description: `Produs + Alergeni: ${labelPreview?.productName}`,
     });
     
-    setShowAllergenLabel(false);
     setLabelPreview(null);
   };
 
@@ -1086,66 +1080,125 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         </DialogContent>
       </Dialog>
 
-      {/* Label Print Preview Dialog - Product Label */}
-      <Dialog open={!!labelPreview && !showAllergenLabel} onOpenChange={() => setLabelPreview(null)}>
-        <DialogContent className="sm:max-w-md bg-white text-slate-900">
+      {/* Label Print Preview Dialog - Both Labels Stacked */}
+      <Dialog open={!!labelPreview} onOpenChange={() => setLabelPreview(null)}>
+        <DialogContent className="sm:max-w-lg bg-white text-slate-900 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Printer className="w-5 h-5 text-primary" />
-              Etichetă Produs
+              Etichete Produs
             </DialogTitle>
           </DialogHeader>
           
           {labelPreview && (
             <div className="space-y-4 pt-4">
-              <div ref={labelRef} className="border-2 border-dashed border-slate-300 p-4 rounded-lg bg-white font-mono">
-                <div className="label">
-                  <div className="header text-center text-lg font-bold border-b-2 border-dashed border-slate-400 pb-2 mb-2">
-                    {labelPreview.station}
-                  </div>
-                  
-                  <div className="order-num text-center text-3xl font-black my-2">
-                    #{labelPreview.orderNumber}
-                  </div>
-                  
-                  <div className="text-center text-sm text-slate-500 mb-2">
-                    Produs {labelPreview.productNumber} din {labelPreview.totalProducts}
-                  </div>
-                  
-                  <div className="product-name text-center text-xl font-bold my-2 p-2 bg-slate-100 rounded">
-                    {labelPreview.quantity}x {labelPreview.productName}
-                  </div>
-                  
-                  {(labelPreview.modifications.added.length > 0 || labelPreview.modifications.removed.length > 0) && (
-                    <div className="modifications text-sm my-2 p-2 bg-slate-50 rounded">
-                      {labelPreview.modifications.added.map((m, i) => (
-                        <div key={`a-${i}`} className="mod-add text-green-600 font-medium">+ {m}</div>
-                      ))}
-                      {labelPreview.modifications.removed.map((m, i) => (
-                        <div key={`r-${i}`} className="mod-remove text-red-600 line-through">- {m}</div>
-                      ))}
+              {/* Product Label */}
+              <div>
+                <h3 className="text-sm font-bold text-slate-500 mb-2 flex items-center gap-2">
+                  <span className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-xs">1</span>
+                  ETICHETĂ PRODUS
+                </h3>
+                <div ref={labelRef} className="border-2 border-dashed border-slate-300 p-4 rounded-lg bg-white font-mono">
+                  <div className="label">
+                    <div className="header text-center text-lg font-bold border-b-2 border-dashed border-slate-400 pb-2 mb-2">
+                      {labelPreview.station}
                     </div>
-                  )}
-                  
-                  <div className="info-row flex justify-between text-xs mt-3 pt-2 border-t border-slate-200">
-                    <span>Preparat de:</span>
-                    <span className="font-bold">{labelPreview.preparedBy}</span>
+                    
+                    <div className="order-num text-center text-3xl font-black my-2">
+                      #{labelPreview.orderNumber}
+                    </div>
+                    
+                    <div className="text-center text-sm text-slate-500 mb-2">
+                      Produs {labelPreview.productNumber} din {labelPreview.totalProducts}
+                    </div>
+                    
+                    <div className="product-name text-center text-xl font-bold my-2 p-2 bg-slate-100 rounded">
+                      {labelPreview.quantity}x {labelPreview.productName}
+                    </div>
+                    
+                    {(labelPreview.modifications.added.length > 0 || labelPreview.modifications.removed.length > 0) && (
+                      <div className="modifications text-sm my-2 p-2 bg-slate-50 rounded">
+                        {labelPreview.modifications.added.map((m, i) => (
+                          <div key={`a-${i}`} className="mod-add text-green-600 font-medium">+ {m}</div>
+                        ))}
+                        {labelPreview.modifications.removed.map((m, i) => (
+                          <div key={`r-${i}`} className="mod-remove text-red-600 line-through">- {m}</div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    <div className="info-row flex justify-between text-xs mt-3 pt-2 border-t border-slate-200">
+                      <span>Preparat de:</span>
+                      <span className="font-bold">{labelPreview.preparedBy}</span>
+                    </div>
+                    
+                    <div className="footer text-center text-xs border-t-2 border-dashed border-slate-400 pt-2 mt-2">
+                      {labelPreview.timestamp.toLocaleString('ro-RO')}
+                    </div>
                   </div>
-                  
-                  <div className="footer text-center text-xs border-t-2 border-dashed border-slate-400 pt-2 mt-2">
-                    {labelPreview.timestamp.toLocaleString('ro-RO')}
+                </div>
+              </div>
+
+              {/* Allergen Label */}
+              <div>
+                <h3 className="text-sm font-bold text-amber-600 mb-2 flex items-center gap-2">
+                  <span className="w-6 h-6 bg-amber-500 text-white rounded-full flex items-center justify-center text-xs">2</span>
+                  ETICHETĂ ALERGENI
+                </h3>
+                <div ref={allergenLabelRef} className="border-2 border-dashed border-amber-400 p-4 rounded-lg bg-amber-50 font-mono">
+                  <div className="label">
+                    <div className="header text-center text-base font-bold bg-amber-500 text-white -m-4 mb-3 p-2 rounded-t">
+                      ⚠️ INFORMAȚII ALERGENI ⚠️
+                    </div>
+                    
+                    <div className="product-name text-center text-lg font-bold my-2 p-2 bg-white rounded border border-amber-300">
+                      {labelPreview.quantity}x {labelPreview.productName}
+                    </div>
+                    
+                    <div className="text-center text-sm text-slate-600 mb-2">
+                      Comandă #{labelPreview.orderNumber}
+                    </div>
+                    
+                    <div className="allergen-list mt-3">
+                      <div className="text-sm font-bold text-slate-700 mb-2">Conține următorii alergeni:</div>
+                      {labelPreview.allergenIds && labelPreview.allergenIds.length > 0 ? (
+                        <div className="space-y-1">
+                          {labelPreview.allergenIds.map(allergenId => {
+                            const allergen = allergens.find(a => a.id === allergenId);
+                            return allergen ? (
+                              <div key={allergenId} className="flex items-center gap-2 p-2 bg-white rounded border border-amber-200">
+                                <span className="text-xl">{allergen.icon}</span>
+                                <span className="font-medium">{allergen.name}</span>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-green-100 rounded text-center text-green-700 font-medium">
+                          ✓ Nu conține alergeni declarați
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="warning text-center text-xs font-bold text-red-600 mt-3 p-2 border border-red-300 rounded bg-red-50">
+                      Verificați întotdeauna ingredientele!
+                    </div>
+                    
+                    <div className="footer text-center text-xs border-t-2 border-dashed border-amber-400 pt-2 mt-2">
+                      {labelPreview.timestamp.toLocaleString('ro-RO')}
+                    </div>
                   </div>
                 </div>
               </div>
               
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-2">
                 <Button variant="outline" className="flex-1" onClick={() => setLabelPreview(null)}>
                   <X className="w-4 h-4 mr-2" />
                   Anulează
                 </Button>
-                <Button className="flex-1 bg-primary" onClick={handlePrintLabel}>
+                <Button className="flex-1 bg-primary" onClick={handlePrintAllLabels}>
                   <Printer className="w-4 h-4 mr-2" />
-                  Printează
+                  Printează Toate
                 </Button>
               </div>
             </div>
@@ -1153,77 +1206,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         </DialogContent>
       </Dialog>
 
-      {/* Allergen Label Dialog */}
-      <Dialog open={showAllergenLabel} onOpenChange={() => { setShowAllergenLabel(false); setLabelPreview(null); }}>
-        <DialogContent className="sm:max-w-md bg-white text-slate-900">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              Etichetă Alergeni
-            </DialogTitle>
-          </DialogHeader>
-          
-          {labelPreview && (
-            <div className="space-y-4 pt-4">
-              <div ref={allergenLabelRef} className="border-2 border-dashed border-amber-400 p-4 rounded-lg bg-amber-50 font-mono">
-                <div className="label">
-                  <div className="header text-center text-lg font-bold bg-amber-500 text-white -m-4 mb-3 p-3">
-                    ⚠️ INFORMAȚII ALERGENI ⚠️
-                  </div>
-                  
-                  <div className="product-name text-center text-lg font-bold my-2 p-2 bg-white rounded border border-amber-300">
-                    {labelPreview.quantity}x {labelPreview.productName}
-                  </div>
-                  
-                  <div className="text-center text-sm text-slate-600 mb-2">
-                    Comandă #{labelPreview.orderNumber}
-                  </div>
-                  
-                  <div className="allergen-list mt-3">
-                    <div className="text-sm font-bold text-slate-700 mb-2">Conține următorii alergeni:</div>
-                    {labelPreview.allergenIds && labelPreview.allergenIds.length > 0 ? (
-                      <div className="space-y-1">
-                        {labelPreview.allergenIds.map(allergenId => {
-                          const allergen = allergens.find(a => a.id === allergenId);
-                          return allergen ? (
-                            <div key={allergenId} className="flex items-center gap-2 p-2 bg-white rounded border border-amber-200">
-                              <span className="text-xl">{allergen.icon}</span>
-                              <span className="font-medium">{allergen.name}</span>
-                            </div>
-                          ) : null;
-                        })}
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-green-100 rounded text-center text-green-700 font-medium">
-                        ✓ Nu conține alergeni declarați
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="warning text-center text-xs font-bold text-red-600 mt-3 p-2 border border-red-300 rounded bg-red-50">
-                    Verificați întotdeauna ingredientele!
-                  </div>
-                  
-                  <div className="footer text-center text-xs border-t-2 border-dashed border-amber-400 pt-2 mt-3">
-                    {labelPreview.timestamp.toLocaleString('ro-RO')}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => { setShowAllergenLabel(false); setLabelPreview(null); }}>
-                  <X className="w-4 h-4 mr-2" />
-                  Omite
-                </Button>
-                <Button className="flex-1 bg-amber-500 hover:bg-amber-600" onClick={handlePrintAllergenLabel}>
-                  <Printer className="w-4 h-4 mr-2" />
-                  Printează Alergeni
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
