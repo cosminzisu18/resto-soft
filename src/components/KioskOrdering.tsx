@@ -16,7 +16,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import AllergenBadges from '@/components/AllergenBadges';
 
-type KioskStep = 'idle' | 'mode' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
+type KioskStep = 'idle' | 'mode' | 'table-number' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
 type OrderMode = 'dine-in' | 'takeaway';
 type KioskPaymentMethod = 'cash' | 'card';
 
@@ -154,6 +154,7 @@ const KioskOrdering: React.FC = () => {
   const [idleTimer, setIdleTimer] = useState<number>(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<KioskPaymentMethod>('card');
+  const [tableNumber, setTableNumber] = useState<string>('');
   
   // Customization
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -273,6 +274,7 @@ const KioskOrdering: React.FC = () => {
     setActiveCategory(menuCategories[0]);
     setIdleTimer(0);
     setPaymentMethod('card');
+    setTableNumber('');
   };
 
   const calculateItemTotal = (item: CartItem) => {
@@ -302,8 +304,12 @@ const KioskOrdering: React.FC = () => {
   };
 
   const handleConfirmOrder = () => {
+    const orderName = orderMode === 'dine-in' 
+      ? `Kiosk - Masă #${tableNumber || 'N/A'}` 
+      : 'Kiosk - La pachet';
+    
     const order = createDeliveryOrder('own_website', {
-      name: orderMode === 'dine-in' ? 'Kiosk - În restaurant' : 'Kiosk - La pachet',
+      name: orderName,
       phone: 'Kiosk',
     });
     
@@ -371,7 +377,7 @@ const KioskOrdering: React.FC = () => {
           {/* Order Type Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 mb-6 sm:mb-12 w-full max-w-lg sm:max-w-none px-4">
             <button
-              onClick={(e) => { e.stopPropagation(); setOrderMode('dine-in'); setStep('menu'); resetIdleTimer(); }}
+              onClick={(e) => { e.stopPropagation(); setOrderMode('dine-in'); setStep('table-number'); resetIdleTimer(); }}
               className="flex flex-col items-center gap-2 sm:gap-4 p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all w-full sm:min-w-[180px]"
             >
               <div className="w-14 h-14 sm:w-20 sm:h-20 bg-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
@@ -455,7 +461,7 @@ const KioskOrdering: React.FC = () => {
 
           <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 w-full max-w-lg sm:max-w-none px-4">
             <button
-              onClick={() => { setOrderMode('dine-in'); setStep('menu'); }}
+              onClick={() => { setOrderMode('dine-in'); setStep('table-number'); }}
               className="flex flex-col items-center gap-3 sm:gap-4 p-6 sm:p-8 rounded-2xl sm:rounded-3xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all w-full sm:min-w-[200px]"
             >
               <div className="w-16 h-16 sm:w-20 sm:h-20 bg-orange-100 rounded-xl sm:rounded-2xl flex items-center justify-center">
@@ -483,6 +489,105 @@ const KioskOrdering: React.FC = () => {
 
         <div className="p-4 text-center text-slate-400 text-xs sm:text-sm border-t">
           Plată cu cardul sau numerar • Timeout: {IDLE_TIMEOUT - idleTimer}s
+        </div>
+      </div>
+    );
+  }
+
+  // ============ TABLE NUMBER INPUT ============
+  if (step === 'table-number') {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-100" onClick={resetIdleTimer}>
+        {/* Language Selector */}
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 flex gap-2">
+          {languages.map(lang => (
+            <button
+              key={lang.code}
+              onClick={(e) => { e.stopPropagation(); setLanguage(lang.code as 'ro' | 'en' | 'de' | 'hu'); }}
+              className={cn(
+                "w-8 h-8 sm:w-10 sm:h-10 rounded-full text-lg sm:text-xl flex items-center justify-center transition-all border-2",
+                language === lang.code ? "bg-white border-primary shadow-lg" : "bg-white/80 border-transparent hover:bg-white"
+              )}
+            >
+              {lang.flag}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
+          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-primary/10 rounded-2xl flex items-center justify-center mb-6">
+            <span className="text-4xl sm:text-5xl">🪧</span>
+          </div>
+
+          <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-slate-800 text-center">Introduceți numărul de pe indicator</h1>
+          <p className="text-slate-500 mb-6 sm:mb-8 text-center max-w-md">
+            Veți primi un indicator cu număr pentru a fi plasat pe masă. Chelnerul vă va aduce comanda.
+          </p>
+
+          {/* Table Number Display */}
+          <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 mb-6 min-w-[200px] text-center shadow-lg">
+            <div className="text-5xl sm:text-7xl font-bold text-primary">
+              {tableNumber || '—'}
+            </div>
+            <div className="text-sm text-slate-500 mt-2">Număr Indicator</div>
+          </div>
+
+          {/* Number Pad */}
+          <div className="grid grid-cols-3 gap-3 mb-6 max-w-xs">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+              <button
+                key={num}
+                onClick={() => setTableNumber(prev => prev.length < 3 ? prev + num : prev)}
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-white border-2 border-slate-200 text-2xl sm:text-3xl font-bold text-slate-800 hover:bg-primary hover:text-white hover:border-primary transition-all shadow-sm"
+              >
+                {num}
+              </button>
+            ))}
+            <button
+              onClick={() => setTableNumber('')}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-100 border-2 border-slate-200 text-lg font-medium text-slate-600 hover:bg-slate-200 transition-all"
+            >
+              Șterge
+            </button>
+            <button
+              onClick={() => setTableNumber(prev => prev.length < 3 ? prev + '0' : prev)}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-white border-2 border-slate-200 text-2xl sm:text-3xl font-bold text-slate-800 hover:bg-primary hover:text-white hover:border-primary transition-all shadow-sm"
+            >
+              0
+            </button>
+            <button
+              onClick={() => setTableNumber(prev => prev.slice(0, -1))}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-100 border-2 border-slate-200 text-lg font-medium text-slate-600 hover:bg-slate-200 transition-all"
+            >
+              ←
+            </button>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-4">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => { setStep('mode'); setTableNumber(''); }}
+              className="px-8"
+            >
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              Înapoi
+            </Button>
+            <Button
+              size="lg"
+              onClick={() => setStep('menu')}
+              disabled={!tableNumber}
+              className="px-8 text-lg"
+            >
+              Continuă
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-4 text-center text-slate-400 text-xs sm:text-sm border-t">
+          Indicatorul va fi afișat pe bon • Timeout: {IDLE_TIMEOUT - idleTimer}s
         </div>
       </div>
     );
