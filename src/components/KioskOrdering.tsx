@@ -1,166 +1,309 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { menuItems, menuCategories, MenuItem, Table, extraIngredients as extraIngredientsData } from '@/data/mockData';
+import { menuCategories, MenuItem, extraIngredients as extraIngredientsData } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
-  ShoppingCart, Plus, Minus, Trash2, Send, ArrowLeft, ArrowRight,
-  Home, Package, UtensilsCrossed, QrCode, Check, Edit2, X,
-  Banknote, CreditCard, Loader2, CheckCircle
+  ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
+  Package, UtensilsCrossed, Check, X,
+  CreditCard, Loader2, CheckCircle, Clock, Sparkles,
+  Volume2, VolumeX, ChevronRight, Banknote
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import LanguageSelector from '@/components/LanguageSelector';
 import AllergenBadges from '@/components/AllergenBadges';
 
-type KioskStep = 'mode' | 'table' | 'menu' | 'cart' | 'customize' | 'payment' | 'processing' | 'confirm';
+type KioskStep = 'idle' | 'mode' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
 type OrderMode = 'dine-in' | 'takeaway';
 type KioskPaymentMethod = 'cash' | 'card';
 
 interface CartItem {
+  id: string;
   menuItem: MenuItem;
   quantity: number;
   modifications: {
     added: string[];
     removed: string[];
   };
+  extras: { name: string; quantity: number; price: number }[];
 }
 
-const KioskOrdering: React.FC = () => {
-  const { tables, menu, createDeliveryOrder, addItemToOrder } = useRestaurant();
-  const { t } = useLanguage();
-  const { toast } = useToast();
+// Comprehensive ingredient images mapping
+const ingredientImages: Record<string, string> = {
+  // Cheeses
+  'Mozzarella': 'https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?w=150',
+  'Gorgonzola': 'https://images.unsplash.com/photo-1452195100486-9cc805987862?w=150',
+  'Parmezan': 'https://images.unsplash.com/photo-1552767059-ce182ead6c1b?w=150',
+  'Brie': 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=150',
+  'Brânză': 'https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?w=150',
+  'Telemea': 'https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?w=150',
+  'Cașcaval': 'https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?w=150',
+  'Feta': 'https://images.unsplash.com/photo-1559561853-08451507cbe7?w=150',
+  
+  // Meats
+  'Carne': 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=150',
+  'Carne de vită': 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?w=150',
+  'Vită': 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?w=150',
+  'Bacon': 'https://images.unsplash.com/photo-1606851094291-6efae152bb87?w=150',
+  'Pui': 'https://images.unsplash.com/photo-1587593810167-a84920ea0781?w=150',
+  'Piept de pui': 'https://images.unsplash.com/photo-1587593810167-a84920ea0781?w=150',
+  'Prosciutto': 'https://images.unsplash.com/photo-1626200419199-391ae4be7a41?w=150',
+  'Salam picant': 'https://images.unsplash.com/photo-1599921841143-819065a55cc6?w=150',
+  'Șuncă': 'https://images.unsplash.com/photo-1626200419199-391ae4be7a41?w=150',
+  'Kebab': 'https://images.unsplash.com/photo-1561651823-34feb02250e4?w=150',
+  'Carne tocată': 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=150',
+  
+  // Vegetables
+  'Ceapă': 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=150',
+  'Ceapă roșie': 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=150',
+  'Roșii': 'https://images.unsplash.com/photo-1546094096-0df4bcaaa337?w=150',
+  'Salată': 'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?w=150',
+  'Salată verde': 'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?w=150',
+  'Ardei iute': 'https://images.unsplash.com/photo-1583119022894-919a68a3d0e3?w=150',
+  'Ardei gras': 'https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?w=150',
+  'Ciuperci': 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=150',
+  'Măsline': 'https://images.unsplash.com/photo-1563288204-f0e9c6d2e6b0?w=150',
+  'Usturoi': 'https://images.unsplash.com/photo-1501420193726-1a34f3a80713?w=150',
+  'Cartofi': 'https://images.unsplash.com/photo-1518977676601-b53f82bece48?w=150',
+  'Cartofi prăjiți': 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=150',
+  'Castraveți': 'https://images.unsplash.com/photo-1449300079323-02e209d9d3a6?w=150',
+  'Murături': 'https://images.unsplash.com/photo-1604503468506-a8da13d82791?w=150',
+  'Varză': 'https://images.unsplash.com/photo-1598030343246-eec71cb44231?w=150',
+  'Spanac': 'https://images.unsplash.com/photo-1576045057995-568f588f82fb?w=150',
+  'Porumb': 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=150',
+  
+  // Sauces
+  'Sos roșii': 'https://images.unsplash.com/photo-1472476443507-c7a5948772fc?w=150',
+  'Smântână': 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=150',
+  'Sos tzatziki': 'https://images.unsplash.com/photo-1563379926898-05f4575a45d8?w=150',
+  'Sos BBQ': 'https://images.unsplash.com/photo-1472476443507-c7a5948772fc?w=150',
+  'Maioneză': 'https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?w=150',
+  'Ketchup': 'https://images.unsplash.com/photo-1472476443507-c7a5948772fc?w=150',
+  'Muștar': 'https://images.unsplash.com/photo-1528750997573-59b89d56f4f7?w=150',
+  
+  // Herbs & Spices
+  'Busuioc': 'https://images.unsplash.com/photo-1600692851888-3f6a8f3f8c82?w=150',
+  'Pătrunjel': 'https://images.unsplash.com/photo-1600692851888-3f6a8f3f8c82?w=150',
+  'Oregano': 'https://images.unsplash.com/photo-1600692851888-3f6a8f3f8c82?w=150',
+  
+  // Grains & Others
+  'Orez': 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=150',
+  'Pâine': 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=150',
+  'Lipie': 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=150',
+  'Ou': 'https://images.unsplash.com/photo-1582169296194-e4d644c48063?w=150',
+  'Ouă': 'https://images.unsplash.com/photo-1582169296194-e4d644c48063?w=150',
+};
 
-  const [step, setStep] = useState<KioskStep>('mode');
+const getIngredientImage = (name: string): string => {
+  // Direct match
+  if (ingredientImages[name]) return ingredientImages[name];
+  
+  // Partial match
+  for (const [key, url] of Object.entries(ingredientImages)) {
+    if (name.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(name.toLowerCase())) {
+      return url;
+    }
+  }
+  
+  // Default food image
+  return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150';
+};
+
+// Category icons
+const categoryIcons: Record<string, string> = {
+  'Supe': '🍲',
+  'Pizza': '🍕',
+  'Grill': '🔥',
+  'Giros': '🥙',
+  'Paste': '🍝',
+  'Salate': '🥗',
+  'Garnituri': '🍟',
+  'Deserturi': '🍰',
+  'Băuturi': '🥤',
+  'Meniuri': '🍔',
+  'Burgeri': '🍔',
+};
+
+// Idle screen promotions
+const promotions = [
+  { id: 1, title: 'Pizza Margherita', subtitle: 'Clasică și delicioasă', image: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=1200', color: 'from-red-500/80' },
+  { id: 2, title: 'Kebab XXL', subtitle: 'Nou în meniu!', image: 'https://images.unsplash.com/photo-1561651823-34feb02250e4?w=1200', color: 'from-yellow-500/80' },
+  { id: 3, title: 'Burger Special', subtitle: 'Ediție limitată', image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=1200', color: 'from-orange-500/80' },
+];
+
+// Languages
+const languages = [
+  { code: 'ro', flag: '🇷🇴', name: 'Română' },
+  { code: 'en', flag: '🇬🇧', name: 'English' },
+  { code: 'de', flag: '🇩🇪', name: 'Deutsch' },
+];
+
+const KioskOrdering: React.FC = () => {
+  const { menu, createDeliveryOrder, addItemToOrder } = useRestaurant();
+  const { language, setLanguage } = useLanguage();
+  const { toast } = useToast();
+  
+  const [step, setStep] = useState<KioskStep>('idle');
   const [orderMode, setOrderMode] = useState<OrderMode | null>(null);
-  const [selectedTable, setSelectedTable] = useState<number | null>(null);
-  const [tableNumberInput, setTableNumberInput] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
+  const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
+  const [idleTimer, setIdleTimer] = useState<number>(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<KioskPaymentMethod>('card');
   
-  // Customization state
+  // Customization
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
-  const [tempAdditions, setTempAdditions] = useState<string[]>([]);
+  const [customizeStep, setCustomizeStep] = useState<'extras' | 'remove'>('extras');
+  const [tempExtras, setTempExtras] = useState<{ name: string; quantity: number; price: number }[]>([]);
   const [tempRemovals, setTempRemovals] = useState<string[]>([]);
-  const [tempExtraIngredients, setTempExtraIngredients] = useState<string[]>([]);
-  const [editingCartItemId, setEditingCartItemId] = useState<string | null>(null);
-  
-  // Payment state
-  const [kioskPaymentMethod, setKioskPaymentMethod] = useState<KioskPaymentMethod>('card');
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
 
-  // Available table numbers for dine-in
-  const availableNumbers = Array.from({ length: 50 }, (_, i) => i + 1);
+  const IDLE_TIMEOUT = 120;
 
-  // Get suggestions based on cart items
-  const suggestions = useMemo(() => {
+  const resetIdleTimer = () => setIdleTimer(0);
+
+  // Auto-rotate promotions
+  useEffect(() => {
+    if (step === 'idle') {
+      const interval = setInterval(() => {
+        setCurrentPromoIndex((prev) => (prev + 1) % promotions.length);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [step]);
+
+  // Idle timeout
+  useEffect(() => {
+    if (step !== 'idle' && step !== 'confirm') {
+      const interval = setInterval(() => {
+        setIdleTimer((prev) => {
+          if (prev >= IDLE_TIMEOUT) {
+            resetOrder();
+            return 0;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [step]);
+
+  // Upsell suggestions
+  const upsellSuggestions = useMemo(() => {
     if (cart.length === 0) return [];
     const cartCategories = new Set(cart.map(c => c.menuItem.category));
-    const suggestedItems: MenuItem[] = [];
+    const suggestions: MenuItem[] = [];
     
-    // Suggest drinks if no drinks in cart
     if (!cartCategories.has('Băuturi')) {
-      suggestedItems.push(...menu.filter(m => m.category === 'Băuturi').slice(0, 2));
+      suggestions.push(...menu.filter(m => m.category === 'Băuturi').slice(0, 2));
     }
-    // Suggest sides if main course in cart
     if (cartCategories.has('Grill') || cartCategories.has('Pizza') || cartCategories.has('Giros')) {
       if (!cartCategories.has('Garnituri')) {
-        suggestedItems.push(...menu.filter(m => m.category === 'Garnituri').slice(0, 2));
+        suggestions.push(...menu.filter(m => m.category === 'Garnituri').slice(0, 2));
       }
     }
-    // Suggest soups if no soup
-    if (!cartCategories.has('Supe')) {
-      suggestedItems.push(...menu.filter(m => m.category === 'Supe').slice(0, 1));
-    }
-    
-    return suggestedItems.slice(0, 4);
+    return suggestions.slice(0, 4);
   }, [cart, menu]);
 
-  const openCustomization = (item: MenuItem, isEditing: boolean = false, cartItemId?: string) => {
+  const openCustomization = (item: MenuItem) => {
+    resetIdleTimer();
     setCustomizingItem(item);
-    setTempAdditions([]);
+    setTempExtras([]);
     setTempRemovals([]);
-    setEditingCartItemId(cartItemId || null);
-    
-    if (isEditing && cartItemId) {
-      const cartItem = cart.find(c => c.menuItem.id === cartItemId);
-      if (cartItem) {
-        setTempAdditions(cartItem.modifications.added);
-        setTempRemovals(cartItem.modifications.removed);
-      }
-    }
+    setCustomizeStep('extras');
     setStep('customize');
+  };
+
+  const addToCart = (item: MenuItem) => {
+    resetIdleTimer();
+    if (item.ingredients && item.ingredients.length > 0) {
+      openCustomization(item);
+    } else {
+      const newItem: CartItem = {
+        id: `kiosk-${Date.now()}`,
+        menuItem: item,
+        quantity: 1,
+        modifications: { added: [], removed: [] },
+        extras: []
+      };
+      setCart([...cart, newItem]);
+    }
   };
 
   const confirmCustomization = () => {
     if (!customizingItem) return;
-    
-    if (editingCartItemId) {
-      // Update existing cart item
-      setCart(prev => prev.map(c => 
-        c.menuItem.id === editingCartItemId 
-          ? { ...c, modifications: { added: tempAdditions, removed: tempRemovals } }
-          : c
-      ));
-    } else {
-      // Add new item to cart
-      setCart(prev => {
-        const existing = prev.find(c => 
-          c.menuItem.id === customizingItem.id && 
-          JSON.stringify(c.modifications) === JSON.stringify({ added: tempAdditions, removed: tempRemovals })
-        );
-        if (existing) {
-          return prev.map(c => c === existing ? { ...c, quantity: c.quantity + 1 } : c);
-        }
-        return [...prev, { 
-          menuItem: customizingItem, 
-          quantity: 1, 
-          modifications: { added: tempAdditions, removed: tempRemovals } 
-        }];
-      });
-    }
-    
+    const newItem: CartItem = {
+      id: `kiosk-${Date.now()}`,
+      menuItem: customizingItem,
+      quantity: 1,
+      modifications: { 
+        added: tempExtras.map(e => e.name), 
+        removed: tempRemovals 
+      },
+      extras: tempExtras
+    };
+    setCart([...cart, newItem]);
     setCustomizingItem(null);
-    setEditingCartItemId(null);
     setStep('menu');
   };
 
-  const addToCartQuick = (item: MenuItem) => {
-    if (item.ingredients && item.ingredients.length > 0) {
-      openCustomization(item);
-    } else {
-      setCart(prev => {
-        const existing = prev.find(c => c.menuItem.id === item.id);
-        if (existing) {
-          return prev.map(c => c.menuItem.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-        }
-        return [...prev, { menuItem: item, quantity: 1, modifications: { added: [], removed: [] } }];
-      });
-    }
-  };
-
-  const updateQuantity = (itemId: string, delta: number) => {
-    setCart(prev => prev.map(c => {
-      if (c.menuItem.id === itemId) {
-        const newQty = c.quantity + delta;
-        return newQty > 0 ? { ...c, quantity: newQty } : c;
+  const updateQuantity = (id: string, delta: number) => {
+    resetIdleTimer();
+    setCart(cart.map(item => {
+      if (item.id === id) {
+        const newQty = item.quantity + delta;
+        return newQty > 0 ? { ...item, quantity: newQty } : item;
       }
-      return c;
-    }).filter(c => c.quantity > 0));
+      return item;
+    }).filter(item => item.quantity > 0));
   };
 
-  const removeFromCart = (itemId: string) => {
-    setCart(prev => prev.filter(c => c.menuItem.id !== itemId));
+  const removeItem = (id: string) => {
+    resetIdleTimer();
+    setCart(cart.filter(item => item.id !== id));
   };
 
-  const totalAmount = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
-  const totalItems = cart.reduce((sum, c) => sum + c.quantity, 0);
+  const resetOrder = () => {
+    setStep('idle');
+    setOrderMode(null);
+    setCart([]);
+    setActiveCategory(menuCategories[0]);
+    setIdleTimer(0);
+    setPaymentMethod('card');
+  };
+
+  const calculateItemTotal = (item: CartItem) => {
+    const extrasTotal = item.extras.reduce((sum, e) => sum + e.price * e.quantity, 0);
+    return (item.menuItem.price + extrasTotal) * item.quantity;
+  };
+
+  const totalAmount = cart.reduce((sum, item) => sum + calculateItemTotal(item), 0);
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const filteredMenu = menu.filter(m => m.category === activeCategory && m.availability?.kiosk !== false);
+
+  const handleExtraQuantity = (ingredientName: string, delta: number, price: number) => {
+    setTempExtras(prev => {
+      const existing = prev.find(e => e.name === ingredientName);
+      if (existing) {
+        const newQty = existing.quantity + delta;
+        if (newQty <= 0) {
+          return prev.filter(e => e.name !== ingredientName);
+        }
+        return prev.map(e => e.name === ingredientName ? { ...e, quantity: newQty } : e);
+      } else if (delta > 0) {
+        return [...prev, { name: ingredientName, quantity: 1, price }];
+      }
+      return prev;
+    });
+  };
 
   const handleConfirmOrder = () => {
-    // Create mock order
     const order = createDeliveryOrder('own_website', {
-      name: orderMode === 'dine-in' ? `Kiosk - Nr. ${selectedTable}` : 'Kiosk - La pachet',
+      name: orderMode === 'dine-in' ? 'Kiosk - În restaurant' : 'Kiosk - La pachet',
       phone: 'Kiosk',
     });
     
@@ -172,126 +315,344 @@ const KioskOrdering: React.FC = () => {
     setStep('confirm');
   };
 
-  const resetOrder = () => {
-    setStep('mode');
-    setOrderMode(null);
-    setSelectedTable(null);
-    setCart([]);
-  };
-
-  const filteredMenu = menu.filter(m => m.category === activeCategory);
-
-  // Mode Selection
-  if (step === 'mode') {
+  // ============ IDLE SCREEN ============
+  if (step === 'idle') {
+    const promo = promotions[currentPromoIndex];
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/20 via-background to-primary/10 flex flex-col">
-        <header className="p-6 flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Bine ai venit!</h1>
-          <LanguageSelector />
-        </header>
-        
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl w-full">
+      <div 
+        className="min-h-screen flex flex-col cursor-pointer overflow-hidden relative bg-slate-900"
+        onClick={() => { setStep('mode'); resetIdleTimer(); }}
+      >
+        {/* Background Image */}
+        <div className="absolute inset-0">
+          <img src={promo.image} alt={promo.title} className="w-full h-full object-cover" />
+          <div className={cn("absolute inset-0 bg-gradient-to-t to-transparent", promo.color)} />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
+        </div>
+
+        {/* Language Selector */}
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 flex gap-2">
+          {languages.map(lang => (
             <button
-              onClick={() => { setOrderMode('dine-in'); setStep('table'); }}
-              className="group p-12 rounded-3xl bg-card border-2 border-border hover:border-primary hover:bg-primary/5 transition-all flex flex-col items-center gap-6"
+              key={lang.code}
+              onClick={(e) => { e.stopPropagation(); setLanguage(lang.code as 'ro' | 'en' | 'de' | 'hu'); }}
+              className={cn(
+                "w-10 h-10 sm:w-12 sm:h-12 rounded-full text-xl sm:text-2xl flex items-center justify-center transition-all",
+                language === lang.code ? "bg-white shadow-lg scale-110" : "bg-white/30 hover:bg-white/50"
+              )}
             >
-              <div className="w-32 h-32 rounded-full bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                <UtensilsCrossed className="w-16 h-16 text-primary" />
+              {lang.flag}
+            </button>
+          ))}
+        </div>
+
+        {/* Sound Toggle */}
+        <button 
+          className="absolute top-4 left-4 sm:top-6 sm:left-6 z-20 p-2 sm:p-3 rounded-full bg-black/30 text-white"
+          onClick={(e) => { e.stopPropagation(); setSoundEnabled(!soundEnabled); }}
+        >
+          {soundEnabled ? <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" /> : <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />}
+        </button>
+
+        {/* Main Content */}
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-white p-4 sm:p-8">
+          {/* Product Image */}
+          <div className="mb-6 sm:mb-12">
+            <img 
+              src={promo.image} 
+              alt={promo.title}
+              className="w-48 h-36 sm:w-80 sm:h-64 object-cover rounded-2xl shadow-2xl"
+            />
+          </div>
+
+          {/* Title */}
+          <h1 className="text-3xl sm:text-5xl md:text-6xl font-bold mb-4 sm:mb-8 text-center">Începeți comanda</h1>
+
+          {/* Order Type Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 mb-6 sm:mb-12 w-full max-w-lg sm:max-w-none px-4">
+            <button
+              onClick={(e) => { e.stopPropagation(); setOrderMode('dine-in'); setStep('menu'); resetIdleTimer(); }}
+              className="flex flex-col items-center gap-2 sm:gap-4 p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all w-full sm:min-w-[180px]"
+            >
+              <div className="w-14 h-14 sm:w-20 sm:h-20 bg-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
+                <span className="text-2xl sm:text-4xl">🍽️</span>
               </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-bold mb-2">Mănânc aici</h2>
-                <p className="text-muted-foreground">Comandă și consumă în restaurant</p>
-              </div>
+              <span className="text-lg sm:text-xl font-bold">În restaurant</span>
             </button>
 
             <button
-              onClick={() => { setOrderMode('takeaway'); setStep('menu'); }}
-              className="group p-12 rounded-3xl bg-card border-2 border-border hover:border-primary hover:bg-primary/5 transition-all flex flex-col items-center gap-6"
+              onClick={(e) => { e.stopPropagation(); setOrderMode('takeaway'); setStep('menu'); resetIdleTimer(); }}
+              className="flex flex-col items-center gap-2 sm:gap-4 p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all w-full sm:min-w-[180px]"
             >
-              <div className="w-32 h-32 rounded-full bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                <Package className="w-16 h-16 text-primary" />
+              <div className="w-14 h-14 sm:w-20 sm:h-20 bg-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
+                <span className="text-2xl sm:text-4xl">🛍️</span>
               </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-bold mb-2">La pachet</h2>
-                <p className="text-muted-foreground">Comandă și ia cu tine</p>
-              </div>
+              <span className="text-lg sm:text-xl font-bold">La pachet</span>
             </button>
           </div>
+
+          {/* Secondary Links */}
+          <div className="flex flex-col items-center gap-2 text-white/70 text-xs sm:text-sm">
+            <button className="hover:text-white underline">Alergeni și nutriționale</button>
+            <button className="hover:text-white underline">Informații Ambalaj</button>
+          </div>
+        </div>
+
+        {/* Bottom Info */}
+        <div className="absolute bottom-4 sm:bottom-6 left-0 right-0 text-center text-white/60 text-xs sm:text-sm z-10">
+          <p>Plată cu cardul sau numerar</p>
+        </div>
+
+        {/* Promo indicators */}
+        <div className="absolute bottom-4 sm:bottom-6 right-4 sm:right-6 flex gap-2 z-10">
+          {promotions.map((_, idx) => (
+            <div 
+              key={idx}
+              className={cn(
+                "w-2 h-2 sm:w-3 sm:h-3 rounded-full transition-all",
+                idx === currentPromoIndex ? "bg-white w-6 sm:w-8" : "bg-white/50"
+              )}
+            />
+          ))}
         </div>
       </div>
     );
   }
 
-  // Table Number Selection (for dine-in) - with manual input
-  if (step === 'table') {
-    const handleTableSelect = (num: number) => {
-      setSelectedTable(num);
-      setTableNumberInput(num.toString());
-    };
-
-    const handleInputChange = (value: string) => {
-      setTableNumberInput(value);
-      const num = parseInt(value);
-      if (!isNaN(num) && num >= 1 && num <= 50) {
-        setSelectedTable(num);
-      } else {
-        setSelectedTable(null);
-      }
-    };
-
+  // ============ MODE SELECTION ============
+  if (step === 'mode') {
+    const promo = promotions[0];
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/20 via-background to-primary/10 flex flex-col">
-        <header className="p-6 flex justify-between items-center border-b border-border">
-          <Button variant="ghost" onClick={() => setStep('mode')}>
-            <ArrowLeft className="w-5 h-5 mr-2" />
-            Înapoi
-          </Button>
-          <h1 className="text-2xl font-bold">Introdu numărul mesei</h1>
-          <LanguageSelector />
-        </header>
-        
-        <div className="flex-1 p-8">
-          {/* Manual Input */}
-          <div className="max-w-md mx-auto mb-8">
-            <p className="text-center text-muted-foreground mb-4">
-              Introdu numărul de pe suportul de pe masă
-            </p>
-            <Input
-              type="number"
-              value={tableNumberInput}
-              onChange={(e) => handleInputChange(e.target.value)}
-              placeholder="Ex: 12"
-              className="text-center text-4xl h-20 font-bold"
-              min={1}
-              max={50}
+      <div className="min-h-screen flex flex-col bg-slate-100" onClick={resetIdleTimer}>
+        {/* Language Selector */}
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 flex gap-2">
+          {languages.map(lang => (
+            <button
+              key={lang.code}
+              onClick={(e) => { e.stopPropagation(); setLanguage(lang.code as 'ro' | 'en' | 'de' | 'hu'); }}
+              className={cn(
+                "w-8 h-8 sm:w-10 sm:h-10 rounded-full text-lg sm:text-xl flex items-center justify-center transition-all border-2",
+                language === lang.code ? "bg-white border-primary shadow-lg" : "bg-white/80 border-transparent hover:bg-white"
+              )}
+            >
+              {lang.flag}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
+          {/* Product Image */}
+          <div className="mb-6 sm:mb-8">
+            <img 
+              src={promo.image} 
+              alt="Product"
+              className="w-48 h-36 sm:w-72 sm:h-56 object-cover rounded-2xl shadow-xl"
             />
           </div>
 
-          <p className="text-center text-muted-foreground mb-4">sau selectează din listă</p>
-          
-          <div className="grid grid-cols-5 md:grid-cols-10 gap-3 max-w-4xl mx-auto">
-            {availableNumbers.map(num => (
-              <button
-                key={num}
-                onClick={() => handleTableSelect(num)}
-                className={cn(
-                  "aspect-square rounded-xl text-2xl font-bold transition-all border-2",
-                  selectedTable === num
-                    ? "bg-primary text-primary-foreground border-primary scale-110 shadow-lg"
-                    : "bg-card border-border hover:border-primary hover:scale-105"
-                )}
-              >
-                {num}
-              </button>
-            ))}
+          <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-slate-800">Începeți comanda</h1>
+          <p className="text-slate-500 mb-6 sm:mb-8">Alegeți tipul comenzii</p>
+
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 w-full max-w-lg sm:max-w-none px-4">
+            <button
+              onClick={() => { setOrderMode('dine-in'); setStep('menu'); }}
+              className="flex flex-col items-center gap-3 sm:gap-4 p-6 sm:p-8 rounded-2xl sm:rounded-3xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all w-full sm:min-w-[200px]"
+            >
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-orange-100 rounded-xl sm:rounded-2xl flex items-center justify-center">
+                <span className="text-3xl sm:text-4xl">🍽️</span>
+              </div>
+              <span className="text-lg sm:text-xl font-bold text-slate-800">În restaurant</span>
+            </button>
+
+            <button
+              onClick={() => { setOrderMode('takeaway'); setStep('menu'); }}
+              className="flex flex-col items-center gap-3 sm:gap-4 p-6 sm:p-8 rounded-2xl sm:rounded-3xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all w-full sm:min-w-[200px]"
+            >
+              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-amber-100 rounded-xl sm:rounded-2xl flex items-center justify-center">
+                <span className="text-3xl sm:text-4xl">🛍️</span>
+              </div>
+              <span className="text-lg sm:text-xl font-bold text-slate-800">La pachet</span>
+            </button>
           </div>
-          
-          {selectedTable && (
-            <div className="mt-8 flex justify-center">
-              <Button size="lg" className="text-xl px-12 py-6" onClick={() => setStep('menu')}>
-                Continuă cu meniul
-                <ArrowRight className="w-5 h-5 ml-2" />
+
+          <div className="flex flex-col items-center gap-2 mt-6 sm:mt-8 text-slate-500 text-xs sm:text-sm">
+            <button className="hover:text-primary underline">Alergeni și nutriționale</button>
+            <button className="hover:text-primary underline">Informații Ambalaj</button>
+          </div>
+        </div>
+
+        <div className="p-4 text-center text-slate-400 text-xs sm:text-sm border-t">
+          Plată cu cardul sau numerar • Timeout: {IDLE_TIMEOUT - idleTimer}s
+        </div>
+      </div>
+    );
+  }
+
+  // ============ MENU ============
+  if (step === 'menu') {
+    return (
+      <div className="min-h-screen flex flex-col lg:flex-row bg-slate-100" onClick={resetIdleTimer}>
+        {/* Left Sidebar - Categories (hidden on mobile, shown at bottom) */}
+        <div className="hidden lg:flex w-48 bg-white border-r border-slate-200 flex-col">
+          {/* Logo/Home */}
+          <div className="p-4 border-b border-slate-200">
+            <button 
+              onClick={() => setStep('mode')}
+              className="w-full flex items-center gap-2 p-3 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span className="font-medium">Înapoi</span>
+            </button>
+          </div>
+
+          {/* Categories */}
+          <ScrollArea className="flex-1">
+            <div className="p-2 space-y-1">
+              {menuCategories.map(cat => {
+                const itemCount = menu.filter(m => m.category === cat && m.availability?.kiosk !== false).length;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={cn(
+                      "w-full flex items-center gap-3 p-4 rounded-xl text-left transition-all",
+                      activeCategory === cat 
+                        ? "bg-primary text-white shadow-lg" 
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-700"
+                    )}
+                  >
+                    <span className="text-2xl">{categoryIcons[cat] || '📦'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn("font-bold text-sm truncate", activeCategory === cat ? "text-white" : "text-slate-800")}>
+                        {cat}
+                      </p>
+                      {activeCategory !== cat && (
+                        <p className="text-xs text-slate-400">{itemCount} produse</p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+
+          {/* Language at bottom */}
+          <div className="p-4 border-t border-slate-200">
+            <div className="flex justify-center gap-2">
+              {languages.map(lang => (
+                <button
+                  key={lang.code}
+                  onClick={() => setLanguage(lang.code as 'ro' | 'en' | 'de' | 'hu')}
+                  className={cn(
+                    "w-10 h-10 rounded-full text-lg flex items-center justify-center transition-all",
+                    language === lang.code ? "bg-primary/10 ring-2 ring-primary" : "bg-slate-100 hover:bg-slate-200"
+                  )}
+                >
+                  {lang.flag}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Mobile Header */}
+          <div className="lg:hidden p-4 bg-white border-b border-slate-200 flex items-center justify-between">
+            <button 
+              onClick={() => setStep('mode')}
+              className="flex items-center gap-2 p-2 rounded-xl text-primary"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h1 className="text-lg font-bold text-slate-800">{activeCategory}</h1>
+            <div className="flex items-center gap-2 text-slate-400">
+              <Clock className="w-4 h-4" />
+              <span className="text-sm">{IDLE_TIMEOUT - idleTimer}s</span>
+            </div>
+          </div>
+
+          {/* Mobile Categories */}
+          <div className="lg:hidden overflow-x-auto bg-white border-b border-slate-200">
+            <div className="flex gap-2 p-3">
+              {menuCategories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-all",
+                    activeCategory === cat 
+                      ? "bg-primary text-white" 
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  )}
+                >
+                  <span>{categoryIcons[cat] || '📦'}</span>
+                  <span className="font-medium text-sm">{cat}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Desktop Header */}
+          <div className="hidden lg:flex p-4 bg-white border-b border-slate-200 items-center justify-between">
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold text-slate-800">{activeCategory}</h1>
+              <Badge variant="secondary">{filteredMenu.length} produse</Badge>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              {/* Timeout */}
+              <div className="flex items-center gap-2 text-slate-400">
+                <Clock className="w-4 h-4" />
+                <span className="text-sm">{IDLE_TIMEOUT - idleTimer}s</span>
+              </div>
+              
+              {/* Cart button */}
+              {cart.length > 0 && (
+                <Button onClick={() => setStep('cart')} size="lg" className="h-12 px-6">
+                  <ShoppingCart className="w-5 h-5 mr-2" />
+                  Coș: {totalAmount.toFixed(2)} RON
+                  <Badge className="ml-2 bg-white text-primary">{totalItems}</Badge>
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Products Grid */}
+          <ScrollArea className="flex-1">
+            <div className="p-3 sm:p-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                {filteredMenu.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => addToCart(item)}
+                    className="rounded-xl sm:rounded-2xl bg-white border-2 border-slate-100 hover:border-primary hover:shadow-xl transition-all text-left overflow-hidden group active:scale-95"
+                  >
+                    {item.image && (
+                      <div className="aspect-square bg-slate-50 relative">
+                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                      </div>
+                    )}
+                    <div className="p-3 sm:p-4">
+                      <h3 className="font-bold text-sm sm:text-base mb-1 line-clamp-2 text-slate-800">{item.name}</h3>
+                      <p className="text-lg sm:text-2xl font-black text-primary">{item.price.toFixed(2)} RON</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </ScrollArea>
+
+          {/* Bottom Bar */}
+          {cart.length > 0 && (
+            <div className="p-3 sm:p-4 bg-white border-t border-slate-200">
+              <Button 
+                className="w-full h-14 sm:h-16 text-lg sm:text-xl bg-green-600 hover:bg-green-700" 
+                onClick={() => setStep(upsellSuggestions.length > 0 ? 'upsell' : 'cart')}
+              >
+                <span className="flex-1 text-left">Următorul</span>
+                <span className="font-black">Sumă: {totalAmount.toFixed(2)} RON</span>
               </Button>
             </div>
           )}
@@ -300,388 +661,225 @@ const KioskOrdering: React.FC = () => {
     );
   }
 
-  // Menu & Cart
-  if (step === 'menu' || step === 'cart') {
+  // ============ CUSTOMIZATION ============
+  if (step === 'customize' && customizingItem) {
+    // Available extras for this item
+    const availableExtras = [
+      { name: 'Extra carne de vită', price: 8.00, image: ingredientImages['Vită'] },
+      { name: 'Extra bacon', price: 5.00, image: ingredientImages['Bacon'] },
+      { name: 'Extra brânză', price: 4.00, image: ingredientImages['Brânză'] },
+      { name: 'Extra sos', price: 2.00, image: ingredientImages['Maioneză'] },
+      { name: 'Extra ciuperci', price: 3.00, image: ingredientImages['Ciuperci'] },
+      { name: 'Extra ceapă', price: 2.00, image: ingredientImages['Ceapă'] },
+    ];
+
     return (
-      <div className="min-h-screen bg-background flex">
-        {/* Menu Section */}
-        <div className={cn("flex-1 flex flex-col", step === 'cart' && "hidden md:flex")}>
-          <header className="p-4 border-b border-border flex items-center justify-between">
-            <Button variant="ghost" onClick={() => setStep(orderMode === 'dine-in' ? 'table' : 'mode')}>
+      <div className="min-h-screen flex flex-col lg:flex-row bg-slate-100" onClick={resetIdleTimer}>
+        {/* Left Sidebar - Steps (hidden on mobile) */}
+        <div className="hidden lg:flex w-56 bg-white border-r border-slate-200 flex-col">
+          <div className="p-4 border-b border-slate-200">
+            <Button variant="ghost" className="w-full justify-start" onClick={() => setStep('menu')}>
               <ArrowLeft className="w-5 h-5 mr-2" />
-              Înapoi
+              Înapoi la meniu
             </Button>
-            <div className="text-center">
-              <h1 className="text-xl font-bold">Meniu</h1>
-              <p className="text-sm text-muted-foreground">
-                {orderMode === 'dine-in' ? `Masa nr. ${selectedTable}` : 'La pachet'}
-              </p>
-            </div>
-            <LanguageSelector compact />
-          </header>
-
-          {/* Categories */}
-          <div className="flex gap-2 p-4 overflow-x-auto border-b border-border">
-            {menuCategories.map(cat => (
-              <Button
-                key={cat}
-                variant={activeCategory === cat ? 'default' : 'secondary'}
-                onClick={() => setActiveCategory(cat)}
-                className="whitespace-nowrap"
-              >
-                {cat}
-              </Button>
-            ))}
           </div>
 
-          {/* Menu Items */}
-          <div className="flex-1 overflow-auto p-4">
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredMenu.map(item => {
-                const inCart = cart.find(c => c.menuItem.id === item.id);
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => addToCartQuick(item)}
-                    className={cn(
-                      "rounded-2xl border-2 text-left transition-all hover:scale-102 overflow-hidden",
-                      inCart ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/50"
-                    )}
-                  >
-                    {/* Product Image */}
-                    {item.image && (
-                      <div className="aspect-video w-full bg-secondary">
-                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                      </div>
-                    )}
-                    <div className="p-4">
-                      <h3 className="font-bold mb-1">{item.name}</h3>
-                      <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{item.description}</p>
-                      
-                      {/* Allergens badges */}
-                      <AllergenBadges allergenIds={item.allergenIds} size="md" className="mb-2" />
-                      
-                      {/* Ingredients */}
-                      {item.ingredients && item.ingredients.length > 0 && (
-                        <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                          <span className="font-medium">Conține:</span> {item.ingredients.join(', ')}
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center justify-between">
-                        <span className="text-xl font-bold text-primary">{item.price} RON</span>
-                        {inCart && (
-                          <span className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
-                            {inCart.quantity}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Suggestions */}
-            {suggestions.length > 0 && (
-              <div className="mt-8">
-                <h3 className="text-lg font-semibold mb-4">Ți-ar plăcea și...</h3>
-                <div className="flex gap-4 overflow-x-auto pb-4">
-                  {suggestions.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => addToCartQuick(item)}
-                      className="flex-shrink-0 w-48 p-4 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:border-primary transition-all"
-                    >
-                      <p className="font-medium text-sm">{item.name}</p>
-                      <p className="text-primary font-bold">{item.price} RON</p>
-                    </button>
-                  ))}
-                </div>
+          <div className="p-4">
+            <h3 className="text-sm font-bold text-slate-500 mb-4">Produsul dvs</h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-primary/10 text-primary">
+                <Check className="w-5 h-5" />
+                <span className="font-medium truncate">{customizingItem.name}</span>
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* Mobile Cart Button */}
-          <div className="md:hidden p-4 border-t border-border">
-            <Button className="w-full h-14 text-lg" onClick={() => setStep('cart')} disabled={cart.length === 0}>
-              <ShoppingCart className="w-5 h-5 mr-2" />
-              Vezi coș ({totalItems}) - {totalAmount.toFixed(2)} RON
-            </Button>
+            <h3 className="text-sm font-bold text-slate-500 mt-6 mb-4">Personalizare</h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => setCustomizeStep('extras')}
+                className={cn(
+                  "w-full flex items-center gap-3 p-3 rounded-xl transition-all",
+                  customizeStep === 'extras' ? "bg-primary text-white" : "bg-slate-50 hover:bg-slate-100 text-slate-700"
+                )}
+              >
+                <Plus className="w-5 h-5" />
+                <span className="font-medium">Alege extras</span>
+              </button>
+              <button
+                onClick={() => setCustomizeStep('remove')}
+                className={cn(
+                  "w-full flex items-center gap-3 p-3 rounded-xl transition-all",
+                  customizeStep === 'remove' ? "bg-primary text-white" : "bg-slate-50 hover:bg-slate-100 text-slate-700"
+                )}
+              >
+                <Minus className="w-5 h-5" />
+                <span className="font-medium">Elimină ingredient</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Cart Sidebar */}
-        <div className={cn(
-          "w-full md:w-96 border-l border-border bg-card flex flex-col",
-          step !== 'cart' && "hidden md:flex"
-        )}>
-          <header className="p-4 border-b border-border flex items-center justify-between">
-            <Button variant="ghost" className="md:hidden" onClick={() => setStep('menu')}>
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Mobile Header */}
+          <div className="lg:hidden p-4 bg-white border-b border-slate-200 flex items-center justify-between">
+            <Button variant="ghost" size="sm" onClick={() => setStep('menu')}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5" />
-              Coșul tău
-            </h2>
-            <span className="text-muted-foreground">{totalItems} produse</span>
-          </header>
+            <h1 className="text-lg font-bold text-slate-800">Personalizare</h1>
+            <div className="w-10" />
+          </div>
 
-          <div className="flex-1 overflow-auto p-4">
-            {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                <ShoppingCart className="w-16 h-16 mb-4 opacity-30" />
-                <p>Coșul este gol</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {cart.map((item, idx) => (
-                  <div key={`${item.menuItem.id}-${idx}`} className="p-4 rounded-xl bg-secondary/50">
-                    <div className="flex items-start gap-4">
-                      <div className="flex-1">
-                        <p className="font-medium text-lg">{item.menuItem.name}</p>
-                        {/* Show modifications */}
-                        {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
-                          <div className="text-sm mt-1 space-x-2">
-                            {item.modifications.added.map(a => (
-                              <span key={a} className="text-emerald-500">+{a}</span>
-                            ))}
-                            {item.modifications.removed.map(r => (
-                              <span key={r} className="text-destructive">-{r}</span>
-                            ))}
-                          </div>
-                        )}
-                        <p className="text-primary font-bold mt-1">{(item.menuItem.price * item.quantity).toFixed(2)} RON</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {item.menuItem.ingredients && item.menuItem.ingredients.length > 0 && (
-                          <Button 
-                            size="icon" 
-                            variant="outline" 
-                            className="h-8 w-8" 
-                            onClick={() => openCustomization(item.menuItem, true, item.menuItem.id)}
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                        )}
-                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, -1)}>
-                          <Minus className="w-4 h-4" />
-                        </Button>
-                        <span className="w-8 text-center font-bold">{item.quantity}</span>
-                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(item.menuItem.id, 1)}>
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                        <Button size="icon" variant="destructive" className="h-8 w-8" onClick={() => removeFromCart(item.menuItem.id)}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
+          {/* Product Header */}
+          <div className="p-4 sm:p-6 bg-white border-b border-slate-200">
+            <div className="flex items-start gap-4 sm:gap-6">
+              {customizingItem.image && (
+                <img src={customizingItem.image} alt={customizingItem.name} className="w-20 h-16 sm:w-32 sm:h-24 object-cover rounded-xl" />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                  <div>
+                    <h1 className="text-lg sm:text-2xl font-bold text-slate-800">{customizingItem.name}</h1>
+                    <p className="text-slate-500 mt-1 text-sm sm:text-base line-clamp-2">{customizingItem.description}</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="p-4 border-t border-border space-y-4">
-            <div className="flex justify-between text-xl font-bold">
-              <span>Total</span>
-              <span className="text-primary">{totalAmount.toFixed(2)} RON</span>
-            </div>
-            <Button className="w-full h-14 text-lg" disabled={cart.length === 0} onClick={() => setStep('payment')}>
-              Continuă la plată
-              <ArrowRight className="w-5 h-5 ml-2" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Ingredient Customization Screen
-  if (step === 'customize' && customizingItem) {
-    const ingredients = customizingItem.ingredients || [];
-    
-    // Group extra ingredients by category
-    const extraIngredientsByCategory = extraIngredientsData.reduce((acc, ing) => {
-      if (!acc[ing.category]) acc[ing.category] = [];
-      acc[ing.category].push(ing);
-      return acc;
-    }, {} as Record<string, typeof extraIngredientsData>);
-    
-    return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <header className="p-6 border-b border-border flex items-center justify-between">
-          <Button variant="ghost" onClick={() => { setStep('menu'); setCustomizingItem(null); }}>
-            <X className="w-5 h-5 mr-2" />
-            Anulează
-          </Button>
-          <h1 className="text-2xl font-bold">Personalizează</h1>
-          <div className="w-24" />
-        </header>
-
-        <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-2xl mx-auto">
-            {/* Product Info */}
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold mb-2">{customizingItem.name}</h2>
-              <p className="text-muted-foreground mb-2">{customizingItem.description}</p>
-              <p className="text-2xl font-bold text-primary">{customizingItem.price} RON</p>
-            </div>
-
-            {/* Ingredients List */}
-            {ingredients.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <UtensilsCrossed className="w-5 h-5" />
-                  Ingrediente ({ingredients.length})
-                </h3>
-                <div className="grid gap-3">
-                  {ingredients.map(ing => {
-                    const isRemoved = tempRemovals.includes(ing);
-                    const isExtra = tempAdditions.includes(ing);
-                    
-                    return (
-                      <div 
-                        key={ing}
-                        className={cn(
-                          "p-4 rounded-xl border-2 flex items-center justify-between transition-all",
-                          isRemoved && "border-destructive/50 bg-destructive/10",
-                          isExtra && "border-primary bg-primary/10",
-                          !isRemoved && !isExtra && "border-border bg-card"
-                        )}
-                      >
-                        <span className={cn(
-                          "text-lg font-medium",
-                          isRemoved && "line-through text-muted-foreground"
-                        )}>
-                          {ing}
-                        </span>
-                        <div className="flex gap-2">
-                          <Button
-                            size="lg"
-                            variant={isRemoved ? 'destructive' : 'outline'}
-                            onClick={() => {
-                              if (isRemoved) {
-                                setTempRemovals(tempRemovals.filter(r => r !== ing));
-                              } else {
-                                setTempRemovals([...tempRemovals, ing]);
-                                setTempAdditions(tempAdditions.filter(a => a !== ing));
-                              }
-                            }}
-                            className="min-w-[100px]"
-                          >
-                            {isRemoved ? '✓ Fără' : 'Fără'}
-                          </Button>
-                          <Button
-                            size="lg"
-                            variant={isExtra ? 'default' : 'outline'}
-                            onClick={() => {
-                              if (isExtra) {
-                                setTempAdditions(tempAdditions.filter(a => a !== ing));
-                              } else {
-                                setTempAdditions([...tempAdditions, ing]);
-                                setTempRemovals(tempRemovals.filter(r => r !== ing));
-                              }
-                            }}
-                            className="min-w-[100px]"
-                          >
-                            {isExtra ? '✓ Extra' : 'Extra'}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  <p className="text-xl sm:text-2xl font-black text-primary">
+                    {(customizingItem.price + tempExtras.reduce((sum, e) => sum + e.price * e.quantity, 0)).toFixed(2)} RON
+                  </p>
                 </div>
+                <AllergenBadges allergenIds={customizingItem.allergenIds} size="md" className="mt-3" />
               </div>
-            )}
+            </div>
+          </div>
 
-            {/* Extra Ingredients */}
-            <div className="mb-8">
-              <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Plus className="w-5 h-5" />
-                Adaugă ingrediente extra
-              </h3>
-              {Object.entries(extraIngredientsByCategory).map(([category, items]) => (
-                <div key={category} className="mb-4">
-                  <p className="text-sm text-muted-foreground mb-2">{category}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {items.map(ing => {
-                      const isSelected = tempExtraIngredients.includes(ing.id);
+          {/* Mobile Tab Switcher */}
+          <div className="lg:hidden flex gap-2 p-3 bg-white border-b border-slate-200">
+            <button
+              onClick={() => setCustomizeStep('extras')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 p-3 rounded-xl transition-all",
+                customizeStep === 'extras' ? "bg-primary text-white" : "bg-slate-100 text-slate-700"
+              )}
+            >
+              <Plus className="w-4 h-4" />
+              <span className="font-medium text-sm">Extras</span>
+            </button>
+            <button
+              onClick={() => setCustomizeStep('remove')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 p-3 rounded-xl transition-all",
+                customizeStep === 'remove' ? "bg-primary text-white" : "bg-slate-100 text-slate-700"
+              )}
+            >
+              <Minus className="w-4 h-4" />
+              <span className="font-medium text-sm">Elimină</span>
+            </button>
+          </div>
+
+          {/* Content Area */}
+          <ScrollArea className="flex-1">
+            <div className="p-4 sm:p-6">
+              {customizeStep === 'extras' && (
+                <>
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-4">Alege extras</h2>
+                  <div className="space-y-3">
+                    {availableExtras.map((extra) => {
+                      const currentQty = tempExtras.find(e => e.name === extra.name)?.quantity || 0;
+                      return (
+                        <div key={extra.name} className="flex items-center justify-between p-3 sm:p-4 bg-white rounded-xl border border-slate-200">
+                          <div className="flex items-center gap-3 sm:gap-4">
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
+                              <img src={extra.image} alt={extra.name} className="w-full h-full object-cover" />
+                            </div>
+                            <span className="font-medium text-slate-800 text-sm sm:text-base">{extra.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2 sm:gap-4">
+                            <span className="text-primary font-bold text-sm sm:text-base">+{extra.price.toFixed(2)} RON</span>
+                            {currentQty > 0 ? (
+                              <div className="flex items-center gap-1 sm:gap-2 bg-green-100 rounded-full p-1">
+                                <button 
+                                  onClick={() => handleExtraQuantity(extra.name, -1, extra.price)}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white flex items-center justify-center shadow"
+                                >
+                                  <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
+                                </button>
+                                <span className="w-6 sm:w-8 text-center font-bold text-sm sm:text-base">{currentQty}</span>
+                                <button 
+                                  onClick={() => handleExtraQuantity(extra.name, 1, extra.price)}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-green-500 text-white flex items-center justify-center"
+                                >
+                                  <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button 
+                                onClick={() => handleExtraQuantity(extra.name, 1, extra.price)}
+                                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-100 hover:bg-green-100 flex items-center justify-center transition-colors"
+                              >
+                                <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {customizeStep === 'remove' && (
+                <>
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-4">Elimină ingredient</h2>
+                  <div className="space-y-3">
+                    {customizingItem.ingredients?.map((ing) => {
+                      const isRemoved = tempRemovals.includes(ing);
                       return (
                         <button
-                          key={ing.id}
+                          key={ing}
                           onClick={() => {
-                            if (isSelected) {
-                              setTempExtraIngredients(tempExtraIngredients.filter(id => id !== ing.id));
+                            if (isRemoved) {
+                              setTempRemovals(tempRemovals.filter(r => r !== ing));
                             } else {
-                              setTempExtraIngredients([...tempExtraIngredients, ing.id]);
+                              setTempRemovals([...tempRemovals, ing]);
                             }
                           }}
                           className={cn(
-                            "px-4 py-3 rounded-xl border-2 text-sm transition-all",
-                            isSelected
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-card hover:border-primary/50"
+                            "w-full flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border-2 transition-all",
+                            isRemoved 
+                              ? "bg-red-50 border-red-300" 
+                              : "bg-white border-slate-200 hover:border-slate-300"
                           )}
                         >
-                          {ing.name} <span className="text-primary font-bold">+{ing.price} RON</span>
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-100 overflow-hidden flex-shrink-0">
+                            <img src={getIngredientImage(ing)} alt={ing} className="w-full h-full object-cover" />
+                          </div>
+                          <span className={cn(
+                            "font-medium flex-1 text-left text-sm sm:text-base",
+                            isRemoved ? "text-red-600 line-through" : "text-slate-800"
+                          )}>
+                            Elimină {ing.toLowerCase()}
+                          </span>
+                          {isRemoved && (
+                            <Check className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 flex-shrink-0" />
+                          )}
                         </button>
                       );
                     })}
                   </div>
-                </div>
-              ))}
+                </>
+              )}
             </div>
+          </ScrollArea>
 
-            {/* Modifications Summary */}
-            {(tempAdditions.length > 0 || tempRemovals.length > 0 || tempExtraIngredients.length > 0) && (
-              <div className="p-4 rounded-xl bg-secondary/50 border border-border">
-                <h4 className="font-semibold mb-2">Modificări selectate:</h4>
-                <div className="flex flex-wrap gap-2">
-                  {tempAdditions.map(a => (
-                    <span key={a} className="px-3 py-1 rounded-full bg-primary/20 text-primary text-sm font-medium">
-                      + Extra {a}
-                    </span>
-                  ))}
-                  {tempRemovals.map(r => (
-                    <span key={r} className="px-3 py-1 rounded-full bg-destructive/20 text-destructive text-sm font-medium">
-                      - Fără {r}
-                    </span>
-                  ))}
-                  {tempExtraIngredients.map(id => {
-                    const ing = extraIngredientsData.find(e => e.id === id);
-                    return ing ? (
-                      <span key={id} className="px-3 py-1 rounded-full bg-primary/20 text-primary text-sm font-medium">
-                        + {ing.name} (+{ing.price} RON)
-                      </span>
-                    ) : null;
-                  })}
-                </div>
-                {tempExtraIngredients.length > 0 && (
-                  <p className="text-sm mt-2">
-                    Cost extra: <span className="font-bold text-primary">
-                      +{tempExtraIngredients.reduce((sum, id) => {
-                        const ing = extraIngredientsData.find(e => e.id === id);
-                        return sum + (ing?.price || 0);
-                      }, 0)} RON
-                    </span>
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Confirm Button */}
-        <div className="p-6 border-t border-border">
-          <div className="max-w-2xl mx-auto">
+          {/* Bottom Bar */}
+          <div className="p-3 sm:p-4 bg-white border-t border-slate-200">
             <Button 
-              size="lg" 
-              className="w-full h-16 text-xl"
+              className="w-full h-14 sm:h-16 text-lg sm:text-xl bg-green-600 hover:bg-green-700" 
               onClick={confirmCustomization}
             >
-              <Check className="w-6 h-6 mr-2" />
-              {editingCartItemId ? 'Actualizează produsul' : 'Adaugă în coș'} - {customizingItem.price} RON
+              <span className="flex-1 text-left">Adaugă în coș</span>
+              <span className="font-black">
+                {(customizingItem.price + tempExtras.reduce((sum, e) => sum + e.price * e.quantity, 0)).toFixed(2)} RON
+              </span>
             </Button>
           </div>
         </div>
@@ -689,89 +887,237 @@ const KioskOrdering: React.FC = () => {
     );
   }
 
-  // Payment Screen
+  // ============ UPSELL ============
+  if (step === 'upsell') {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-100" onClick={resetIdleTimer}>
+        <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
+          <div className="max-w-2xl w-full">
+            <div className="text-center mb-6 sm:mb-8">
+              <Sparkles className="w-10 h-10 sm:w-12 sm:h-12 text-yellow-500 mx-auto mb-4" />
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-2">Sau poate ceva mai mare?</h1>
+              <p className="text-slate-500">Îți recomandăm să adaugi</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6 sm:mb-8">
+              {upsellSuggestions.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => addToCart(item)}
+                  className="rounded-xl sm:rounded-2xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all text-left overflow-hidden p-3 sm:p-4 flex items-center gap-3 sm:gap-4"
+                >
+                  {item.image && (
+                    <img src={item.image} alt={item.name} className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl" />
+                  )}
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-sm sm:text-base">{item.name}</h3>
+                    <p className="text-lg sm:text-xl font-black text-primary">+{item.price.toFixed(2)} RON</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="flex-1 h-12 sm:h-14"
+                onClick={() => setStep('cart')}
+              >
+                Nu, mulțumesc
+              </Button>
+              <Button 
+                size="lg" 
+                className="flex-1 h-12 sm:h-14 bg-green-600 hover:bg-green-700"
+                onClick={() => setStep('cart')}
+              >
+                Continuă la coș
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============ CART ============
+  if (step === 'cart') {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-100" onClick={resetIdleTimer}>
+        <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
+          <Button variant="ghost" onClick={() => setStep('menu')}>
+            <ArrowLeft className="w-5 h-5 mr-2" />
+            <span className="hidden sm:inline">Înapoi la meniu</span>
+          </Button>
+          <h1 className="text-lg sm:text-2xl font-bold text-slate-800">Coșul tău</h1>
+          <div className="flex items-center gap-2 text-slate-400">
+            <Clock className="w-4 h-4" />
+            <span className="text-sm">{IDLE_TIMEOUT - idleTimer}s</span>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="p-3 sm:p-4 space-y-3 sm:space-y-4 max-w-2xl mx-auto">
+            {cart.map(item => (
+              <Card key={item.id} className="p-3 sm:p-4">
+                <div className="flex gap-3 sm:gap-4">
+                  {item.menuItem.image && (
+                    <img src={item.menuItem.image} alt={item.menuItem.name} className="w-20 h-20 sm:w-24 sm:h-24 object-cover rounded-xl flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between mb-2">
+                      <h3 className="font-bold text-base sm:text-lg text-slate-800 pr-2">{item.menuItem.name}</h3>
+                      <button onClick={() => removeItem(item.id)} className="text-red-500 hover:text-red-600 flex-shrink-0">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {item.extras.length > 0 && (
+                      <div className="text-xs sm:text-sm text-green-600 mb-1">
+                        {item.extras.map(e => `+${e.name} (${e.quantity}x)`).join(', ')}
+                      </div>
+                    )}
+
+                    {item.modifications.removed.length > 0 && (
+                      <div className="text-xs sm:text-sm text-red-500 mb-1">
+                        Fără: {item.modifications.removed.join(', ')}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between mt-3">
+                      <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 rounded-full p-1">
+                        <button 
+                          onClick={() => updateQuantity(item.id, -1)}
+                          className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white flex items-center justify-center shadow"
+                        >
+                          <Minus className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+                        <span className="w-8 sm:w-10 text-center font-bold text-lg sm:text-xl">{item.quantity}</span>
+                        <button 
+                          onClick={() => updateQuantity(item.id, 1)}
+                          className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary text-white flex items-center justify-center"
+                        >
+                          <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+                      </div>
+                      <span className="text-lg sm:text-xl font-black text-primary">{calculateItemTotal(item).toFixed(2)} RON</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+
+            {cart.length === 0 && (
+              <div className="text-center py-12">
+                <ShoppingCart className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                <p className="text-slate-500">Coșul este gol</p>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        {cart.length > 0 && (
+          <div className="p-3 sm:p-4 bg-white border-t border-slate-200">
+            <div className="max-w-2xl mx-auto">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-base sm:text-lg text-slate-600">Total comandă:</span>
+                <span className="text-2xl sm:text-3xl font-black text-slate-800">{totalAmount.toFixed(2)} RON</span>
+              </div>
+              <Button 
+                className="w-full h-14 sm:h-16 text-lg sm:text-xl bg-green-600 hover:bg-green-700" 
+                onClick={() => setStep('payment')}
+              >
+                Continuă la plată
+                <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 ml-3" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ============ PAYMENT ============
   if (step === 'payment') {
     const processPayment = () => {
       setStep('processing');
-      // Simulate payment processing
       setTimeout(() => {
         handleConfirmOrder();
       }, 3000);
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/10 via-background to-primary/5 flex flex-col">
-        <header className="p-6 border-b border-border flex items-center justify-between">
+      <div className="min-h-screen flex flex-col bg-slate-100" onClick={resetIdleTimer}>
+        <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
           <Button variant="ghost" onClick={() => setStep('cart')}>
             <ArrowLeft className="w-5 h-5 mr-2" />
-            Înapoi la coș
+            <span className="hidden sm:inline">Înapoi</span>
           </Button>
-          <h1 className="text-2xl font-bold">Selectează metoda de plată</h1>
-          <div className="w-24" />
-        </header>
+          <h1 className="text-lg sm:text-2xl font-bold text-slate-800">Metodă de plată</h1>
+          <div className="w-16 sm:w-24" />
+        </div>
 
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="max-w-2xl w-full space-y-8">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
+          <div className="max-w-2xl w-full space-y-6 sm:space-y-8">
             {/* Order Summary */}
-            <div className="bg-card rounded-2xl p-6 border border-border">
+            <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200">
               <h3 className="font-semibold mb-4">Rezumat comandă</h3>
-              <div className="space-y-2 mb-4 max-h-40 overflow-auto">
+              <div className="space-y-2 mb-4 max-h-32 sm:max-h-40 overflow-auto">
                 {cart.map((item, idx) => (
-                  <div key={idx} className="flex justify-between text-sm">
+                  <div key={idx} className="flex justify-between text-xs sm:text-sm">
                     <span>{item.quantity}x {item.menuItem.name}</span>
-                    <span>{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
+                    <span>{calculateItemTotal(item).toFixed(2)} RON</span>
                   </div>
                 ))}
               </div>
-              <div className="border-t border-border pt-4 flex justify-between text-2xl font-bold">
+              <div className="border-t border-slate-200 pt-4 flex justify-between text-xl sm:text-2xl font-bold">
                 <span>Total de plată</span>
                 <span className="text-primary">{totalAmount.toFixed(2)} RON</span>
               </div>
             </div>
 
             {/* Payment Methods */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 gap-4 sm:gap-6">
               <button
-                onClick={() => setKioskPaymentMethod('cash')}
+                onClick={() => setPaymentMethod('cash')}
                 className={cn(
-                  "p-8 rounded-3xl border-4 flex flex-col items-center gap-4 transition-all",
-                  kioskPaymentMethod === 'cash'
+                  "p-4 sm:p-8 rounded-2xl sm:rounded-3xl border-4 flex flex-col items-center gap-2 sm:gap-4 transition-all",
+                  paymentMethod === 'cash'
                     ? "border-primary bg-primary/10 scale-105"
-                    : "border-border bg-card hover:border-primary/50"
+                    : "border-slate-200 bg-white hover:border-primary/50"
                 )}
               >
                 <div className={cn(
-                  "w-24 h-24 rounded-full flex items-center justify-center",
-                  kioskPaymentMethod === 'cash' ? "bg-primary/20" : "bg-secondary"
+                  "w-16 h-16 sm:w-24 sm:h-24 rounded-full flex items-center justify-center",
+                  paymentMethod === 'cash' ? "bg-primary/20" : "bg-slate-100"
                 )}>
-                  <Banknote className={cn("w-12 h-12", kioskPaymentMethod === 'cash' ? "text-primary" : "text-muted-foreground")} />
+                  <Banknote className={cn("w-8 h-8 sm:w-12 sm:h-12", paymentMethod === 'cash' ? "text-primary" : "text-slate-400")} />
                 </div>
                 <div className="text-center">
-                  <h3 className="text-2xl font-bold mb-1">Cash</h3>
-                  <p className="text-muted-foreground">Plătește cu numerar</p>
-                  <p className="text-xs text-muted-foreground mt-2">Introdu bancnotele și monezile în automatul de plată</p>
+                  <h3 className="text-lg sm:text-2xl font-bold mb-1">Cash</h3>
+                  <p className="text-xs sm:text-sm text-slate-500">Numerar</p>
                 </div>
               </button>
 
               <button
-                onClick={() => setKioskPaymentMethod('card')}
+                onClick={() => setPaymentMethod('card')}
                 className={cn(
-                  "p-8 rounded-3xl border-4 flex flex-col items-center gap-4 transition-all",
-                  kioskPaymentMethod === 'card'
+                  "p-4 sm:p-8 rounded-2xl sm:rounded-3xl border-4 flex flex-col items-center gap-2 sm:gap-4 transition-all",
+                  paymentMethod === 'card'
                     ? "border-primary bg-primary/10 scale-105"
-                    : "border-border bg-card hover:border-primary/50"
+                    : "border-slate-200 bg-white hover:border-primary/50"
                 )}
               >
                 <div className={cn(
-                  "w-24 h-24 rounded-full flex items-center justify-center",
-                  kioskPaymentMethod === 'card' ? "bg-primary/20" : "bg-secondary"
+                  "w-16 h-16 sm:w-24 sm:h-24 rounded-full flex items-center justify-center",
+                  paymentMethod === 'card' ? "bg-primary/20" : "bg-slate-100"
                 )}>
-                  <CreditCard className={cn("w-12 h-12", kioskPaymentMethod === 'card' ? "text-primary" : "text-muted-foreground")} />
+                  <CreditCard className={cn("w-8 h-8 sm:w-12 sm:h-12", paymentMethod === 'card' ? "text-primary" : "text-slate-400")} />
                 </div>
                 <div className="text-center">
-                  <h3 className="text-2xl font-bold mb-1">Card</h3>
-                  <p className="text-muted-foreground">Plătește contactless sau cu PIN</p>
-                  <p className="text-xs text-muted-foreground mt-2">Apropie cardul de POS sau introdu-l în cititor</p>
+                  <h3 className="text-lg sm:text-2xl font-bold mb-1">Card</h3>
+                  <p className="text-xs sm:text-sm text-slate-500">Contactless/PIN</p>
                 </div>
               </button>
             </div>
@@ -779,18 +1125,18 @@ const KioskOrdering: React.FC = () => {
             {/* Confirm Button */}
             <Button 
               size="lg" 
-              className="w-full h-16 text-xl"
+              className="w-full h-14 sm:h-16 text-lg sm:text-xl bg-green-600 hover:bg-green-700"
               onClick={processPayment}
             >
-              {kioskPaymentMethod === 'cash' ? (
+              {paymentMethod === 'cash' ? (
                 <>
-                  <Banknote className="w-6 h-6 mr-2" />
-                  Plătește {totalAmount.toFixed(2)} RON în numerar
+                  <Banknote className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
+                  Plătește {totalAmount.toFixed(2)} RON cash
                 </>
               ) : (
                 <>
-                  <CreditCard className="w-6 h-6 mr-2" />
-                  Plătește {totalAmount.toFixed(2)} RON cu cardul
+                  <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
+                  Plătește {totalAmount.toFixed(2)} RON cu card
                 </>
               )}
             </Button>
@@ -800,93 +1146,83 @@ const KioskOrdering: React.FC = () => {
     );
   }
 
-  // Payment Processing
+  // ============ PROCESSING ============
   if (step === 'processing') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/20 via-background to-primary/10 flex flex-col items-center justify-center p-8">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
         <div className="max-w-md w-full text-center">
-          {kioskPaymentMethod === 'cash' ? (
+          {paymentMethod === 'cash' ? (
             <>
-              <div className="w-32 h-32 mx-auto rounded-full bg-primary/20 flex items-center justify-center mb-8 animate-pulse">
-                <Banknote className="w-16 h-16 text-primary" />
+              <div className="w-24 h-24 sm:w-32 sm:h-32 mx-auto rounded-full bg-primary/20 flex items-center justify-center mb-6 sm:mb-8 animate-pulse">
+                <Banknote className="w-12 h-12 sm:w-16 sm:h-16 text-primary" />
               </div>
-              <h1 className="text-3xl font-bold mb-4">Introdu numerarul</h1>
-              <p className="text-xl text-muted-foreground mb-2">
+              <h1 className="text-2xl sm:text-3xl font-bold mb-4">Introdu numerarul</h1>
+              <p className="text-lg sm:text-xl text-slate-600 mb-2">
                 Total: <span className="text-primary font-bold">{totalAmount.toFixed(2)} RON</span>
               </p>
-              <p className="text-muted-foreground mb-8">
-                Introdu bancnotele și monezile în automatul de plată din dreapta
+              <p className="text-slate-500 mb-6 sm:mb-8 text-sm sm:text-base">
+                Introdu bancnotele și monezile în automatul de plată
               </p>
-              <div className="bg-card rounded-2xl p-6 border border-border mb-8">
-                <div className="flex items-center justify-center gap-2 text-lg">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <span>Se procesează plata...</span>
-                </div>
-              </div>
             </>
           ) : (
             <>
-              <div className="w-32 h-32 mx-auto rounded-full bg-primary/20 flex items-center justify-center mb-8 animate-pulse">
-                <CreditCard className="w-16 h-16 text-primary" />
+              <div className="w-24 h-24 sm:w-32 sm:h-32 mx-auto rounded-full bg-primary/20 flex items-center justify-center mb-6 sm:mb-8 animate-pulse">
+                <CreditCard className="w-12 h-12 sm:w-16 sm:h-16 text-primary" />
               </div>
-              <h1 className="text-3xl font-bold mb-4">Apropie cardul</h1>
-              <p className="text-xl text-muted-foreground mb-2">
+              <h1 className="text-2xl sm:text-3xl font-bold mb-4">Apropie cardul</h1>
+              <p className="text-lg sm:text-xl text-slate-600 mb-2">
                 Total: <span className="text-primary font-bold">{totalAmount.toFixed(2)} RON</span>
               </p>
-              <p className="text-muted-foreground mb-8">
-                Apropie cardul de POS sau introdu-l în cititor pentru plata cu PIN
+              <p className="text-slate-500 mb-6 sm:mb-8 text-sm sm:text-base">
+                Apropie cardul de POS sau introdu-l pentru plata cu PIN
               </p>
-              <div className="bg-card rounded-2xl p-6 border border-border mb-8">
-                <div className="flex items-center justify-center gap-2 text-lg">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <span>Se procesează plata...</span>
-                </div>
-              </div>
             </>
           )}
+          <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200">
+            <div className="flex items-center justify-center gap-2 text-base sm:text-lg">
+              <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" />
+              <span>Se procesează plata...</span>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Confirmation
+  // ============ CONFIRMATION ============
   if (step === 'confirm') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-500/20 via-background to-emerald-500/10 flex flex-col items-center justify-center p-8">
-        <div className="w-32 h-32 rounded-full bg-emerald-500 flex items-center justify-center mb-8 animate-bounce">
-          <CheckCircle className="w-16 h-16 text-white" />
-        </div>
-        <h1 className="text-4xl font-bold mb-2 text-center">Plată confirmată!</h1>
-        <p className="text-xl text-muted-foreground mb-2">Comandă trimisă la bucătărie</p>
-        <p className="text-xl text-muted-foreground mb-2">
-          {orderMode === 'dine-in' 
-            ? `Comanda ta va fi adusă la masa nr. ${selectedTable}`
-            : 'Comanda ta va fi pregătită în curând'
-          }
-        </p>
-        <p className="text-muted-foreground mb-8">Urmărește statusul pe monitorul din restaurant</p>
-        
-        <div className="bg-card rounded-2xl p-6 mb-8 min-w-[300px]">
-          <div className="flex items-center gap-2 mb-4 text-emerald-500">
-            <Check className="w-5 h-5" />
-            <span className="font-medium">Plătit cu {kioskPaymentMethod === 'cash' ? 'numerar' : 'card'}</span>
+      <div 
+        className="min-h-screen flex flex-col items-center justify-center bg-green-50 cursor-pointer p-4"
+        onClick={resetOrder}
+      >
+        <div className="text-center max-w-md w-full">
+          <div className="w-24 h-24 sm:w-32 sm:h-32 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 sm:mb-8 animate-pulse">
+            <CheckCircle className="w-14 h-14 sm:w-20 sm:h-20 text-white" />
           </div>
-          <h3 className="font-semibold mb-3">Rezumat comandă</h3>
-          {cart.map((item, idx) => (
-            <div key={idx} className="flex justify-between py-1">
-              <span>{item.quantity}x {item.menuItem.name}</span>
-              <span>{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
+          <h1 className="text-3xl sm:text-4xl font-bold text-green-800 mb-4">Comandă confirmată!</h1>
+          <p className="text-xl sm:text-2xl font-bold text-green-700 mb-2">Număr comandă: #KSK{Date.now().toString().slice(-4)}</p>
+          <p className="text-green-600 mb-2 text-sm sm:text-base">
+            {orderMode === 'dine-in' 
+              ? 'Comanda ta va fi pregătită în curând'
+              : 'Comanda ta va fi pregătită pentru ridicare'
+            }
+          </p>
+          <p className="text-green-600 mb-6 sm:mb-8 text-sm sm:text-base">Mulțumim pentru comandă!</p>
+          
+          <div className="bg-white rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8 border border-green-200">
+            <div className="flex items-center gap-2 mb-4 text-green-600">
+              <Check className="w-5 h-5" />
+              <span className="font-medium">Plătit cu {paymentMethod === 'cash' ? 'numerar' : 'card'}</span>
             </div>
-          ))}
-          <div className="border-t border-border mt-3 pt-3 flex justify-between font-bold text-lg">
-            <span>Total</span>
-            <span className="text-primary">{totalAmount.toFixed(2)} RON</span>
+            <div className="border-t border-green-100 pt-4 flex justify-between font-bold text-base sm:text-lg">
+              <span>Total</span>
+              <span className="text-green-700">{totalAmount.toFixed(2)} RON</span>
+            </div>
           </div>
-        </div>
 
-        <Button size="lg" onClick={resetOrder}>
-          Comandă nouă
-        </Button>
+          <p className="text-slate-500 text-sm">Atingeți ecranul pentru o nouă comandă</p>
+        </div>
       </div>
     );
   }
