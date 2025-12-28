@@ -96,7 +96,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
 
   return (
     <TooltipProvider delayDuration={0}>
-      <div className="min-h-screen flex w-full bg-background">
+      <div className="min-h-screen h-[100dvh] flex w-full bg-background overflow-hidden">
         {/* Mobile Menu Button */}
         <Button
           variant="ghost"
@@ -116,10 +116,12 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           )}
         >
           {/* Header */}
-          <div className={cn(
-            "flex items-center h-16 px-4 border-b border-border",
-            collapsed ? "justify-center" : "justify-between"
-          )}>
+          <div
+            className={cn(
+              "flex items-center h-16 px-4 border-b border-border",
+              collapsed ? "justify-center" : "justify-between"
+            )}
+          >
             {!collapsed && (
               <div className="flex flex-col">
                 <span className="font-semibold text-foreground truncate">{restaurantName}</span>
@@ -142,7 +144,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeModule === item.id;
-                
+
                 const button = (
                   <Button
                     key={item.id}
@@ -184,25 +186,16 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           </ScrollArea>
 
           {/* Footer */}
-          <div className={cn(
-            "flex items-center gap-2 p-4 border-t border-border",
-            collapsed && "flex-col"
-          )}>
+          <div className={cn("flex items-center gap-2 p-4 border-t border-border", collapsed && "flex-col")}>
             {/* Online Status */}
-            <div className={cn(
-              "flex items-center gap-2",
-              collapsed && "flex-col"
-            )}>
+            <div className={cn("flex items-center gap-2", collapsed && "flex-col")}>
               {isOnline ? (
                 <Wifi className="h-4 w-4 text-success" />
               ) : (
                 <WifiOff className="h-4 w-4 text-destructive" />
               )}
               {!collapsed && (
-                <span className={cn(
-                  "text-xs",
-                  isOnline ? "text-success" : "text-destructive"
-                )}>
+                <span className={cn("text-xs", isOnline ? "text-success" : "text-destructive")}>
                   {isOnline ? "Online" : "Offline"}
                 </span>
               )}
@@ -222,9 +215,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                     {!collapsed && <span className="ml-2">Ieșire</span>}
                   </Button>
                 </TooltipTrigger>
-                {collapsed && (
-                  <TooltipContent side="right">Ieșire</TooltipContent>
-                )}
+                {collapsed && <TooltipContent side="right">Ieșire</TooltipContent>}
               </Tooltip>
             )}
           </div>
@@ -232,19 +223,21 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
 
         {/* Mobile Overlay */}
         {mobileMenuOpen && (
-          <div 
+          <div
             className="fixed inset-0 bg-background/80 backdrop-blur-sm z-30 lg:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
         )}
 
         {/* Main Content */}
-        <main className={cn(
-          "flex-1 transition-all duration-300",
-          collapsed ? "lg:ml-16" : "lg:ml-64"
-        )}>
-          <div className="min-h-screen">
-            {children}
+        <main
+          className={cn(
+            "flex-1 min-h-0 h-full transition-all duration-300",
+            collapsed ? "lg:ml-16" : "lg:ml-64"
+          )}
+        >
+          <div className="h-full min-h-0 overflow-hidden">
+            <div className="h-full min-h-0 overflow-auto">{children}</div>
           </div>
         </main>
       </div>
