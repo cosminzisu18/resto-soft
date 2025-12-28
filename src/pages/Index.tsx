@@ -17,6 +17,8 @@ import ReportsModule from '@/components/modules/ReportsModule';
 import StocksModule from '@/components/modules/StocksModule';
 import PlaceholderModule from '@/components/modules/PlaceholderModule';
 import KDSModuleOptimized from '@/components/modules/KDSModuleOptimized';
+import KDSEnhancedModule from '@/components/modules/KDSEnhancedModule';
+import KDSProductionModule from '@/components/modules/KDSProductionModule';
 import POSModule from '@/components/modules/POSModule';
 import KioskModule from '@/components/modules/KioskModule';
 import { Button } from '@/components/ui/button';
@@ -175,7 +177,7 @@ const RestaurantApp: React.FC = () => {
       case 'kds':
         if (kdsModuleStation) {
           return (
-            <KDSModuleOptimized 
+            <KDSEnhancedModule 
               station={kdsModuleStation}
               onLogout={() => setKdsModuleStation(null)}
             />
@@ -183,8 +185,11 @@ const RestaurantApp: React.FC = () => {
         }
         return (
           <div className="p-6">
-            <h2 className="text-2xl font-bold mb-6">Selectează stația KDS</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <h2 className="text-2xl font-bold mb-6">KDS & Producție</h2>
+            
+            {/* KDS Stations */}
+            <h3 className="text-lg font-semibold mb-4 text-muted-foreground">Stații KDS</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
               {kdsStations.map(station => (
                 <button
                   key={station.id}
@@ -195,6 +200,12 @@ const RestaurantApp: React.FC = () => {
                   <h3 className="font-bold">{station.name}</h3>
                 </button>
               ))}
+            </div>
+
+            {/* Production Module */}
+            <h3 className="text-lg font-semibold mb-4 text-muted-foreground">Producție & Rețetar</h3>
+            <div className="bg-card rounded-xl border overflow-hidden" style={{ height: '500px' }}>
+              <KDSProductionModule />
             </div>
           </div>
         );
