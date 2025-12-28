@@ -21,6 +21,7 @@ import KDSEnhancedModule from '@/components/modules/KDSEnhancedModule';
 import KDSProductionModule from '@/components/modules/KDSProductionModule';
 import POSModule from '@/components/modules/POSModule';
 import KioskModule from '@/components/modules/KioskModule';
+import HRModule from '@/components/modules/HRModule';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
@@ -130,7 +131,8 @@ const RestaurantApp: React.FC = () => {
 
   const handleLoginSuccess = () => {
     if (currentUser?.role === 'admin') {
-      setView('admin');
+      setView('new-dashboard');
+      setActiveModule('dashboard');
     } else if (currentUser?.role === 'kitchen') {
       setView('kds-select');
     } else {
@@ -211,6 +213,8 @@ const RestaurantApp: React.FC = () => {
         );
       case 'delivery':
         return <DeliveryOrders />;
+      case 'employees':
+        return <HRModule />;
       default:
         const config = moduleConfig[activeModule];
         return (
@@ -363,21 +367,16 @@ const RestaurantApp: React.FC = () => {
 
   if (view === 'admin') {
     return (
-      <div className="h-screen flex flex-col">
-        <div className="flex-1">
-          <AdminPanel onLogout={handleLogout} />
-        </div>
-        <div className="fixed bottom-4 right-4">
-          <Button
-            variant="outline"
-            onClick={() => setView('new-dashboard')}
-            className="flex items-center gap-2"
-          >
-            <MonitorIcon className="w-4 h-4" />
-            Dashboard Nou
-          </Button>
-        </div>
-      </div>
+      <MainLayout
+        activeModule={activeModule}
+        onModuleChange={setActiveModule}
+        isOnline={true}
+        restaurantName="Restaurant Demo"
+        currentLocation="Locația Principală"
+        onLogout={handleLogout}
+      >
+        {renderModule()}
+      </MainLayout>
     );
   }
 
