@@ -3,6 +3,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Card } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { Table, menuCategories, MenuItem, OrderItem, Order } from '@/data/mockData';
 import { cn } from '@/lib/utils';
@@ -11,7 +15,8 @@ import {
   Clock, ChefHat, Check, Printer, Calculator,
   Split, Receipt, X, UtensilsCrossed,
   Package, Phone, ArrowLeft, Edit2, ChevronUp, ChevronDown,
-  PanelLeftClose, PanelRightClose, ShoppingCart
+  PanelLeftClose, PanelRightClose, ShoppingCart, List, Eye,
+  Filter, Utensils, Monitor, Smartphone, Truck, Globe, RefreshCw
 } from 'lucide-react';
 import AllergenBadges from '@/components/AllergenBadges';
 import { PageHeader } from '@/components/ui/page-header';
@@ -19,6 +24,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 
 type OrderType = 'table' | 'takeaway' | 'phone';
+type POSView = 'new-order' | 'all-orders';
 
 const POSModule: React.FC = () => {
   const { 
@@ -27,6 +33,7 @@ const POSModule: React.FC = () => {
   } = useRestaurant();
   const { toast } = useToast();
   
+  const [posView, setPosView] = useState<POSView>('new-order');
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [orderType, setOrderType] = useState<OrderType | null>(null);
   const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
@@ -41,6 +48,7 @@ const POSModule: React.FC = () => {
   const [modNotes, setModNotes] = useState('');
   const [modQuantity, setModQuantity] = useState(1);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   
   // Phone order extra info
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -55,6 +63,11 @@ const POSModule: React.FC = () => {
   const [showSplitPayment, setShowSplitPayment] = useState(false);
   const [tipPercent, setTipPercent] = useState(0);
   const [splitCount, setSplitCount] = useState(2);
+  
+  // Orders filter state
+  const [ordersFilter, setOrdersFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -261,14 +274,241 @@ const POSModule: React.FC = () => {
     return 'Comandă';
   };
 
-  // Selection screen
-  if (!orderType) {
+  // Source configuration for display
+  const sourceConfig: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+    restaurant: { icon: <Utensils className="w-4 h-4" />, label: 'POS', color: 'bg-primary' },
+    glovo: { icon: <span className="text-sm">🟡</span>, label: 'Glovo', color: 'bg-yellow-500' },
+    wolt: { icon: <span className="text-sm">🔵</span>, label: 'Wolt', color: 'bg-blue-500' },
+    bolt: { icon: <span className="text-sm">🟢</span>, label: 'Bolt', color: 'bg-green-500' },
+    own_website: { icon: <Globe className="w-4 h-4" />, label: 'Website', color: 'bg-purple-500' },
+    phone: { icon: <Phone className="w-4 h-4" />, label: 'Telefon', color: 'bg-orange-500' },
+    kiosk: { icon: <Monitor className="w-4 h-4" />, label: 'Kiosk', color: 'bg-cyan-500' },
+  };
+
+  // Filter orders for All Orders view
+  const filteredOrders = orders.filter(order => {
+    // Status filter
+    if (ordersFilter !== 'all' && order.status !== ordersFilter) return false;
+    
+    // Source filter
+    if (sourceFilter !== 'all' && order.source !== sourceFilter) return false;
+    
+    // Search filter
+    if (ordersSearchQuery) {
+      const searchLower = ordersSearchQuery.toLowerCase();
+      const matchesTable = order.tableNumber?.toString().includes(searchLower);
+      const matchesId = order.id.toLowerCase().includes(searchLower);
+      const matchesWaiter = order.waiterName?.toLowerCase().includes(searchLower);
+      if (!matchesTable && !matchesId && !matchesWaiter) return false;
+    }
+    
+    return true;
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  // Order stats
+  const orderStats = {
+    total: orders.length,
+    active: orders.filter(o => o.status === 'active').length,
+    completed: orders.filter(o => o.status === 'completed').length,
+    cancelled: orders.filter(o => o.status === 'cancelled').length,
+  };
+
+  const getOrderStatusBadge = (status: Order['status']) => {
+    switch (status) {
+      case 'active': return <Badge className="bg-blue-500">Activ</Badge>;
+      case 'completed': return <Badge className="bg-green-500">Finalizat</Badge>;
+      case 'cancelled': return <Badge variant="destructive">Anulat</Badge>;
+      default: return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const formatTime = (date: Date) => {
+    return new Date(date).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatDate = (date: Date) => {
+    return new Date(date).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' });
+  };
+
+  // Render All Orders View
+  const renderAllOrdersView = () => (
+    <div className="h-full flex flex-col">
+      <PageHeader 
+        title="RestoPOS" 
+        description="Toate comenzile"
+      />
+      
+      <div className="flex-1 flex flex-col overflow-hidden p-4">
+        {/* Stats Row */}
+        <div className="grid grid-cols-4 gap-3 mb-4">
+          <Card className={cn(
+            "p-3 cursor-pointer transition-all",
+            ordersFilter === 'all' && "ring-2 ring-primary"
+          )} onClick={() => setOrdersFilter('all')}>
+            <p className="text-2xl font-bold">{orderStats.total}</p>
+            <p className="text-xs text-muted-foreground">Total</p>
+          </Card>
+          <Card className={cn(
+            "p-3 cursor-pointer transition-all",
+            ordersFilter === 'active' && "ring-2 ring-blue-500"
+          )} onClick={() => setOrdersFilter('active')}>
+            <p className="text-2xl font-bold text-blue-500">{orderStats.active}</p>
+            <p className="text-xs text-muted-foreground">Active</p>
+          </Card>
+          <Card className={cn(
+            "p-3 cursor-pointer transition-all",
+            ordersFilter === 'completed' && "ring-2 ring-green-500"
+          )} onClick={() => setOrdersFilter('completed')}>
+            <p className="text-2xl font-bold text-green-500">{orderStats.completed}</p>
+            <p className="text-xs text-muted-foreground">Finalizate</p>
+          </Card>
+          <Card className={cn(
+            "p-3 cursor-pointer transition-all",
+            ordersFilter === 'cancelled' && "ring-2 ring-destructive"
+          )} onClick={() => setOrdersFilter('cancelled')}>
+            <p className="text-2xl font-bold text-destructive">{orderStats.cancelled}</p>
+            <p className="text-xs text-muted-foreground">Anulate</p>
+          </Card>
+        </div>
+
+        {/* Filters Row */}
+        <div className="flex gap-3 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input 
+              placeholder="Caută după masă, ID, ospătar..." 
+              value={ordersSearchQuery}
+              onChange={(e) => setOrdersSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Sursă" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toate sursele</SelectItem>
+              <SelectItem value="restaurant">POS</SelectItem>
+              <SelectItem value="kiosk">Kiosk</SelectItem>
+              <SelectItem value="phone">Telefon</SelectItem>
+              <SelectItem value="glovo">Glovo</SelectItem>
+              <SelectItem value="wolt">Wolt</SelectItem>
+              <SelectItem value="bolt">Bolt</SelectItem>
+              <SelectItem value="own_website">Website</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" onClick={() => toast({ title: 'Se actualizează...' })}>
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        </div>
+
+        {/* Orders List */}
+        <ScrollArea className="flex-1">
+          <div className="space-y-2 pr-4">
+            {filteredOrders.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <List className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Nu sunt comenzi care să corespundă filtrelor</p>
+              </div>
+            ) : (
+              filteredOrders.map(order => {
+                const source = sourceConfig[order.source] || sourceConfig.restaurant;
+                return (
+                  <Card 
+                    key={order.id} 
+                    className="p-4 hover:bg-muted/50 cursor-pointer transition-all"
+                    onClick={() => setSelectedOrderDetails(order)}
+                  >
+                    <div className="flex items-center gap-4">
+                      {/* Order Number & Source */}
+                      <div className="flex items-center gap-3">
+                        <div className="text-center">
+                          <p className="text-2xl font-black text-primary">
+                            #{order.tableNumber || order.id.slice(-4)}
+                          </p>
+                          <Badge className={cn("text-xs", source.color, "text-white")}>
+                            {source.icon}
+                            <span className="ml-1">{source.label}</span>
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {/* Order Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {getOrderStatusBadge(order.status)}
+                          <span className="text-sm text-muted-foreground">
+                            {formatDate(order.createdAt)} {formatTime(order.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {order.items.length} produse • {order.waiterName || 'Self-service'}
+                        </p>
+                        <div className="flex gap-2 mt-1">
+                          {order.items.slice(0, 3).map((item, idx) => (
+                            <Badge key={idx} variant="outline" className="text-xs">
+                              {item.quantity}x {item.menuItem.name.slice(0, 15)}...
+                            </Badge>
+                          ))}
+                          {order.items.length > 3 && (
+                            <Badge variant="outline" className="text-xs">+{order.items.length - 3}</Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Total & Payment */}
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-primary">{order.totalAmount.toFixed(2)} RON</p>
+                        <div className="flex items-center justify-end gap-1 text-sm text-muted-foreground">
+                          {order.paymentMethod === 'cash' && <><Banknote className="w-3 h-3" /> Cash</>}
+                          {order.paymentMethod === 'card' && <><CreditCard className="w-3 h-3" /> Card</>}
+                          {!order.paymentMethod && order.status === 'active' && <Clock className="w-3 h-3" />}
+                          {!order.paymentMethod && order.status === 'active' && 'Neplătit'}
+                        </div>
+                      </div>
+
+                      {/* View Button */}
+                      <Button variant="ghost" size="icon">
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+    </div>
+  );
+
+  // Selection screen with tabs
+  if (!orderType && posView === 'new-order') {
     return (
       <div className="h-full flex flex-col">
         <PageHeader 
           title="RestoPOS" 
-          description="Sistem de vânzare optimizat pentru touch"
+          description="Sistem de vânzare complet"
         />
+        
+        {/* View Tabs */}
+        <div className="px-4 pt-2">
+          <Tabs value={posView} onValueChange={(v) => setPosView(v as POSView)}>
+            <TabsList className="w-full">
+              <TabsTrigger value="new-order" className="flex-1">
+                <Plus className="w-4 h-4 mr-2" />
+                Comandă Nouă
+              </TabsTrigger>
+              <TabsTrigger value="all-orders" className="flex-1">
+                <List className="w-4 h-4 mr-2" />
+                Toate Comenzile
+                {orderStats.active > 0 && (
+                  <Badge className="ml-2 bg-blue-500">{orderStats.active}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
         
         <div className="flex-1 p-4 md:p-6 overflow-auto">
           <h2 className="text-lg font-semibold mb-4">Selectează masa sau tipul comenzii</h2>
@@ -313,6 +553,124 @@ const POSModule: React.FC = () => {
             </Button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // All Orders view
+  if (posView === 'all-orders') {
+    return (
+      <div className="h-full flex flex-col">
+        <PageHeader 
+          title="RestoPOS" 
+          description="Toate comenzile"
+        />
+        
+        {/* View Tabs */}
+        <div className="px-4 pt-2">
+          <Tabs value={posView} onValueChange={(v) => setPosView(v as POSView)}>
+            <TabsList className="w-full">
+              <TabsTrigger value="new-order" className="flex-1">
+                <Plus className="w-4 h-4 mr-2" />
+                Comandă Nouă
+              </TabsTrigger>
+              <TabsTrigger value="all-orders" className="flex-1">
+                <List className="w-4 h-4 mr-2" />
+                Toate Comenzile
+                {orderStats.active > 0 && (
+                  <Badge className="ml-2 bg-blue-500">{orderStats.active}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {renderAllOrdersView()}
+
+        {/* Order Details Dialog */}
+        <Dialog open={!!selectedOrderDetails} onOpenChange={() => setSelectedOrderDetails(null)}>
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Comandă #{selectedOrderDetails?.tableNumber || selectedOrderDetails?.id.slice(-4)}
+                {selectedOrderDetails && getOrderStatusBadge(selectedOrderDetails.status)}
+              </DialogTitle>
+            </DialogHeader>
+            
+            {selectedOrderDetails && (
+              <div className="space-y-4">
+                {/* Order Meta */}
+                <div className="grid grid-cols-2 gap-4 p-3 bg-muted rounded-lg">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Sursă</p>
+                    <div className="flex items-center gap-1">
+                      {sourceConfig[selectedOrderDetails.source]?.icon}
+                      <span className="font-medium">{sourceConfig[selectedOrderDetails.source]?.label}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Ospătar</p>
+                    <p className="font-medium">{selectedOrderDetails.waiterName || 'Self-service'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Data/Ora</p>
+                    <p className="font-medium">{formatDate(selectedOrderDetails.createdAt)} {formatTime(selectedOrderDetails.createdAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Plată</p>
+                    <div className="flex items-center gap-1">
+                      {selectedOrderDetails.paymentMethod === 'cash' && <><Banknote className="w-3 h-3" /> Cash</>}
+                      {selectedOrderDetails.paymentMethod === 'card' && <><CreditCard className="w-3 h-3" /> Card</>}
+                      {!selectedOrderDetails.paymentMethod && <span className="text-muted-foreground">Neplătit</span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Items List */}
+                <div>
+                  <h4 className="font-semibold mb-2">Produse</h4>
+                  <div className="space-y-2">
+                    {selectedOrderDetails.items.map(item => (
+                      <div key={item.id} className="flex items-center justify-between p-2 bg-card border rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{item.quantity}x</span>
+                            <span>{item.menuItem.name}</span>
+                            {getStatusIcon(item.status)}
+                          </div>
+                          {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
+                            <p className="text-xs text-muted-foreground">
+                              {item.modifications.added.map(a => `+${a}`).join(', ')}
+                              {item.modifications.removed.map(r => `-${r}`).join(', ')}
+                            </p>
+                          )}
+                        </div>
+                        <span className="font-medium">{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Total */}
+                <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg">
+                  <span className="font-semibold">Total</span>
+                  <span className="text-xl font-bold text-primary">{selectedOrderDetails.totalAmount.toFixed(2)} RON</span>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setSelectedOrderDetails(null)}>
+                    Închide
+                  </Button>
+                  <Button className="flex-1">
+                    <Printer className="w-4 h-4 mr-2" />
+                    Printează
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
