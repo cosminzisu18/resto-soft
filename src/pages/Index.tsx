@@ -202,27 +202,27 @@ const RestaurantApp: React.FC = () => {
           );
         }
         return (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold mb-6">KDS & Producție</h2>
+          <div className="p-3 sm:p-6 h-full flex flex-col min-h-0">
+            <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 flex-shrink-0">KDS & Producție</h2>
             
             {/* KDS Stations */}
-            <h3 className="text-lg font-semibold mb-4 text-muted-foreground">Stații KDS</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-muted-foreground flex-shrink-0">Stații KDS</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-4 sm:mb-8 flex-shrink-0">
               {kdsStations.map(station => (
                 <button
                   key={station.id}
                   onClick={() => setKdsModuleStation(station)}
-                  className="p-6 rounded-xl border-2 border-border hover:border-primary transition-all bg-card hover:scale-105"
+                  className="p-3 sm:p-6 rounded-xl border-2 border-border hover:border-primary transition-all bg-card hover:scale-105"
                 >
-                  <span className="text-4xl block mb-3">{station.icon}</span>
-                  <h3 className="font-bold">{station.name}</h3>
+                  <span className="text-2xl sm:text-4xl block mb-1 sm:mb-3">{station.icon}</span>
+                  <h3 className="font-bold text-xs sm:text-base">{station.name}</h3>
                 </button>
               ))}
             </div>
 
             {/* Production Module */}
-            <h3 className="text-lg font-semibold mb-4 text-muted-foreground">Producție & Rețetar</h3>
-            <div className="bg-card rounded-xl border overflow-hidden" style={{ height: '500px' }}>
+            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-muted-foreground flex-shrink-0">Producție & Rețetar</h3>
+            <div className="bg-card rounded-xl border overflow-hidden flex-1 min-h-0">
               <KDSProductionModule />
             </div>
           </div>

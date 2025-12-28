@@ -231,66 +231,68 @@ const KDSProductionModule: React.FC = () => {
   // Recipe List View
   if (!selectedRecipe) {
     return (
-      <div className="h-full bg-slate-50 p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">KDS Producție & Rețetar</h1>
-          <p className="text-slate-500">Selectează o rețetă pentru a începe producția</p>
+      <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
+        <div className="p-3 sm:p-6 flex-shrink-0">
+          <h1 className="text-lg sm:text-2xl font-bold text-slate-900">KDS Producție & Rețetar</h1>
+          <p className="text-sm text-slate-500">Selectează o rețetă pentru a începe producția</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {mockRecipes.map(recipe => (
-            <Card 
-              key={recipe.id}
-              className="cursor-pointer hover:shadow-lg transition-all hover:scale-[1.02] overflow-hidden"
-              onClick={() => {
-                setSelectedRecipe(recipe);
-                setSelectedQuantity(recipe.baseQuantity);
-              }}
-            >
-              {/* Recipe Image */}
-              <div className="h-40 bg-slate-200 relative overflow-hidden">
-                {recipe.image ? (
-                  <img src={recipe.image} alt={recipe.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Image className="w-12 h-12 text-slate-400" />
-                  </div>
-                )}
-                <Badge className="absolute top-2 right-2 bg-primary">{recipe.category}</Badge>
-              </div>
-              
-              <CardContent className="p-4">
-                <h3 className="font-bold text-lg mb-2">{recipe.name}</h3>
-                
-                <div className="flex items-center gap-4 text-sm text-slate-500">
-                  <div className="flex items-center gap-1">
-                    <Scale className="w-4 h-4" />
-                    <span>{recipe.baseQuantity}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Timer className="w-4 h-4" />
-                    <span>{recipe.prepTime} min</span>
-                  </div>
-                </div>
-
-                {/* Stock indicator */}
-                <div className="mt-3 flex items-center gap-2">
-                  {recipe.ingredients.some(i => i.stockLevel === 'low') ? (
-                    <Badge variant="outline" className="text-red-600 border-red-300 bg-red-50">
-                      <AlertTriangle className="w-3 h-3 mr-1" />
-                      Stoc scăzut
-                    </Badge>
+        <ScrollArea className="flex-1 px-3 sm:px-6 pb-3 sm:pb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+            {mockRecipes.map(recipe => (
+              <Card 
+                key={recipe.id}
+                className="cursor-pointer hover:shadow-lg transition-all hover:scale-[1.02] overflow-hidden"
+                onClick={() => {
+                  setSelectedRecipe(recipe);
+                  setSelectedQuantity(recipe.baseQuantity);
+                }}
+              >
+                {/* Recipe Image */}
+                <div className="h-32 sm:h-40 bg-slate-200 relative overflow-hidden">
+                  {recipe.image ? (
+                    <img src={recipe.image} alt={recipe.name} className="w-full h-full object-cover" />
                   ) : (
-                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50">
-                      <Check className="w-3 h-3 mr-1" />
-                      Stoc OK
-                    </Badge>
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Image className="w-12 h-12 text-slate-400" />
+                    </div>
                   )}
+                  <Badge className="absolute top-2 right-2 bg-primary text-xs">{recipe.category}</Badge>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                
+                <CardContent className="p-3 sm:p-4">
+                  <h3 className="font-bold text-sm sm:text-lg mb-2">{recipe.name}</h3>
+                  
+                  <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm text-slate-500">
+                    <div className="flex items-center gap-1">
+                      <Scale className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span>{recipe.baseQuantity}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Timer className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span>{recipe.prepTime} min</span>
+                    </div>
+                  </div>
+
+                  {/* Stock indicator */}
+                  <div className="mt-2 sm:mt-3 flex items-center gap-2">
+                    {recipe.ingredients.some(i => i.stockLevel === 'low') ? (
+                      <Badge variant="outline" className="text-red-600 border-red-300 bg-red-50 text-xs">
+                        <AlertTriangle className="w-3 h-3 mr-1" />
+                        Stoc scăzut
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50 text-xs">
+                        <Check className="w-3 h-3 mr-1" />
+                        Stoc OK
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </ScrollArea>
       </div>
     );
   }
