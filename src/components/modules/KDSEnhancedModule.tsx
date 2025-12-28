@@ -1034,35 +1034,52 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
   return (
     <div className="h-screen flex flex-col bg-slate-900 text-white">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">{station.icon}</span>
-          <div>
-            <h1 className="text-xl font-bold">{station.name}</h1>
-            <p className="text-sm text-slate-400">KDS Enhanced</p>
+      {/* Header - Responsive */}
+      <header className="bg-slate-800 border-b border-slate-700">
+        {/* First Row: Title + Time + Logout */}
+        <div className="flex items-center justify-between px-3 py-2 md:px-4 md:py-3">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+            <span className="text-2xl md:text-3xl flex-shrink-0">{station.icon}</span>
+            <div className="min-w-0">
+              <h1 className="text-base md:text-xl font-bold truncate">{station.name}</h1>
+              <p className="text-xs md:text-sm text-slate-400 hidden sm:block">KDS Enhanced</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+            <div className="text-right">
+              <p className="text-lg md:text-2xl font-bold font-mono">
+                {currentTime.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+              <p className="text-xs md:text-sm text-slate-400">{filteredOrders.length} comenzi</p>
+            </div>
+            
+            <Button variant="ghost" size="icon" onClick={onLogout} className="text-white hover:bg-slate-700 h-8 w-8 md:h-10 md:w-10">
+              <LogOut className="w-4 h-4 md:w-5 md:h-5" />
+            </Button>
           </div>
         </div>
         
-        <div className="flex items-center gap-4">
+        {/* Second Row: Controls - Scrollable on mobile */}
+        <div className="flex items-center gap-2 px-3 pb-2 md:px-4 md:pb-3 overflow-x-auto scrollbar-hide">
           {/* Tabs Active/Completed */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'active' | 'completed')} className="h-auto">
-            <TabsList className="bg-slate-700">
-              <TabsTrigger value="active" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'active' | 'completed')} className="h-auto flex-shrink-0">
+            <TabsList className="bg-slate-700 h-8">
+              <TabsTrigger value="active" className="text-xs md:text-sm px-2 md:px-3 h-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 Active ({stationOrders.length})
               </TabsTrigger>
-              <TabsTrigger value="completed" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">
+              <TabsTrigger value="completed" className="text-xs md:text-sm px-2 md:px-3 h-6 data-[state=active]:bg-green-600 data-[state=active]:text-white">
                 Finalizate ({completedOrders.length})
               </TabsTrigger>
             </TabsList>
           </Tabs>
 
           {/* View Mode Switcher */}
-          <div className="flex bg-slate-700 rounded-lg p-1">
+          <div className="flex bg-slate-700 rounded-lg p-0.5 flex-shrink-0">
             <Button
               variant="ghost"
               size="sm"
-              className={cn("px-3", viewMode === 'grid' && "bg-primary text-white")}
+              className={cn("px-2 h-7", viewMode === 'grid' && "bg-primary text-white")}
               onClick={() => setViewMode('grid')}
             >
               <Grid3X3 className="w-4 h-4" />
@@ -1070,7 +1087,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             <Button
               variant="ghost"
               size="sm"
-              className={cn("px-3", viewMode === 'list' && "bg-primary text-white")}
+              className={cn("px-2 h-7", viewMode === 'list' && "bg-primary text-white")}
               onClick={() => setViewMode('list')}
             >
               <List className="w-4 h-4" />
@@ -1078,7 +1095,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             <Button
               variant="ghost"
               size="sm"
-              className={cn("px-3", viewMode === 'timeline' && "bg-primary text-white")}
+              className={cn("px-2 h-7", viewMode === 'timeline' && "bg-primary text-white")}
               onClick={() => setViewMode('timeline')}
             >
               <AlignJustify className="w-4 h-4" />
@@ -1087,8 +1104,8 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
           {/* Filter */}
           <Select value={filterMode} onValueChange={(v) => setFilterMode(v as FilterMode)}>
-            <SelectTrigger className="w-36 bg-slate-700 border-slate-600 text-white">
-              <Filter className="w-4 h-4 mr-2" />
+            <SelectTrigger className="w-28 md:w-36 h-7 md:h-8 bg-slate-700 border-slate-600 text-white text-xs md:text-sm flex-shrink-0">
+              <Filter className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1101,7 +1118,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
           {/* Language Selector */}
           <Select value={language} onValueChange={(v) => setLanguage(v as typeof language)}>
-            <SelectTrigger className="w-16 h-8 text-lg bg-slate-700 border-slate-600 text-white">
+            <SelectTrigger className="w-14 h-7 md:h-8 text-base md:text-lg bg-slate-700 border-slate-600 text-white flex-shrink-0">
               <SelectValue>
                 {languages.find(l => l.code === language)?.flag}
               </SelectValue>
@@ -1117,17 +1134,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               ))}
             </SelectContent>
           </Select>
-          
-          <div className="text-right">
-            <p className="text-2xl font-bold font-mono">
-              {currentTime.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-            </p>
-            <p className="text-sm text-slate-400">{filteredOrders.length} comenzi</p>
-          </div>
-          
-          <Button variant="ghost" size="icon" onClick={onLogout} className="text-white hover:bg-slate-700">
-            <LogOut className="w-5 h-5" />
-          </Button>
         </div>
       </header>
 
