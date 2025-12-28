@@ -243,6 +243,12 @@ const RestaurantApp: React.FC = () => {
         return <SuppliersModule />;
       case 'ai':
         return <AIModule />;
+      case 'admin':
+        return <AdminConfigModule />;
+      case 'branding':
+        return <BrandingModule />;
+      case 'subscriptions':
+        return <SubscriptionsAdminModule />;
       default:
         const config = moduleConfig[activeModule];
         return (
