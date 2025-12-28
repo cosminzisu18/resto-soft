@@ -1,10 +1,23 @@
 import React, { useState } from 'react';
-import { RestaurantProvider } from '@/context/RestaurantContext';
+import { RestaurantProvider, useRestaurant } from '@/context/RestaurantContext';
+import { Table, KDSStation, kdsStations } from '@/data/mockData';
+import LoginScreen from '@/components/LoginScreen';
+import TableMap from '@/components/TableMap';
+import OrderPanel from '@/components/OrderPanel';
+import AdminPanel from '@/components/AdminPanel';
+import KDSDisplay from '@/components/KDSDisplay';
+import NotificationCenter from '@/components/NotificationCenter';
+import ReservationManager from '@/components/ReservationManager';
+import DeliveryOrders from '@/components/DeliveryOrders';
+import KioskOrdering from '@/components/KioskOrdering';
+import CustomerSelfOrder from '@/components/CustomerSelfOrder';
 import MainLayout, { ModuleType } from '@/components/layout/MainLayout';
 import DashboardModule from '@/components/modules/DashboardModule';
 import ReportsModule from '@/components/modules/ReportsModule';
 import StocksModule from '@/components/modules/StocksModule';
 import PlaceholderModule from '@/components/modules/PlaceholderModule';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, 
   Store, 
@@ -18,8 +31,14 @@ import {
   Settings, 
   Palette, 
   CreditCard, 
-  MessageSquare 
+  MessageSquare,
+  Tablet,
+  Monitor as MonitorIcon,
+  QrCode,
+  ArrowLeft
 } from 'lucide-react';
+
+type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard';
 
 const moduleConfig: Record<ModuleType, { title: string; description: string; icon: any; features: string[] }> = {
   dashboard: { title: '', description: '', icon: null, features: [] },
@@ -40,9 +59,102 @@ const moduleConfig: Record<ModuleType, { title: string; description: string; ico
   chat: { title: 'Chat Intern', description: 'Comunicare internă', icon: MessageSquare, features: ['Chat echipă', 'Suport', 'Notificări'] },
 };
 
+// KDS Selector component inline
+const KDSSelectorInline: React.FC<{ onSelectStation: (station: KDSStation) => void; onBack: () => void }> = ({ onSelectStation, onBack }) => {
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="p-4 border-b border-border">
+        <Button variant="ghost" onClick={onBack}>
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Înapoi la login
+        </Button>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="max-w-2xl w-full">
+          <div className="text-center mb-8">
+            <MonitorIcon className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+            <h1 className="text-3xl font-bold">Selectează stația KDS</h1>
+            <p className="text-muted-foreground mt-2">Alege stația de bucătărie pentru afișare</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {kdsStations.map(station => (
+              <button
+                key={station.id}
+                onClick={() => onSelectStation(station)}
+                className={cn(
+                  "p-8 rounded-2xl border-2 border-border transition-all",
+                  "hover:border-primary hover:scale-105",
+                  "bg-card"
+                )}
+              >
+                <span className="text-5xl block mb-4">{station.icon}</span>
+                <h2 className="text-xl font-bold">{station.name}</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Click pentru a deschide
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RestaurantApp: React.FC = () => {
+  const { 
+    currentUser, 
+    logout, 
+    notifications, 
+    markNotificationRead, 
+    clearNotifications,
+    reservations,
+    tables,
+    createReservation,
+    updateReservation,
+    deleteReservation
+  } = useRestaurant();
+  
+  const [view, setView] = useState<AppView>('login');
+  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [selectedStation, setSelectedStation] = useState<KDSStation | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
 
+  const handleLoginSuccess = () => {
+    if (currentUser?.role === 'admin') {
+      setView('admin');
+    } else if (currentUser?.role === 'kitchen') {
+      setView('kds-select');
+    } else {
+      setView('waiter');
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    setView('login');
+    setSelectedTable(null);
+    setSelectedStation(null);
+  };
+
+  const handleTableSelect = (table: Table) => {
+    setSelectedTable(table);
+    setView('order');
+  };
+
+  const handleOrderClose = () => {
+    setSelectedTable(null);
+    setView('waiter');
+  };
+
+  const handleKdsSelect = (station: KDSStation) => {
+    setSelectedStation(station);
+    setView('kds');
+  };
+
+  // Render module content for new dashboard
   const renderModule = () => {
     switch (activeModule) {
       case 'dashboard':
@@ -51,6 +163,21 @@ const RestaurantApp: React.FC = () => {
         return <ReportsModule />;
       case 'stocks':
         return <StocksModule />;
+      case 'pos':
+        return (
+          <div className="h-full">
+            <TableMap onTableSelect={handleTableSelect} />
+          </div>
+        );
+      case 'kds':
+        return (
+          <KDSSelectorInline 
+            onSelectStation={handleKdsSelect} 
+            onBack={() => setActiveModule('dashboard')} 
+          />
+        );
+      case 'delivery':
+        return <DeliveryOrders />;
       default:
         const config = moduleConfig[activeModule];
         return (
@@ -64,18 +191,185 @@ const RestaurantApp: React.FC = () => {
     }
   };
 
-  return (
-    <MainLayout
-      activeModule={activeModule}
-      onModuleChange={setActiveModule}
-      isOnline={true}
-      restaurantName="Restaurant Demo"
-      currentLocation="Locația Principală"
-      onLogout={() => {}}
-    >
-      {renderModule()}
-    </MainLayout>
-  );
+  // Main view switching
+  if (view === 'login') {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <LoginScreen onLoginSuccess={handleLoginSuccess} />
+        
+        {/* Quick access buttons for demo */}
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-card/90 backdrop-blur p-3 rounded-2xl border shadow-lg">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setView('kiosk')}
+            className="flex items-center gap-2"
+          >
+            <Tablet className="w-4 h-4" />
+            Kiosk Demo
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setView('self-order')}
+            className="flex items-center gap-2"
+          >
+            <QrCode className="w-4 h-4" />
+            Self-Order
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setView('new-dashboard')}
+            className="flex items-center gap-2"
+          >
+            <MonitorIcon className="w-4 h-4" />
+            Dashboard Nou
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'kiosk') {
+    return (
+      <div className="relative">
+        <KioskOrdering />
+        <Button 
+          variant="outline" 
+          className="fixed top-4 left-4 z-50"
+          onClick={() => setView('login')}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Ieși
+        </Button>
+      </div>
+    );
+  }
+
+  if (view === 'self-order') {
+    return (
+      <div className="relative">
+        <CustomerSelfOrder initialTableId="t1" />
+        <Button 
+          variant="outline" 
+          className="fixed top-4 left-4 z-50"
+          onClick={() => setView('login')}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Ieși
+        </Button>
+      </div>
+    );
+  }
+
+  if (view === 'new-dashboard') {
+    return (
+      <MainLayout
+        activeModule={activeModule}
+        onModuleChange={setActiveModule}
+        isOnline={true}
+        restaurantName="Restaurant Demo"
+        currentLocation="Locația Principală"
+        onLogout={() => setView('login')}
+      >
+        {renderModule()}
+      </MainLayout>
+    );
+  }
+
+  if (view === 'waiter' && !selectedTable) {
+    return (
+      <div className="h-screen flex flex-col">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
+          <h1 className="font-semibold">RestoPOS - Ospătar</h1>
+          <NotificationCenter 
+            notifications={notifications}
+            onMarkRead={markNotificationRead}
+            onClearAll={clearNotifications}
+          />
+        </div>
+        <div className="flex-1 flex">
+          <div className="flex-1">
+            <TableMap onTableSelect={handleTableSelect} />
+          </div>
+          <div className="w-80 border-l border-border hidden lg:block">
+            <ReservationManager 
+              reservations={reservations}
+              tables={tables}
+              onCreateReservation={createReservation}
+              onUpdateReservation={updateReservation}
+              onDeleteReservation={deleteReservation}
+            />
+          </div>
+        </div>
+        <div className="fixed bottom-4 right-4 flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setView('new-dashboard')}
+            className="flex items-center gap-2"
+          >
+            <MonitorIcon className="w-4 h-4" />
+            Dashboard
+          </Button>
+          <Button variant="destructive" onClick={handleLogout}>
+            Deconectare
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'order' && selectedTable) {
+    return (
+      <div className="h-screen">
+        <OrderPanel table={selectedTable} onClose={handleOrderClose} />
+      </div>
+    );
+  }
+
+  if (view === 'admin') {
+    return (
+      <div className="h-screen flex flex-col">
+        <div className="flex-1">
+          <AdminPanel onLogout={handleLogout} />
+        </div>
+        <div className="fixed bottom-4 right-4">
+          <Button
+            variant="outline"
+            onClick={() => setView('new-dashboard')}
+            className="flex items-center gap-2"
+          >
+            <MonitorIcon className="w-4 h-4" />
+            Dashboard Nou
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'kds-select') {
+    return (
+      <KDSSelectorInline 
+        onSelectStation={handleKdsSelect}
+        onBack={handleLogout}
+      />
+    );
+  }
+
+  if (view === 'kds' && selectedStation) {
+    return (
+      <KDSDisplay 
+        station={selectedStation} 
+        onLogout={() => {
+          setSelectedStation(null);
+          setView('kds-select');
+        }} 
+      />
+    );
+  }
+
+  return null;
 };
 
 const Index: React.FC = () => (
