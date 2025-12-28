@@ -1,93 +1,81 @@
 import React, { useState } from 'react';
-import { RestaurantProvider, useRestaurant } from '@/context/RestaurantContext';
-import LoginScreen from '@/components/LoginScreen';
-import WaiterPalmares from '@/components/WaiterPalmares';
-import AdminPanel from '@/components/AdminPanel';
-import KDSDisplay from '@/components/KDSDisplay';
-import KDSSelector from '@/components/KDSSelector';
-import OrderStatusMonitor from '@/components/OrderStatusMonitor';
-import KioskOrdering from '@/components/KioskOrdering';
-import CustomerSelfOrder from '@/components/CustomerSelfOrder';
-import { kdsStations } from '@/data/mockData';
-import { Button } from '@/components/ui/button';
-import { Monitor, Tablet, Smartphone, ArrowLeft } from 'lucide-react';
+import { RestaurantProvider } from '@/context/RestaurantContext';
+import MainLayout, { ModuleType } from '@/components/layout/MainLayout';
+import DashboardModule from '@/components/modules/DashboardModule';
+import ReportsModule from '@/components/modules/ReportsModule';
+import StocksModule from '@/components/modules/StocksModule';
+import PlaceholderModule from '@/components/modules/PlaceholderModule';
+import { 
+  ShoppingCart, 
+  Store, 
+  UtensilsCrossed, 
+  Users, 
+  FileText, 
+  Building2, 
+  UserCircle, 
+  Truck, 
+  Bot, 
+  Settings, 
+  Palette, 
+  CreditCard, 
+  MessageSquare 
+} from 'lucide-react';
 
-type AppMode = 'staff' | 'monitor' | 'kiosk' | 'customer';
+const moduleConfig: Record<ModuleType, { title: string; description: string; icon: any; features: string[] }> = {
+  dashboard: { title: '', description: '', icon: null, features: [] },
+  pos: { title: 'POS / Casă', description: 'Sistem de vânzare pentru ospătari și casieri', icon: ShoppingCart, features: ['Comenzi rapide', 'Plăți multiple', 'Bon fiscal'] },
+  kiosk: { title: 'Kiosk Self-Order', description: 'Comenzi self-service pentru clienți', icon: Store, features: ['Upsell automat', 'Plăți card/cash', 'QR status'] },
+  kds: { title: 'KDS & Producție', description: 'Afișaj bucătărie și producție', icon: UtensilsCrossed, features: ['Comenzi pe stații', 'Timer preparare', 'Rețetar integrat'] },
+  stocks: { title: '', description: '', icon: null, features: [] },
+  employees: { title: 'Angajați', description: 'Gestionare personal și KPI', icon: Users, features: ['Pontaj', 'KPI per rol', 'Pauze monitorizate'] },
+  reports: { title: '', description: '', icon: null, features: [] },
+  management: { title: 'Gestiune Primară', description: 'Facturi, NIR și jurnal', icon: FileText, features: ['Import SPV', 'NIR automat', 'Export SAGA'] },
+  suppliers: { title: 'Furnizori B2B', description: 'Portal pentru furnizori', icon: Building2, features: ['Catalog produse', 'Comenzi B2B', 'Rapoarte'] },
+  customers: { title: 'Clienți', description: 'Fidelizare și istoric clienți', icon: UserCircle, features: ['Puncte fidelitate', 'Istoric comenzi', 'Notificări'] },
+  delivery: { title: 'Delivery & Takeaway', description: 'Integrare Glovo, Bolt, Wolt', icon: Truck, features: ['Comenzi agregate', 'Etichete automate', 'Status live'] },
+  ai: { title: 'AI & Automatizări', description: 'Predicții și sugestii inteligente', icon: Bot, features: ['Predicție vânzări', 'Sugestii stoc', 'Detectare pierderi'] },
+  admin: { title: 'Admin & Multi-Locație', description: 'Setări și configurări', icon: Settings, features: ['Multi-locație', 'Meniuri diferite', 'Prețuri per locație'] },
+  branding: { title: 'Branding & Custom', description: 'Personalizare aplicație', icon: Palette, features: ['Logo custom', 'Culori', 'Template-uri'] },
+  subscriptions: { title: 'Abonamente', description: 'Gestionare abonamente clienți', icon: CreditCard, features: ['Facturare', 'Status plăți', 'Rapoarte'] },
+  chat: { title: 'Chat Intern', description: 'Comunicare internă', icon: MessageSquare, features: ['Chat echipă', 'Suport', 'Notificări'] },
+};
 
 const RestaurantApp: React.FC = () => {
-  const { currentUser, logout } = useRestaurant();
-  const [selectedKDSStation, setSelectedKDSStation] = useState<string | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [appMode, setAppMode] = useState<AppMode>('staff');
-  const [monitorType, setMonitorType] = useState<'restaurant' | 'delivery'>('restaurant');
+  const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
 
-  const handleLogout = () => {
-    logout();
-    setIsLoggedIn(false);
-    setSelectedKDSStation(null);
+  const renderModule = () => {
+    switch (activeModule) {
+      case 'dashboard':
+        return <DashboardModule />;
+      case 'reports':
+        return <ReportsModule />;
+      case 'stocks':
+        return <StocksModule />;
+      default:
+        const config = moduleConfig[activeModule];
+        return (
+          <PlaceholderModule
+            title={config.title}
+            description={config.description}
+            icon={config.icon}
+            features={config.features}
+          />
+        );
+    }
   };
 
-  // Mode Selection
-  if (appMode !== 'staff') {
-    return (
-      <div className="relative">
-        {/* Home button - positioned in a non-overlapping corner */}
-        <div className="fixed bottom-4 right-4 z-[60]">
-          <Button 
-            variant="default" 
-            size="lg" 
-            className="shadow-lg"
-            onClick={() => setAppMode('staff')}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Acasă
-          </Button>
-        </div>
-        {appMode === 'monitor' && <OrderStatusMonitor mode={monitorType} />}
-        {appMode === 'kiosk' && <KioskOrdering />}
-        {appMode === 'customer' && <CustomerSelfOrder />}
-      </div>
-    );
-  }
-
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen bg-background">
-        <LoginScreen onLoginSuccess={() => setIsLoggedIn(true)} />
-        {/* Quick access buttons */}
-        <div className="fixed bottom-4 left-4 right-4 flex gap-2 justify-center">
-          <Button variant="outline" size="sm" onClick={() => { setAppMode('monitor'); setMonitorType('restaurant'); }}>
-            <Monitor className="w-4 h-4 mr-2" />Monitor
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setAppMode('kiosk')}>
-            <Tablet className="w-4 h-4 mr-2" />Kiosk
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setAppMode('customer')}>
-            <Smartphone className="w-4 h-4 mr-2" />Client
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return <LoginScreen onLoginSuccess={() => setIsLoggedIn(true)} />;
-  }
-
-  if (currentUser.role === 'admin') {
-    return <AdminPanel onLogout={handleLogout} />;
-  }
-
-  if (currentUser.role === 'kitchen') {
-    if (!selectedKDSStation) {
-      return <KDSSelector onSelectStation={setSelectedKDSStation} onBack={handleLogout} />;
-    }
-    const station = kdsStations.find(s => s.id === selectedKDSStation);
-    if (!station) return null;
-    return <KDSDisplay station={station} onLogout={handleLogout} />;
-  }
-
-  return <WaiterPalmares onLogout={handleLogout} />;
+  return (
+    <MainLayout
+      activeModule={activeModule}
+      onModuleChange={setActiveModule}
+      isOnline={true}
+      restaurantName="Restaurant Demo"
+      currentLocation="Locația Principală"
+      onLogout={() => {}}
+    >
+      {renderModule()}
+    </MainLayout>
+  );
 };
 
 const Index: React.FC = () => (
