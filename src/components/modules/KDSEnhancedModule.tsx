@@ -120,7 +120,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [employeeSelectItem, setEmployeeSelectItem] = useState<{ orderId: string; itemId: string } | null>(null);
-  const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
   const [recipeViewItem, setRecipeViewItem] = useState<MenuItem | null>(null);
   const [labelPreview, setLabelPreview] = useState<LabelData | null>(null);
   const [showAllergenLabel, setShowAllergenLabel] = useState(false);
@@ -233,6 +232,11 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     }]);
     updateOrderItemStatus(orderId, itemId, 'cooking');
     setEmployeeSelectItem(null);
+    
+    toast({
+      title: "Preparat pornit",
+      description: `${employeeName} a început prepararea`,
+    });
   };
 
   const handleCompleteItem = (orderId: string, itemId: string, employeeName: string) => {
@@ -324,7 +328,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 .header { text-align: center; font-size: 16pt; font-weight: bold; border-bottom: 2px dashed #000; padding-bottom: 3mm; margin-bottom: 3mm; }
                 .order-num { font-size: 24pt; font-weight: bold; text-align: center; margin: 3mm 0; }
                 .product-name { font-size: 14pt; font-weight: bold; text-align: center; margin: 3mm 0; }
-                .quantity { font-size: 18pt; font-weight: bold; text-align: center; margin: 3mm 0; }
                 .info-row { display: flex; justify-content: space-between; font-size: 10pt; margin: 2mm 0; }
                 .modifications { font-size: 10pt; margin: 3mm 0; padding: 2mm; background: #f0f0f0; }
                 .mod-add { color: green; }
@@ -367,7 +370,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 .product-name { font-size: 12pt; font-weight: bold; text-align: center; margin: 3mm 0; }
                 .allergen-list { margin: 3mm 0; }
                 .allergen-item { display: flex; align-items: center; gap: 2mm; padding: 2mm; margin: 1mm 0; background: #fff3cd; border-radius: 3mm; font-size: 11pt; }
-                .allergen-icon { font-size: 14pt; }
                 .warning { text-align: center; font-size: 10pt; font-weight: bold; color: #dc3545; margin-top: 3mm; padding: 2mm; border: 1px solid #dc3545; }
                 .footer { text-align: center; font-size: 8pt; border-top: 2px dashed #000; padding-top: 3mm; margin-top: 3mm; }
               </style>
@@ -401,9 +403,10 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     return item.status === 'ready' || item.status === 'served';
   };
 
-  const getOrderNotes = (order: Order): string | null => {
-    const itemNotes = order.items
-      .filter(i => i.modifications.notes)
+  // Get notes only for items in this order that have notes
+  const getOrderNotes = (items: OrderItem[]): string | null => {
+    const itemNotes = items
+      .filter(i => i.modifications.notes && i.modifications.notes.trim() !== '')
       .map(i => `${i.menuItem.name}: ${i.modifications.notes}`)
       .join(' | ');
     
@@ -432,6 +435,158 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     return { display: `~${maxPrepTime} min`, status: 'normal' };
   };
 
+  // Render item with full details (used in all views)
+  const renderItemRow = (order: Order, item: OrderItem, items: OrderItem[], showButtons: boolean = true) => {
+    const activeItem = getActiveItemInfo(order.id, item.id);
+    const timeInfo = getRemainingTime(item, activeItem);
+    const isCompleted = isItemCompleted(item);
+    const isActive = !!activeItem;
+    const hasModifications = item.modifications.added.length > 0 || item.modifications.removed.length > 0;
+    
+    return (
+      <div key={item.id} className="flex flex-col">
+        <div
+          onClick={() => !isCompleted && handleItemTap(order.id, item.id)}
+          className={cn(
+            "flex items-center justify-between px-3 py-2 cursor-pointer transition-all duration-200",
+            isCompleted && "bg-slate-100 opacity-60",
+            isActive && !isCompleted && "bg-green-50 border-l-4 border-green-500",
+            !isActive && !isCompleted && "hover:bg-slate-50"
+          )}
+        >
+          {/* Product Image */}
+          <div className="w-10 h-10 rounded-lg bg-slate-200 flex-shrink-0 overflow-hidden mr-2">
+            {item.menuItem.image ? (
+              <img src={item.menuItem.image} alt={item.menuItem.name} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Image className="w-5 h-5 text-slate-400" />
+              </div>
+            )}
+          </div>
+          
+          <div className={cn("flex flex-col flex-1 min-w-0", isCompleted && "line-through text-slate-400")}>
+            <div className="flex items-center gap-2">
+              <span className={cn(
+                "font-black text-lg",
+                isActive && !isCompleted ? "text-green-600" : "text-primary",
+                isCompleted && "text-slate-400"
+              )}>
+                {item.quantity}x
+              </span>
+              <span className={cn("font-medium truncate", isCompleted && "text-slate-400")}>
+                {item.menuItem.name}
+              </span>
+              
+              {/* Recipe & Label Buttons */}
+              {showButtons && !isCompleted && (
+                <div className="flex items-center gap-0.5">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-slate-400 hover:text-primary"
+                          onClick={(e) => handleShowRecipe(item, e)}
+                        >
+                          <Book className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Vezi rețetar</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-slate-400 hover:text-orange-500"
+                          onClick={(e) => handlePrintLabelForItem(order, item, items, e)}
+                        >
+                          <Printer className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Printează etichetă</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
+            </div>
+            
+            {/* Show employee name when cooking */}
+            {isActive && !isCompleted && activeItem && (
+              <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                <User className="w-3 h-3" />
+                {activeItem.employeeName}
+              </span>
+            )}
+          </div>
+
+          <div className={cn(
+            "flex items-center gap-1 text-sm font-mono font-bold flex-shrink-0 ml-2",
+            isCompleted && "line-through text-slate-400",
+            isActive && !isCompleted && (timeInfo.percent >= 100 ? "text-red-600" : timeInfo.percent >= 75 ? "text-yellow-600" : "text-green-600")
+          )}>
+            {isCompleted ? (
+              <CheckCircle2 className="w-5 h-5 text-green-500" />
+            ) : isActive ? (
+              <>
+                <div className="w-8 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div 
+                    className={cn(
+                      "h-full transition-all duration-1000",
+                      timeInfo.percent >= 100 ? "bg-red-500" : timeInfo.percent >= 75 ? "bg-yellow-500" : "bg-green-500"
+                    )}
+                    style={{ width: `${Math.min(100, timeInfo.percent)}%` }}
+                  />
+                </div>
+                <span>{timeInfo.display}</span>
+              </>
+            ) : (
+              <>
+                <Clock className="w-3 h-3 text-slate-400" />
+                <span className="text-slate-500">{timeInfo.display}</span>
+              </>
+            )}
+          </div>
+        </div>
+        
+        {/* Show modifications inline */}
+        {hasModifications && !isCompleted && (
+          <div className="px-3 pb-2 flex flex-wrap gap-1">
+            {item.modifications.added.map((mod, idx) => (
+              <span key={`add-${idx}`} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
+                <Plus className="w-3 h-3" />{mod}
+              </span>
+            ))}
+            {item.modifications.removed.map((mod, idx) => (
+              <span key={`rem-${idx}`} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full line-through">
+                <Minus className="w-3 h-3" />{mod}
+              </span>
+            ))}
+          </div>
+        )}
+        
+        {/* Show item-specific notes */}
+        {item.modifications.notes && item.modifications.notes.trim() !== '' && !isCompleted && (
+          <div className="px-3 pb-2">
+            <div className="flex items-start gap-1 text-xs text-amber-700 bg-amber-50 p-1.5 rounded">
+              <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{item.modifications.notes}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Render Grid View
   const renderGridView = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
@@ -439,7 +594,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         const status = getOrderStatus(items);
         const progress = getOrderProgress(items);
         const config = platformConfig[order.source] || platformConfig.restaurant;
-        const notes = getOrderNotes(order);
         const totalTime = getTotalOrderTime(items);
         const hasPendingItems = items.some(i => i.status === 'pending');
         
@@ -488,147 +642,9 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             </CardHeader>
 
             <CardContent className="p-0">
-              {notes && (
-                <div className="px-3 py-2 bg-amber-50 border-b border-amber-200">
-                  <div className="flex items-start gap-2">
-                    <MessageSquare className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-amber-800 font-medium">{notes}</p>
-                  </div>
-                </div>
-              )}
-
               <ScrollArea className="max-h-[300px]">
                 <div className="divide-y divide-slate-100">
-                  {items.map(item => {
-                    const activeItem = getActiveItemInfo(order.id, item.id);
-                    const timeInfo = getRemainingTime(item, activeItem);
-                    const isCompleted = isItemCompleted(item);
-                    const isActive = !!activeItem;
-                    const hasModifications = item.modifications.added.length > 0 || item.modifications.removed.length > 0;
-                    
-                    return (
-                      <div key={item.id} className="flex flex-col">
-                        <div
-                          onClick={() => !isCompleted && handleItemTap(order.id, item.id)}
-                          className={cn(
-                            "flex items-center justify-between px-3 py-2 cursor-pointer transition-all duration-200",
-                            isCompleted && "bg-slate-100 opacity-60",
-                            isActive && !isCompleted && "bg-green-50 border-l-4 border-green-500",
-                            !isActive && !isCompleted && "hover:bg-slate-50"
-                          )}
-                        >
-                          {/* Product Image */}
-                          <div className="w-10 h-10 rounded-lg bg-slate-200 flex-shrink-0 overflow-hidden mr-2">
-                            {item.menuItem.image ? (
-                              <img src={item.menuItem.image} alt={item.menuItem.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Image className="w-5 h-5 text-slate-400" />
-                              </div>
-                            )}
-                          </div>
-                          
-                          <div className={cn("flex items-center gap-2 flex-1 min-w-0", isCompleted && "line-through text-slate-400")}>
-                            <span className={cn(
-                              "font-black text-lg",
-                              isActive && !isCompleted ? "text-green-600" : "text-primary",
-                              isCompleted && "text-slate-400"
-                            )}>
-                              {item.quantity}x
-                            </span>
-                            <span className={cn("font-medium truncate", isCompleted && "text-slate-400")}>
-                              {item.menuItem.name}
-                            </span>
-                            
-                            {/* Recipe & Label Buttons */}
-                            {!isCompleted && (
-                              <div className="flex items-center gap-0.5">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 text-slate-400 hover:text-primary"
-                                        onClick={(e) => handleShowRecipe(item, e)}
-                                      >
-                                        <Book className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>Vezi rețetar</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                                
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 text-slate-400 hover:text-orange-500"
-                                        onClick={(e) => handlePrintLabelForItem(order, item, items, e)}
-                                      >
-                                        <Printer className="w-4 h-4" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>Printează etichetă</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className={cn(
-                            "flex items-center gap-1 text-sm font-mono font-bold flex-shrink-0 ml-2",
-                            isCompleted && "line-through text-slate-400",
-                            isActive && !isCompleted && (timeInfo.percent >= 100 ? "text-red-600" : timeInfo.percent >= 75 ? "text-yellow-600" : "text-green-600")
-                          )}>
-                            {isCompleted ? (
-                              <CheckCircle2 className="w-5 h-5 text-green-500" />
-                            ) : isActive ? (
-                              <>
-                                <div className="w-8 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                  <div 
-                                    className={cn(
-                                      "h-full transition-all duration-1000",
-                                      timeInfo.percent >= 100 ? "bg-red-500" : timeInfo.percent >= 75 ? "bg-yellow-500" : "bg-green-500"
-                                    )}
-                                    style={{ width: `${Math.min(100, timeInfo.percent)}%` }}
-                                  />
-                                </div>
-                                <span>{timeInfo.display}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                <span className="text-slate-500">{timeInfo.display}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        
-                        {/* Show modifications inline */}
-                        {hasModifications && !isCompleted && (
-                          <div className="px-3 pb-2 flex flex-wrap gap-1">
-                            {item.modifications.added.map((mod, idx) => (
-                              <span key={`add-${idx}`} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
-                                <Plus className="w-3 h-3" />{mod}
-                              </span>
-                            ))}
-                            {item.modifications.removed.map((mod, idx) => (
-                              <span key={`rem-${idx}`} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full line-through">
-                                <Minus className="w-3 h-3" />{mod}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {items.map(item => renderItemRow(order, item, items))}
                 </div>
               </ScrollArea>
 
@@ -651,25 +667,28 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     </div>
   );
 
-  // Render List View
+  // Render List View - full details like grid
   const renderListView = () => (
-    <div className="space-y-2">
+    <div className="space-y-4">
       {filteredOrders.map(({ order, items }) => {
         const status = getOrderStatus(items);
         const progress = getOrderProgress(items);
         const config = platformConfig[order.source] || platformConfig.restaurant;
+        const totalTime = getTotalOrderTime(items);
+        const hasPendingItems = items.some(i => i.status === 'pending');
         
         return (
-          <div 
+          <Card 
             key={`${order.id}-${station.id}`}
             className={cn(
-              "bg-white rounded-xl p-4 shadow-md transition-all duration-300 animate-fade-in",
+              "bg-white text-slate-900 shadow-md transition-all duration-300 animate-fade-in overflow-hidden",
               status === 'urgent' && "ring-2 ring-red-500",
               status === 'delayed' && "ring-2 ring-yellow-500"
             )}
           >
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 w-32">
+            {/* Header Row */}
+            <div className="flex items-center gap-4 p-4 border-b border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-3">
                 <span className="text-2xl font-black text-primary">#{order.tableNumber || order.id.slice(-4)}</span>
                 {status === 'urgent' && <AlertTriangle className="w-5 h-5 text-red-500" />}
               </div>
@@ -679,129 +698,131 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 <span className="ml-1">{config.label}</span>
               </Badge>
               
-              <div className="flex-1 flex items-center gap-2 overflow-x-auto">
-                {items.map(item => {
-                  const isCompleted = isItemCompleted(item);
-                  const isActive = !!getActiveItemInfo(order.id, item.id);
-                  
-                  return (
-                    <div 
-                      key={item.id}
-                      onClick={() => !isCompleted && handleItemTap(order.id, item.id)}
-                      className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-all",
-                        isCompleted && "bg-green-100 text-green-700",
-                        isActive && !isCompleted && "bg-yellow-100 text-yellow-700",
-                        !isActive && !isCompleted && "bg-slate-100 hover:bg-slate-200"
-                      )}
-                    >
-                      <span className="font-bold">{item.quantity}x</span>
-                      <span className="text-sm truncate max-w-[100px]">{item.menuItem.name}</span>
-                      {isCompleted && <CheckCircle2 className="w-4 h-4" />}
-                    </div>
-                  );
-                })}
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold",
+                totalTime.status === 'urgent' && "bg-red-100 text-red-700",
+                totalTime.status === 'warning' && "bg-yellow-100 text-yellow-700",
+                totalTime.status === 'normal' && "bg-slate-100 text-slate-700"
+              )}>
+                <Timer className="w-4 h-4" />
+                <span>{totalTime.display}</span>
               </div>
               
-              <div className="w-32 flex items-center gap-2">
+              <div className="flex-1" />
+              
+              <div className="flex items-center gap-2 w-40">
                 <Progress value={progress} className="h-2 flex-1" />
                 <span className="text-sm font-bold text-slate-600">{progress}%</span>
               </div>
               
-              {items.some(i => i.status === 'pending') && (
-                <Button size="sm" className="bg-green-600" onClick={() => handleStartAllItems(order.id, items)}>
-                  <Play className="w-4 h-4" />
+              {hasPendingItems && (
+                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleStartAllItems(order.id, items)}>
+                  <Play className="w-4 h-4 mr-1" /> Start
                 </Button>
               )}
             </div>
-          </div>
+            
+            {/* Items */}
+            <div className="divide-y divide-slate-100">
+              {items.map(item => renderItemRow(order, item, items))}
+            </div>
+          </Card>
         );
       })}
     </div>
   );
 
-  // Render Timeline View
+  // Render Timeline View - Kanban style with full details
   const renderTimelineView = () => (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {/* Pending Column */}
-      <div className="flex-shrink-0 w-80">
+      <div className="flex-shrink-0 w-96">
         <div className="bg-slate-200 rounded-t-xl px-4 py-2 font-bold text-slate-700 flex items-center gap-2">
           <Clock className="w-5 h-5" />
-          În așteptare
+          În așteptare ({filteredOrders.filter(({ items }) => items.every(i => i.status === 'pending')).length})
         </div>
-        <div className="bg-slate-100 rounded-b-xl p-3 space-y-3 min-h-[400px]">
-          {filteredOrders.filter(({ items }) => items.every(i => i.status === 'pending')).map(({ order, items }) => (
-            <Card key={order.id} className="bg-white shadow-sm animate-fade-in">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-black text-primary">#{order.tableNumber || order.id.slice(-4)}</span>
-                  <Badge className={cn("text-xs", platformConfig[order.source]?.color || 'bg-primary', "text-white")}>
-                    {platformConfig[order.source]?.label || 'POS'}
-                  </Badge>
-                </div>
-                <div className="text-sm text-slate-600">
-                  {items.map(i => `${i.quantity}x ${i.menuItem.name}`).join(', ')}
-                </div>
-                <Button size="sm" className="w-full mt-2 bg-green-600" onClick={() => handleStartAllItems(order.id, items)}>
-                  <Play className="w-4 h-4 mr-1" /> Start
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="bg-slate-100 rounded-b-xl p-3 space-y-3 min-h-[400px] max-h-[calc(100vh-250px)] overflow-y-auto">
+          {filteredOrders.filter(({ items }) => items.every(i => i.status === 'pending')).map(({ order, items }) => {
+            const config = platformConfig[order.source] || platformConfig.restaurant;
+            return (
+              <Card key={order.id} className="bg-white shadow-sm animate-fade-in overflow-hidden">
+                <CardHeader className="p-3 pb-2 border-b border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-primary text-lg">#{order.tableNumber || order.id.slice(-4)}</span>
+                    <Badge className={cn("text-xs", config.color, "text-white")}>
+                      {config.label}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="divide-y divide-slate-50">
+                    {items.map(item => renderItemRow(order, item, items))}
+                  </div>
+                  <div className="p-2 border-t border-slate-100">
+                    <Button size="sm" className="w-full bg-green-600 hover:bg-green-700" onClick={() => handleStartAllItems(order.id, items)}>
+                      <Play className="w-4 h-4 mr-1" /> Start
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
       {/* Cooking Column */}
-      <div className="flex-shrink-0 w-80">
+      <div className="flex-shrink-0 w-96">
         <div className="bg-yellow-500 rounded-t-xl px-4 py-2 font-bold text-white flex items-center gap-2">
           <ChefHat className="w-5 h-5" />
-          În preparare
+          În preparare ({filteredOrders.filter(({ items }) => items.some(i => i.status === 'cooking') && !items.every(i => i.status === 'ready' || i.status === 'served')).length})
         </div>
-        <div className="bg-yellow-50 rounded-b-xl p-3 space-y-3 min-h-[400px]">
-          {filteredOrders.filter(({ items }) => items.some(i => i.status === 'cooking')).map(({ order, items }) => (
-            <Card key={order.id} className="bg-white shadow-sm border-l-4 border-yellow-500 animate-fade-in">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-black text-primary">#{order.tableNumber || order.id.slice(-4)}</span>
-                  <Progress value={getOrderProgress(items)} className="w-16 h-2" />
-                </div>
-                {items.filter(i => i.status === 'cooking').map(item => {
-                  const activeItem = getActiveItemInfo(order.id, item.id);
-                  const timeInfo = getRemainingTime(item, activeItem);
-                  return (
-                    <div key={item.id} className="flex items-center justify-between py-1 border-b last:border-0">
-                      <span className="text-sm">{item.quantity}x {item.menuItem.name}</span>
-                      <span className={cn(
-                        "text-xs font-mono font-bold",
-                        timeInfo.percent >= 100 ? "text-red-600" : "text-yellow-600"
-                      )}>
-                        {timeInfo.display}
-                      </span>
+        <div className="bg-yellow-50 rounded-b-xl p-3 space-y-3 min-h-[400px] max-h-[calc(100vh-250px)] overflow-y-auto">
+          {filteredOrders.filter(({ items }) => items.some(i => i.status === 'cooking') && !items.every(i => i.status === 'ready' || i.status === 'served')).map(({ order, items }) => {
+            const config = platformConfig[order.source] || platformConfig.restaurant;
+            const progress = getOrderProgress(items);
+            return (
+              <Card key={order.id} className="bg-white shadow-sm border-l-4 border-yellow-500 animate-fade-in overflow-hidden">
+                <CardHeader className="p-3 pb-2 border-b border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-primary text-lg">#{order.tableNumber || order.id.slice(-4)}</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={progress} className="w-16 h-2" />
+                      <span className="text-xs font-bold">{progress}%</span>
                     </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          ))}
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="divide-y divide-slate-50">
+                    {items.map(item => renderItemRow(order, item, items))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
       {/* Ready Column */}
-      <div className="flex-shrink-0 w-80">
+      <div className="flex-shrink-0 w-96">
         <div className="bg-green-500 rounded-t-xl px-4 py-2 font-bold text-white flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5" />
-          Gata
+          Gata ({filteredOrders.filter(({ items }) => items.every(i => i.status === 'ready' || i.status === 'served')).length})
         </div>
-        <div className="bg-green-50 rounded-b-xl p-3 space-y-3 min-h-[400px]">
+        <div className="bg-green-50 rounded-b-xl p-3 space-y-3 min-h-[400px] max-h-[calc(100vh-250px)] overflow-y-auto">
           {filteredOrders.filter(({ items }) => items.every(i => i.status === 'ready' || i.status === 'served')).map(({ order, items }) => (
             <Card key={order.id} className="bg-white shadow-sm border-l-4 border-green-500 animate-fade-in">
               <CardContent className="p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-green-600">#{order.tableNumber || order.id.slice(-4)}</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-black text-green-600 text-lg">#{order.tableNumber || order.id.slice(-4)}</span>
                   <CheckCircle2 className="w-5 h-5 text-green-500" />
                 </div>
-                <div className="text-sm text-slate-600 line-through mt-1">
-                  {items.map(i => `${i.quantity}x ${i.menuItem.name}`).join(', ')}
+                <div className="space-y-1">
+                  {items.map(item => (
+                    <div key={item.id} className="text-sm text-slate-600 line-through flex items-center gap-2">
+                      <span className="font-bold">{item.quantity}x</span>
+                      <span>{item.menuItem.name}</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -980,7 +1001,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <User className="w-5 h-5" />
-              Selectează angajatul
+              Selectează angajatul care prepară
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-4">
@@ -988,9 +1009,10 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               <Button
                 key={employee.id}
                 onClick={() => handleStartCooking(employee.name)}
-                className="h-16 text-lg font-bold bg-primary hover:bg-primary/90 transition-transform hover:scale-105"
+                className="h-20 text-lg font-bold bg-primary hover:bg-primary/90 transition-transform hover:scale-105 flex flex-col gap-1"
               >
-                {employee.name.split(' ')[0]}
+                <span className="text-2xl">{employee.avatar}</span>
+                <span>{employee.name}</span>
               </Button>
             ))}
           </div>
