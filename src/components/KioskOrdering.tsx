@@ -1296,26 +1296,122 @@ const KioskOrdering: React.FC = () => {
 
   // ============ CONFIRMATION ============
   if (step === 'confirm') {
+    const orderNumber = `KSK${Date.now().toString().slice(-4)}`;
+    
+    const handlePrintReceipt = () => {
+      const printWindow = window.open('', '_blank', 'width=400,height=600');
+      if (!printWindow) return;
+      
+      const receiptHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Bon Comandă #${orderNumber}</title>
+          <style>
+            body { font-family: 'Courier New', monospace; padding: 20px; max-width: 300px; margin: 0 auto; }
+            .header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 15px; margin-bottom: 15px; }
+            .logo { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+            .order-type { background: #f0f0f0; padding: 10px; text-align: center; margin: 15px 0; border-radius: 5px; }
+            .table-number { font-size: 48px; font-weight: bold; text-align: center; margin: 20px 0; }
+            .table-label { text-align: center; font-size: 14px; color: #666; }
+            .items { margin: 20px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 15px 0; }
+            .item { display: flex; justify-content: space-between; margin: 8px 0; font-size: 12px; }
+            .total { display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; margin: 15px 0; }
+            .footer { text-align: center; margin-top: 20px; font-size: 10px; color: #666; }
+            .payment-method { text-align: center; margin: 10px 0; padding: 8px; background: #e8f5e9; border-radius: 5px; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="logo">🍕 Restaurant Demo</div>
+            <div>Bon de comandă</div>
+            <div style="font-size: 12px; color: #666;">${new Date().toLocaleString('ro-RO')}</div>
+          </div>
+          
+          <div style="text-align: center; font-weight: bold;">Comandă #${orderNumber}</div>
+          
+          <div class="order-type">
+            ${orderMode === 'dine-in' ? '🍽️ ÎN RESTAURANT' : '🛍️ LA PACHET'}
+          </div>
+          
+          ${orderMode === 'dine-in' && tableNumber ? `
+            <div class="table-label">NUMĂR INDICATOR</div>
+            <div class="table-number">${tableNumber}</div>
+            <div class="table-label" style="margin-bottom: 20px;">Puneți indicatorul pe masă</div>
+          ` : ''}
+          
+          <div class="items">
+            ${cart.map(item => `
+              <div class="item">
+                <span>${item.quantity}x ${item.menuItem.name}</span>
+                <span>${calculateItemTotal(item).toFixed(2)} RON</span>
+              </div>
+              ${item.extras.length > 0 ? item.extras.map(e => `
+                <div class="item" style="font-size: 10px; color: #666; padding-left: 15px;">
+                  + ${e.name} x${e.quantity}
+                </div>
+              `).join('') : ''}
+              ${item.modifications.removed.length > 0 ? `
+                <div class="item" style="font-size: 10px; color: #666; padding-left: 15px;">
+                  - ${item.modifications.removed.join(', ')}
+                </div>
+              ` : ''}
+            `).join('')}
+          </div>
+          
+          <div class="total">
+            <span>TOTAL</span>
+            <span>${totalAmount.toFixed(2)} RON</span>
+          </div>
+          
+          <div class="payment-method">
+            ✓ Plătit cu ${paymentMethod === 'cash' ? 'NUMERAR' : 'CARD'}
+          </div>
+          
+          <div class="footer">
+            <p>Mulțumim pentru comandă!</p>
+            <p>Comanda va fi pregătită în curând.</p>
+            <p style="margin-top: 10px;">---</p>
+          </div>
+          
+          <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+      `;
+      
+      printWindow.document.write(receiptHTML);
+      printWindow.document.close();
+    };
+    
     return (
       <div 
-        className="min-h-screen flex flex-col items-center justify-center bg-green-50 cursor-pointer p-4"
-        onClick={resetOrder}
+        className="min-h-screen flex flex-col items-center justify-center bg-green-50 p-4"
       >
         <div className="text-center max-w-md w-full">
           <div className="w-24 h-24 sm:w-32 sm:h-32 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 sm:mb-8 animate-pulse">
             <CheckCircle className="w-14 h-14 sm:w-20 sm:h-20 text-white" />
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-green-800 mb-4">Comandă confirmată!</h1>
-          <p className="text-xl sm:text-2xl font-bold text-green-700 mb-2">Număr comandă: #KSK{Date.now().toString().slice(-4)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-green-700 mb-2">Număr comandă: #{orderNumber}</p>
+          
+          {orderMode === 'dine-in' && tableNumber && (
+            <div className="bg-white rounded-2xl p-6 mb-4 border-2 border-green-300 shadow-lg">
+              <div className="text-sm text-green-600 mb-2">INDICATOR MASĂ</div>
+              <div className="text-6xl font-black text-green-700">{tableNumber}</div>
+              <div className="text-sm text-green-600 mt-2">Puneți indicatorul pe masă</div>
+            </div>
+          )}
+          
           <p className="text-green-600 mb-2 text-sm sm:text-base">
             {orderMode === 'dine-in' 
-              ? 'Comanda ta va fi pregătită în curând'
+              ? 'Chelnerul vă va aduce comanda la masă'
               : 'Comanda ta va fi pregătită pentru ridicare'
             }
           </p>
-          <p className="text-green-600 mb-6 sm:mb-8 text-sm sm:text-base">Mulțumim pentru comandă!</p>
+          <p className="text-green-600 mb-6 text-sm sm:text-base">Mulțumim pentru comandă!</p>
           
-          <div className="bg-white rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8 border border-green-200">
+          <div className="bg-white rounded-2xl p-4 sm:p-6 mb-6 border border-green-200">
             <div className="flex items-center gap-2 mb-4 text-green-600">
               <Check className="w-5 h-5" />
               <span className="font-medium">Plătit cu {paymentMethod === 'cash' ? 'numerar' : 'card'}</span>
@@ -1326,7 +1422,24 @@ const KioskOrdering: React.FC = () => {
             </div>
           </div>
 
-          <p className="text-slate-500 text-sm">Atingeți ecranul pentru o nouă comandă</p>
+          <div className="flex gap-3 mb-6">
+            <Button 
+              variant="outline" 
+              className="flex-1 h-12 border-green-300 text-green-700 hover:bg-green-100"
+              onClick={handlePrintReceipt}
+            >
+              <Package className="w-5 h-5 mr-2" />
+              Printează Bon
+            </Button>
+            <Button 
+              className="flex-1 h-12 bg-green-600 hover:bg-green-700"
+              onClick={resetOrder}
+            >
+              Comandă Nouă
+            </Button>
+          </div>
+
+          <p className="text-slate-400 text-xs">Sau atingeți ecranul pentru o nouă comandă</p>
         </div>
       </div>
     );
