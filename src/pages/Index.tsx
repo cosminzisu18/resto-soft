@@ -41,7 +41,10 @@ import {
   Tablet,
   Monitor as MonitorIcon,
   QrCode,
-  ArrowLeft
+  ArrowLeft,
+  PanelLeftClose,
+  PanelRightClose,
+  Calendar
 } from 'lucide-react';
 
 type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard';
@@ -128,13 +131,17 @@ const RestaurantApp: React.FC = () => {
   const [selectedStation, setSelectedStation] = useState<KDSStation | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
   const [kdsModuleStation, setKdsModuleStation] = useState<KDSStation | null>(null);
+  const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const handleLoginSuccess = () => {
     if (currentUser?.role === 'admin') {
       setView('new-dashboard');
       setActiveModule('dashboard');
     } else if (currentUser?.role === 'kitchen') {
-      setView('kds-select');
+      // Direct to first KDS station for kitchen staff
+      setSelectedStation(kdsStations[0]);
+      setView('kds');
     } else {
       setView('waiter');
     }
@@ -316,30 +323,109 @@ const RestaurantApp: React.FC = () => {
   }
 
   if (view === 'waiter' && !selectedTable) {
+    const ReservationSidebar = (
+      <div className={cn(
+        "w-80 border-border bg-card flex flex-col h-full",
+        sidebarPosition === 'left' ? "border-r" : "border-l"
+      )}>
+        <div className="p-2 border-b border-border flex items-center justify-between bg-muted/50">
+          <span className="text-sm font-medium flex items-center gap-2">
+            <Calendar className="w-4 h-4" />
+            Rezervări
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left')}
+              title={sidebarPosition === 'left' ? 'Mută la dreapta' : 'Mută la stânga'}
+            >
+              {sidebarPosition === 'left' ? (
+                <PanelRightClose className="w-4 h-4" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setSidebarOpen(false)}
+              title="Închide"
+            >
+              <ArrowLeft className={cn("w-4 h-4", sidebarPosition === 'right' && "rotate-180")} />
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <ReservationManager 
+            reservations={reservations}
+            tables={tables}
+            onCreateReservation={createReservation}
+            onUpdateReservation={updateReservation}
+            onDeleteReservation={deleteReservation}
+          />
+        </div>
+      </div>
+    );
+
     return (
       <div className="h-screen flex flex-col">
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
           <h1 className="font-semibold">RestoPOS - Ospătar</h1>
-          <NotificationCenter 
-            notifications={notifications}
-            onMarkRead={markNotificationRead}
-            onClearAll={clearNotifications}
-          />
-        </div>
-        <div className="flex-1 flex">
-          <div className="flex-1">
-            <TableMap onTableSelect={handleTableSelect} />
-          </div>
-          <div className="w-80 border-l border-border hidden lg:block">
-            <ReservationManager 
-              reservations={reservations}
-              tables={tables}
-              onCreateReservation={createReservation}
-              onUpdateReservation={updateReservation}
-              onDeleteReservation={deleteReservation}
+          <div className="flex items-center gap-2">
+            {!sidebarOpen && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSidebarOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Calendar className="w-4 h-4" />
+                Rezervări
+              </Button>
+            )}
+            <NotificationCenter 
+              notifications={notifications}
+              onMarkRead={markNotificationRead}
+              onClearAll={clearNotifications}
             />
           </div>
         </div>
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left sidebar */}
+          {sidebarOpen && sidebarPosition === 'left' && (
+            <div className="hidden md:flex">
+              {ReservationSidebar}
+            </div>
+          )}
+          
+          {/* Main content */}
+          <div className="flex-1 overflow-auto">
+            <TableMap onTableSelect={handleTableSelect} />
+          </div>
+          
+          {/* Right sidebar */}
+          {sidebarOpen && sidebarPosition === 'right' && (
+            <div className="hidden md:flex">
+              {ReservationSidebar}
+            </div>
+          )}
+        </div>
+        
+        {/* Mobile reservation toggle */}
+        {!sidebarOpen && (
+          <Button
+            variant="outline"
+            size="icon"
+            className="fixed bottom-20 right-4 md:hidden h-12 w-12 rounded-full shadow-lg"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Calendar className="w-5 h-5" />
+          </Button>
+        )}
+        
         <div className="fixed bottom-4 right-4 flex gap-2">
           <Button
             variant="outline"
