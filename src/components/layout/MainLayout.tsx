@@ -96,16 +96,22 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
 
   return (
     <TooltipProvider delayDuration={0}>
-      <div className="min-h-screen h-[100dvh] flex w-full bg-background overflow-hidden">
-        {/* Mobile Menu Button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="fixed top-4 left-4 z-50 lg:hidden"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+      <div className="min-h-screen h-[100dvh] flex flex-col lg:flex-row w-full bg-background overflow-hidden">
+        {/* Mobile Header */}
+        <div className="lg:hidden flex items-center justify-between h-14 px-4 bg-card border-b border-border flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <div className="flex flex-col items-center">
+            <span className="font-semibold text-foreground text-sm truncate">{restaurantName}</span>
+            <span className="text-xs text-muted-foreground truncate">{currentLocation}</span>
+          </div>
+          <div className="w-10" /> {/* Spacer for balance */}
+        </div>
 
         {/* Sidebar */}
         <aside
@@ -232,13 +238,11 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         {/* Main Content */}
         <main
           className={cn(
-            "flex-1 min-h-0 h-full transition-all duration-300",
+            "flex-1 min-h-0 transition-all duration-300 overflow-hidden",
             collapsed ? "lg:ml-16" : "lg:ml-64"
           )}
         >
-          <div className="h-full min-h-0 overflow-hidden">
-            <div className="h-full min-h-0 overflow-auto">{children}</div>
-          </div>
+          <div className="h-full min-h-0 overflow-auto">{children}</div>
         </main>
       </div>
     </TooltipProvider>
