@@ -311,7 +311,7 @@ const RestaurantApp: React.FC = () => {
             variant="outline"
             size="sm"
             onClick={() => setView('order-monitor')}
-            className="flex items-center gap-2 border-primary/50 text-primary"
+            className="flex items-center gap-2"
           >
             <Eye className="w-4 h-4" />
             Monitorizare Comenzi
@@ -513,6 +513,15 @@ const RestaurantApp: React.FC = () => {
   }
 
   // Old KDS views removed - now using new dashboard KDS module
+
+  if (view === 'order-monitor') {
+    const OrderMonitorDashboard = React.lazy(() => import('@/components/OrderMonitorDashboard'));
+    return (
+      <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center">Se încarcă...</div>}>
+        <OrderMonitorDashboard onBack={() => setView('login')} />
+      </React.Suspense>
+    );
+  }
 
   return null;
 };
