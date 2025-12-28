@@ -143,11 +143,11 @@ const RestaurantApp: React.FC = () => {
     enabled: sidebarOpen,
   });
 
-  const handleLoginSuccess = () => {
-    if (currentUser?.role === 'admin') {
+  const handleLoginSuccess = (role: 'admin' | 'kitchen' | 'waiter') => {
+    if (role === 'admin') {
       setView('new-dashboard');
       setActiveModule('dashboard');
-    } else if (currentUser?.role === 'kitchen') {
+    } else if (role === 'kitchen') {
       // Kitchen staff goes to new dashboard with KDS module
       setView('new-dashboard');
       setActiveModule('kds');

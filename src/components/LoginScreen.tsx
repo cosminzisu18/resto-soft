@@ -7,7 +7,7 @@ import { Lock, ChefHat, User, Shield, Fingerprint, Wifi, Smartphone } from 'luci
 import { useToast } from '@/hooks/use-toast';
 
 interface LoginScreenProps {
-  onLoginSuccess: (isAdmin?: boolean) => void;
+  onLoginSuccess: (role: 'admin' | 'kitchen' | 'waiter') => void;
 }
 
 type AuthMethod = 'pin' | 'biometric' | 'nfc';
@@ -32,7 +32,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         title: 'Conectat cu succes',
         description: `Bine ai venit, ${user?.name}!`,
       });
-      onLoginSuccess(user?.role === 'admin');
+      onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
     } else {
       toast({
         title: 'Eroare',
@@ -54,7 +54,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             const user = users.find(u => u.id === selectedUserId);
             if (success) {
               toast({ title: 'Conectat cu succes', description: `Bine ai venit, ${user?.name}!` });
-              onLoginSuccess(user?.role === 'admin');
+              onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
             } else {
               toast({
                 title: 'PIN incorect',
@@ -76,7 +76,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         const user = users.find(u => u.id === selectedUserId);
         login(selectedUserId, user?.pin || '');
         toast({ title: 'Autentificare biometrică reușită', description: `Bine ai venit, ${user?.name}!` });
-        onLoginSuccess(user?.role === 'admin');
+        onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
       }
     }, 2000);
   };
@@ -89,7 +89,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         const user = users.find(u => u.id === selectedUserId);
         login(selectedUserId, user?.pin || '');
         toast({ title: 'Card NFC detectat', description: `Bine ai venit, ${user?.name}!` });
-        onLoginSuccess(user?.role === 'admin');
+        onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
       }
     }, 1500);
   };
