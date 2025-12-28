@@ -19,22 +19,24 @@ import { PageHeader } from '@/components/ui/page-header';
 
 export const DashboardModule: React.FC = () => {
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       <PageHeader 
         title="Dashboard" 
         description="Rezumat activitate restaurant"
       >
-        <Button variant="outline">
-          <Clock className="h-4 w-4 mr-2" />
-          Astăzi
-        </Button>
-        <Button>
-          Raport Complet
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" className="text-xs sm:text-sm">
+            <Clock className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            Astăzi
+          </Button>
+          <Button size="sm" className="text-xs sm:text-sm">
+            Raport Complet
+          </Button>
+        </div>
       </PageHeader>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
           title="Vânzări Azi"
           value="12,450 RON"
@@ -66,7 +68,7 @@ export const DashboardModule: React.FC = () => {
       </div>
 
       {/* Quick Actions & Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Active Orders */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -155,26 +157,26 @@ export const DashboardModule: React.FC = () => {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4 text-center">
-          <UtensilsCrossed className="h-8 w-8 text-primary mx-auto mb-2" />
-          <p className="text-2xl font-bold">156</p>
-          <p className="text-sm text-muted-foreground">Preparate Azi</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <Card className="p-3 sm:p-4 text-center">
+          <UtensilsCrossed className="h-6 w-6 sm:h-8 sm:w-8 text-primary mx-auto mb-2" />
+          <p className="text-xl sm:text-2xl font-bold">156</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">Preparate Azi</p>
         </Card>
-        <Card className="p-4 text-center">
-          <Users className="h-8 w-8 text-primary mx-auto mb-2" />
-          <p className="text-2xl font-bold">8</p>
-          <p className="text-sm text-muted-foreground">Angajați Activi</p>
+        <Card className="p-3 sm:p-4 text-center">
+          <Users className="h-6 w-6 sm:h-8 sm:w-8 text-primary mx-auto mb-2" />
+          <p className="text-xl sm:text-2xl font-bold">8</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">Angajați Activi</p>
         </Card>
-        <Card className="p-4 text-center">
-          <TrendingUp className="h-8 w-8 text-primary mx-auto mb-2" />
-          <p className="text-2xl font-bold">87%</p>
-          <p className="text-sm text-muted-foreground">Ocupare Mese</p>
+        <Card className="p-3 sm:p-4 text-center">
+          <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8 text-primary mx-auto mb-2" />
+          <p className="text-xl sm:text-2xl font-bold">87%</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">Ocupare Mese</p>
         </Card>
-        <Card className="p-4 text-center">
-          <CheckCircle className="h-8 w-8 text-success mx-auto mb-2" />
-          <p className="text-2xl font-bold text-success">98%</p>
-          <p className="text-sm text-muted-foreground">Comenzi la Timp</p>
+        <Card className="p-3 sm:p-4 text-center">
+          <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-success mx-auto mb-2" />
+          <p className="text-xl sm:text-2xl font-bold text-success">98%</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">Comenzi la Timp</p>
         </Card>
       </div>
     </div>
