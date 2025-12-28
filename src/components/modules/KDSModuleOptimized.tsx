@@ -2,15 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { KDSStation, OrderItem, Order, users } from '@/data/mockData';
+import { KDSStation, OrderItem, Order, users, MenuItem } from '@/data/mockData';
 import { cn } from '@/lib/utils';
-import { Clock, LogOut, Truck, MessageSquare, MapPin, Monitor, ShoppingBag, ChefHat, CheckCircle2, AlertCircle, Timer, Utensils, X } from 'lucide-react';
-import LanguageSelector from '@/components/LanguageSelector';
+import { Clock, LogOut, Truck, MessageSquare, MapPin, Monitor, ShoppingBag, ChefHat, CheckCircle2, Timer, Utensils, Book, X, Play, User } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface KDSModuleOptimizedProps {
   station: KDSStation;
@@ -26,12 +32,13 @@ interface ActiveItem {
 
 const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogout }) => {
   const { getOrdersForStation, updateOrderItemStatus, orders } = useRestaurant();
-  const { t } = useLanguage();
+  const { language, setLanguage, languages } = useLanguage();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeItems, setActiveItems] = useState<ActiveItem[]>([]);
   const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
   const [employeeSelectItem, setEmployeeSelectItem] = useState<{ orderId: string; itemId: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+  const [recipeViewItem, setRecipeViewItem] = useState<MenuItem | null>(null);
 
   const stationOrders = getOrdersForStation(station.id);
   const kitchenEmployees = users.filter(u => u.role === 'kitchen');
@@ -63,7 +70,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
     return {
       display: remaining > 0 ? `${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}` : '0:00',
       percent,
-      canComplete: percent >= 50 // Can only complete after 50% of time passed
+      canComplete: percent >= 50
     };
   };
 
@@ -71,13 +78,11 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
   const getTotalOrderTime = (items: OrderItem[]): { display: string; status: 'normal' | 'warning' | 'urgent' } => {
     const maxPrepTime = Math.max(...items.map(i => i.menuItem.prepTime));
     
-    // Check if any items are being cooked
     const cookingItems = items.filter(i => i.status === 'cooking');
     if (cookingItems.length === 0 && items.some(i => i.status === 'pending')) {
       return { display: `~${maxPrepTime} min`, status: 'normal' };
     }
 
-    // Find the earliest started item
     const startedItems = activeItems.filter(ai => items.some(i => i.id === ai.itemId));
     if (startedItems.length > 0) {
       const earliestStart = Math.min(...startedItems.map(ai => new Date(ai.startedAt).getTime()));
@@ -108,10 +113,8 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
     const activeItem = activeItems.find(ai => ai.orderId === orderId && ai.itemId === itemId);
     
     if (!activeItem) {
-      // First tap - open employee selection
       setEmployeeSelectItem({ orderId, itemId });
     } else {
-      // Second tap - try to complete if 50% time passed
       const item = stationOrders
         .flatMap(so => so.items)
         .find(i => i.id === itemId);
@@ -125,13 +128,21 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
     }
   };
 
+  // Start all items in an order
+  const handleStartAllItems = (orderId: string, items: OrderItem[]) => {
+    const pendingItems = items.filter(i => i.status === 'pending');
+    if (pendingItems.length > 0) {
+      // Open employee selection for the first pending item
+      setEmployeeSelectItem({ orderId, itemId: pendingItems[0].id });
+    }
+  };
+
   // Start cooking with employee selection
   const handleStartCooking = (employeeName: string) => {
     if (!employeeSelectItem) return;
     
     const { orderId, itemId } = employeeSelectItem;
     
-    // Add to active items
     setActiveItems(prev => [...prev, {
       orderId,
       itemId,
@@ -139,42 +150,35 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
       startedAt: new Date()
     }]);
 
-    // Update status
     updateOrderItemStatus(orderId, itemId, 'cooking');
-    
-    // Close dialog
     setEmployeeSelectItem(null);
-
-    // TODO: Update Glovo/Bolt status to "preparing"
     console.log('🍳 Started cooking - Glovo status would change to "preparing"');
   };
 
   // Complete item
   const handleCompleteItem = (orderId: string, itemId: string) => {
-    // Remove from active items
     setActiveItems(prev => prev.filter(ai => !(ai.orderId === orderId && ai.itemId === itemId)));
-    
-    // Update status to ready
     updateOrderItemStatus(orderId, itemId, 'ready');
-
-    // TODO: Print label for completed item
     console.log('🏷️ Printing label for completed item');
 
-    // Check if all items in order are ready
     const order = orders.find(o => o.id === orderId);
     if (order) {
       const stationItems = order.items.filter(i => i.menuItem.kdsStation === station.id);
       const allReady = stationItems.every(i => i.id === itemId || i.status === 'ready');
       
       if (allReady) {
-        // Move to completed orders
         setCompletedOrders(prev => [...prev, order]);
         console.log('✅ Order complete - Glovo status would change to "ready"');
       }
     }
   };
 
-  // Check if item has customer notes
+  // Show recipe for an item
+  const handleShowRecipe = (item: OrderItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRecipeViewItem(item.menuItem);
+  };
+
   const getOrderNotes = (order: Order): string | null => {
     const itemNotes = order.items
       .filter(i => i.modifications.notes)
@@ -184,12 +188,10 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
     return itemNotes || null;
   };
 
-  // Get active item info
   const getActiveItemInfo = (orderId: string, itemId: string): ActiveItem | undefined => {
     return activeItems.find(ai => ai.orderId === orderId && ai.itemId === itemId);
   };
 
-  // Check if item is completed (crossed out)
   const isItemCompleted = (item: OrderItem): boolean => {
     return item.status === 'ready' || item.status === 'served';
   };
@@ -209,16 +211,33 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
         <div className="flex items-center gap-4">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'active' | 'completed')} className="h-auto">
             <TabsList className="bg-slate-700">
-              <TabsTrigger value="active" className="data-[state=active]:bg-primary">
+              <TabsTrigger value="active" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 Active ({stationOrders.length})
               </TabsTrigger>
-              <TabsTrigger value="completed" className="data-[state=active]:bg-green-600">
+              <TabsTrigger value="completed" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">
                 Finalizate ({completedOrders.length})
               </TabsTrigger>
             </TabsList>
           </Tabs>
           
-          <LanguageSelector compact />
+          {/* Fixed Language Selector for dark background */}
+          <Select value={language} onValueChange={(v) => setLanguage(v as typeof language)}>
+            <SelectTrigger className="w-16 h-8 text-lg bg-slate-700 border-slate-600 text-white">
+              <SelectValue>
+                {languages.find(l => l.code === language)?.flag}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {languages.map(lang => (
+                <SelectItem key={lang.code} value={lang.code}>
+                  <span className="flex items-center gap-2">
+                    <span>{lang.flag}</span>
+                    <span>{lang.name}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           
           <div className="text-right">
             <p className="text-2xl font-bold font-mono">
@@ -235,7 +254,6 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
       {/* Main Content */}
       <div className="flex-1 overflow-auto p-4">
         {activeTab === 'active' ? (
-          // Active Orders Grid
           stationOrders.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
@@ -249,6 +267,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                 const orderTypeInfo = getOrderTypeInfo(order);
                 const totalTime = getTotalOrderTime(items);
                 const notes = getOrderNotes(order);
+                const hasPendingItems = items.some(i => i.status === 'pending');
                 
                 return (
                   <Card key={`${order.id}-${station.id}`} className="bg-white text-slate-900 border-0 shadow-lg overflow-hidden">
@@ -263,13 +282,10 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                             <span className="text-sm text-slate-500">{order.customerName.split(' ')[0]}</span>
                           )}
                         </div>
-                        <Button 
-                          size="sm" 
-                          className={cn("h-7 text-xs font-bold", orderTypeInfo.color)}
-                        >
+                        <Badge className={cn("h-7 text-xs font-bold px-2", orderTypeInfo.color)}>
                           {orderTypeInfo.icon}
                           <span className="ml-1">{orderTypeInfo.label}</span>
-                        </Button>
+                        </Badge>
                       </div>
                       
                       {/* Total Time */}
@@ -285,7 +301,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                     </CardHeader>
 
                     <CardContent className="p-0">
-                      {/* Notes Section (only if exists) */}
+                      {/* Notes Section */}
                       {notes && (
                         <div className="px-3 py-2 bg-amber-50 border-b border-amber-200">
                           <div className="flex items-start gap-2">
@@ -334,6 +350,18 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                                     {item.menuItem.name}
                                   </span>
                                   
+                                  {/* Recipe button */}
+                                  {!isCompleted && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-slate-400 hover:text-primary"
+                                      onClick={(e) => handleShowRecipe(item, e)}
+                                    >
+                                      <Book className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  
                                   {/* Modifications badges */}
                                   {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
                                     <div className="flex gap-1">
@@ -351,7 +379,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                                   )}
                                 </div>
 
-                                {/* Time */}
+                                {/* Time + Status */}
                                 <div className={cn(
                                   "flex items-center gap-1 text-sm font-mono font-bold flex-shrink-0 ml-2",
                                   isCompleted && "line-through text-slate-400",
@@ -371,6 +399,11 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                                         />
                                       </div>
                                       <span>{timeInfo.display}</span>
+                                      {activeItem && (
+                                        <span className="text-[10px] text-slate-500 ml-1">
+                                          ({activeItem.employeeName.split(' ')[0]})
+                                        </span>
+                                      )}
                                     </>
                                   ) : (
                                     <>
@@ -385,13 +418,15 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
                         </div>
                       </ScrollArea>
 
-                      {/* Start All Button */}
-                      {items.some(i => i.status === 'pending') && (
+                      {/* Start All Button - now functional */}
+                      {hasPendingItems && (
                         <div className="p-2 border-t border-slate-200">
                           <Button 
                             className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
                             size="sm"
+                            onClick={() => handleStartAllItems(order.id, items)}
                           >
+                            <Play className="w-4 h-4 mr-2" />
                             Start
                           </Button>
                         </div>
@@ -449,7 +484,10 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
       <Dialog open={!!employeeSelectItem} onOpenChange={() => setEmployeeSelectItem(null)}>
         <DialogContent className="sm:max-w-md bg-slate-800 text-white border-slate-700">
           <DialogHeader>
-            <DialogTitle className="text-xl">Selectează angajatul</DialogTitle>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <User className="w-5 h-5" />
+              Selectează angajatul
+            </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-4">
             {kitchenEmployees.map(employee => (
@@ -462,6 +500,70 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
               </Button>
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Recipe View Dialog */}
+      <Dialog open={!!recipeViewItem} onOpenChange={() => setRecipeViewItem(null)}>
+        <DialogContent className="sm:max-w-lg bg-white text-slate-900">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Book className="w-5 h-5 text-primary" />
+              Rețetar: {recipeViewItem?.name}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {recipeViewItem && (
+            <div className="space-y-4 pt-4">
+              {/* Prep Time */}
+              <div className="flex items-center gap-2 p-3 bg-slate-100 rounded-lg">
+                <Timer className="w-5 h-5 text-primary" />
+                <span className="font-medium">Timp preparare: {recipeViewItem.prepTime} minute</span>
+              </div>
+
+              {/* Description */}
+              <div>
+                <h4 className="font-bold text-sm text-slate-500 mb-2">DESCRIERE</h4>
+                <p className="text-slate-700">{recipeViewItem.description}</p>
+              </div>
+
+              {/* Ingredients */}
+              <div>
+                <h4 className="font-bold text-sm text-slate-500 mb-2">INGREDIENTE</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {recipeViewItem.ingredients.map((ingredient, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                      <span className="w-2 h-2 bg-primary rounded-full"></span>
+                      <span className="text-sm">{ingredient}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preparation Steps (mock) */}
+              <div>
+                <h4 className="font-bold text-sm text-slate-500 mb-2">PAȘI PREPARARE</h4>
+                <ol className="space-y-2">
+                  <li className="flex gap-3 p-2 bg-blue-50 rounded-lg">
+                    <span className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">1</span>
+                    <span className="text-sm">Pregătește toate ingredientele necesare</span>
+                  </li>
+                  <li className="flex gap-3 p-2 bg-blue-50 rounded-lg">
+                    <span className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">2</span>
+                    <span className="text-sm">Gătește conform rețetei standard</span>
+                  </li>
+                  <li className="flex gap-3 p-2 bg-blue-50 rounded-lg">
+                    <span className="w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">3</span>
+                    <span className="text-sm">Verifică prezentarea și temperatura</span>
+                  </li>
+                </ol>
+              </div>
+
+              <Button className="w-full" onClick={() => setRecipeViewItem(null)}>
+                Închide
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
