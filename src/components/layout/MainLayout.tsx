@@ -146,7 +146,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
 
           {/* Navigation */}
           <ScrollArea className="flex-1 py-2">
-            <nav className="flex flex-col gap-0.5 px-3">
+            <nav className="flex flex-col gap-1 px-2">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeModule === item.id;
@@ -155,10 +155,10 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                   <button
                     key={item.id}
                     className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                      collapsed && "justify-center px-2",
+                      "w-full flex items-center h-9 rounded-md transition-colors",
+                      collapsed ? "justify-center px-0" : "gap-3 px-3",
                       isActive 
-                        ? "bg-primary/10 text-primary border-r-2 border-primary" 
+                        ? "bg-primary/10 text-primary" 
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                     onClick={() => {
@@ -166,10 +166,12 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                       setMobileMenuOpen(false);
                     }}
                   >
-                    <Icon className={cn("h-[18px] w-[18px] shrink-0", isActive && "text-primary")} />
-                    {!collapsed && <span className="truncate text-[13px]">{item.label}</span>}
+                    <Icon className="h-4 w-4 flex-shrink-0" />
+                    {!collapsed && (
+                      <span className="text-sm font-medium truncate">{item.label}</span>
+                    )}
                     {!collapsed && item.badge && (
-                      <span className="ml-auto bg-destructive text-destructive-foreground text-[10px] rounded-full px-1.5 py-0.5">
+                      <span className="ml-auto bg-destructive text-destructive-foreground text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
                         {item.badge}
                       </span>
                     )}
@@ -180,7 +182,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                   return (
                     <Tooltip key={item.id}>
                       <TooltipTrigger asChild>{button}</TooltipTrigger>
-                      <TooltipContent side="right" className="text-xs font-medium">
+                      <TooltipContent side="right" className="text-sm font-medium">
                         {item.label}
                       </TooltipContent>
                     </Tooltip>
