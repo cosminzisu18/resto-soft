@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from '@/hooks/use-toast';
 import { 
   Search, Plus, Package, Warehouse, ChefHat, Wine, Edit, Trash2, 
-  ArrowRightLeft, Save, ImagePlus, Eye, CheckCircle2, XCircle, Filter
+  ArrowRightLeft, Save, Eye, CheckCircle2, XCircle
 } from 'lucide-react';
 
 interface Product {
@@ -76,7 +76,9 @@ export const StockManagement: React.FC = () => {
   const [showProductDialog, setShowProductDialog] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [showTransferApprovalDialog, setShowTransferApprovalDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
   const filteredProducts = products.filter(p => 
     (selectedLocation === 'all' || p.location === selectedLocation) &&
@@ -101,6 +103,17 @@ export const StockManagement: React.FC = () => {
     toast({ title: "Produs salvat", description: "Produsul a fost salvat cu succes" });
     setShowProductDialog(false);
     setSelectedProduct(null);
+  };
+
+  const handleDeleteProduct = () => {
+    toast({ title: "Produs șters", description: `${productToDelete?.name} a fost șters` });
+    setShowDeleteDialog(false);
+    setProductToDelete(null);
+  };
+
+  const openDeleteDialog = (product: Product) => {
+    setProductToDelete(product);
+    setShowDeleteDialog(true);
   };
 
   const handleTransfer = () => {
@@ -165,7 +178,22 @@ export const StockManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Search and Category Filter */}
+      {/* Category Pills */}
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {categories.map(cat => (
+          <Button
+            key={cat}
+            variant={selectedCategory === cat ? "default" : "outline"}
+            size="sm"
+            onClick={() => setSelectedCategory(cat)}
+            className="rounded-full"
+          >
+            {cat}
+          </Button>
+        ))}
+      </div>
+
+      {/* Search and View Toggle */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -177,19 +205,7 @@ export const StockManagement: React.FC = () => {
           />
         </div>
 
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-          <SelectTrigger className="w-48">
-            <Filter className="h-4 w-4 mr-2" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map(cat => (
-              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="flex border rounded-lg overflow-hidden">
+        <div className="flex border rounded-lg overflow-hidden ml-auto">
           <Button 
             variant={viewMode === 'table' ? 'default' : 'ghost'} 
             size="sm"
@@ -273,10 +289,17 @@ export const StockManagement: React.FC = () => {
                         <div className="flex gap-1">
                           <Button 
                             variant="ghost" 
-                            size="icon"
+                            size="sm"
                             onClick={() => { setSelectedProduct(product); setShowProductDialog(true); }}
                           >
-                            <Edit className="h-4 w-4" />
+                            Editează
+                          </Button>
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); openDeleteDialog(product); }}
+                          >
+                            Șterge
                           </Button>
                         </div>
                       </TableCell>
@@ -337,93 +360,77 @@ export const StockManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Product Dialog */}
+      {/* Product Dialog - Adauga Produs (conform screenshot) */}
       <Dialog open={showProductDialog} onOpenChange={setShowProductDialog}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{selectedProduct ? 'Editare Produs' : 'Produs Nou'}</DialogTitle>
+            <DialogTitle>{selectedProduct ? 'Editare Produs' : 'Adauga Produs'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="flex gap-4">
-              <div className="w-32 h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors">
-                <ImagePlus className="h-8 w-8 text-muted-foreground mb-2" />
-                <span className="text-xs text-muted-foreground">Adaugă imagine</span>
-              </div>
-              <div className="flex-1 space-y-4">
-                <div className="space-y-2">
-                  <Label>Nume produs</Label>
-                  <Input placeholder="Ex: Mozzarella" defaultValue={selectedProduct?.name} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Categorie</Label>
-                    <Select defaultValue={selectedProduct?.category}>
-                      <SelectTrigger><SelectValue placeholder="Selectează" /></SelectTrigger>
-                      <SelectContent>
-                        {categories.filter(c => c !== 'Toate').map(cat => (
-                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Locație</Label>
-                    <Select defaultValue={selectedProduct?.location || 'warehouse'}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="warehouse">Depozit</SelectItem>
-                        <SelectItem value="kitchen">Bucătărie</SelectItem>
-                        <SelectItem value="bar">Bar</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Cantitate</Label>
-                <Input type="number" placeholder="0" defaultValue={selectedProduct?.stockReal} />
-              </div>
-              <div className="space-y-2">
-                <Label>Unitate</Label>
-                <Select defaultValue={selectedProduct?.unit || 'kg'}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="kg">Kilograme (kg)</SelectItem>
-                    <SelectItem value="L">Litri (L)</SelectItem>
-                    <SelectItem value="buc">Bucăți (buc)</SelectItem>
-                    <SelectItem value="g">Grame (g)</SelectItem>
-                    <SelectItem value="ml">Mililitri (ml)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Preț unitar (RON)</Label>
-                <Input type="number" placeholder="0.00" defaultValue={selectedProduct?.price} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Stoc minim (alertă)</Label>
-                <Input type="number" placeholder="5" defaultValue={selectedProduct?.minStock} />
-              </div>
-              <div className="space-y-2">
-                <Label>Cod bare</Label>
-                <Input placeholder="1234567890123" />
-              </div>
+            <div className="space-y-2">
+              <Label>Selectează produs din nomenclator *</Label>
+              <Select defaultValue={selectedProduct?.name}>
+                <SelectTrigger><SelectValue placeholder="Selectează produs" /></SelectTrigger>
+                <SelectContent>
+                  {products.map(p => (
+                    <SelectItem key={p.id} value={p.name}>{p.name}</SelectItem>
+                  ))}
+                  <SelectItem value="new">+ Adaugă produs nou în nomenclator</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Notițe</Label>
-              <Textarea placeholder="Informații adiționale despre produs..." />
+              <Label>Nume produs specific furnizor</Label>
+              <Input placeholder="Numele produsului la acest furnizor" defaultValue={selectedProduct?.name} />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Unitate măsură specifică</Label>
+              <Input placeholder="ex: sac 25kg, cutie 12 bucăți" />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Preț</Label>
+              <Input type="number" placeholder="Preț per unitate" defaultValue={selectedProduct?.price} />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Descriere (opțional)</Label>
+              <Textarea placeholder="Descriere suplimentară despre produs" className="min-h-[80px]" />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowProductDialog(false)}>Anulează</Button>
-            <Button onClick={handleSaveProduct}><Save className="h-4 w-4 mr-2" />Salvează</Button>
+            <Button onClick={handleSaveProduct} className="bg-primary/80 hover:bg-primary">Adaugă</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Șterge produs</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-muted-foreground mb-4">
+              Sigur vrei să ștergi „{productToDelete?.name}"?
+            </p>
+            {productToDelete && productToDelete.stockReal > 0 && (
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm">
+                <p className="text-destructive font-medium">
+                  Atenție: există stoc pentru acest produs — loturi: {Math.floor(productToDelete.stockReal / 10)}, cantitate totală: {productToDelete.stockReal}.
+                </p>
+                <p className="text-muted-foreground mt-1">
+                  Vor fi șterse și {Math.floor(Math.random() * 5) + 1} asociere(i) din produsele furnizorilor.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>Anulează</Button>
+            <Button variant="destructive" onClick={handleDeleteProduct}>Șterge</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
