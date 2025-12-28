@@ -22,6 +22,8 @@ import KDSProductionModule from '@/components/modules/KDSProductionModule';
 import POSModule from '@/components/modules/POSModule';
 import KioskModule from '@/components/modules/KioskModule';
 import HRModule from '@/components/modules/HRModule';
+import CustomersModule from '@/components/modules/CustomersModule';
+import SuppliersModule from '@/components/modules/SuppliersModule';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -231,6 +233,10 @@ const RestaurantApp: React.FC = () => {
         return <DeliveryOrders />;
       case 'employees':
         return <HRModule />;
+      case 'customers':
+        return <CustomersModule />;
+      case 'suppliers':
+        return <SuppliersModule />;
       default:
         const config = moduleConfig[activeModule];
         return (
