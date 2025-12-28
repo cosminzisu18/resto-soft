@@ -515,6 +515,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
           </div>
           
           <div className={cn("flex flex-col flex-1 min-w-0", isCompleted && "line-through text-slate-400")}>
+            {/* First Row: Quantity + Name */}
             <div className="flex items-center gap-2">
               <span className={cn(
                 "font-black text-lg",
@@ -523,13 +524,58 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               )}>
                 {item.quantity}x
               </span>
-              <span className={cn("font-medium truncate", isCompleted && "text-slate-400")}>
+              <span className={cn("font-medium truncate flex-1", isCompleted && "text-slate-400")}>
                 {item.menuItem.name}
               </span>
+              {isCompleted && (
+                <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+              )}
+            </div>
+            
+            {/* Second Row: Employee/Time + Buttons */}
+            <div className="flex items-center justify-between mt-1">
+              <div className="flex items-center gap-2 min-w-0">
+                {/* Show employee name when cooking */}
+                {isActive && !isCompleted && activeItem && (
+                  <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                    <User className="w-3 h-3" />
+                    {activeItem.employeeName}
+                  </span>
+                )}
+                
+                {/* Time display */}
+                <div className={cn(
+                  "flex items-center gap-1 text-sm font-mono font-bold",
+                  isCompleted && "line-through text-slate-400",
+                  isActive && !isCompleted && (timeInfo.percent >= 100 ? "text-red-600" : timeInfo.percent >= 75 ? "text-yellow-600" : "text-green-600")
+                )}>
+                  {!isCompleted && (
+                    isActive ? (
+                      <>
+                        <div className="w-8 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                          <div 
+                            className={cn(
+                              "h-full transition-all duration-1000",
+                              timeInfo.percent >= 100 ? "bg-red-500" : timeInfo.percent >= 75 ? "bg-yellow-500" : "bg-green-500"
+                            )}
+                            style={{ width: `${Math.min(100, timeInfo.percent)}%` }}
+                          />
+                        </div>
+                        <span>{timeInfo.display}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span className="text-slate-500">{timeInfo.display}</span>
+                      </>
+                    )
+                  )}
+                </div>
+              </div>
               
-              {/* Recipe & Label Buttons - always show for print, recipe only when not completed */}
+              {/* Recipe & Label Buttons on second row */}
               {showButtons && (
-                <div className="flex items-center gap-0.5">
+                <div className="flex items-center gap-0.5 flex-shrink-0">
                   {!isCompleted && (
                     <TooltipProvider>
                       <Tooltip>
@@ -570,42 +616,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 </div>
               )}
             </div>
-            
-            {/* Show employee name when cooking */}
-            {isActive && !isCompleted && activeItem && (
-              <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                <User className="w-3 h-3" />
-                {activeItem.employeeName}
-              </span>
-            )}
-          </div>
-
-          <div className={cn(
-            "flex items-center gap-1 text-sm font-mono font-bold flex-shrink-0 ml-2",
-            isCompleted && "line-through text-slate-400",
-            isActive && !isCompleted && (timeInfo.percent >= 100 ? "text-red-600" : timeInfo.percent >= 75 ? "text-yellow-600" : "text-green-600")
-          )}>
-            {isCompleted ? (
-              <CheckCircle2 className="w-5 h-5 text-green-500" />
-            ) : isActive ? (
-              <>
-                <div className="w-8 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                  <div 
-                    className={cn(
-                      "h-full transition-all duration-1000",
-                      timeInfo.percent >= 100 ? "bg-red-500" : timeInfo.percent >= 75 ? "bg-yellow-500" : "bg-green-500"
-                    )}
-                    style={{ width: `${Math.min(100, timeInfo.percent)}%` }}
-                  />
-                </div>
-                <span>{timeInfo.display}</span>
-              </>
-            ) : (
-              <>
-                <Clock className="w-3 h-3 text-slate-400" />
-                <span className="text-slate-500">{timeInfo.display}</span>
-              </>
-            )}
           </div>
         </div>
         
