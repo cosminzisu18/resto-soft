@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import {
   Palette,
@@ -24,7 +25,16 @@ import {
   Moon,
   Paintbrush,
   PenLine,
-  RotateCcw
+  RotateCcw,
+  ShoppingCart,
+  Plus,
+  Minus,
+  QrCode,
+  Truck,
+  ChevronRight,
+  UtensilsCrossed,
+  CreditCard,
+  Volume2
 } from 'lucide-react';
 
 // Color presets
@@ -456,81 +466,224 @@ export const BrandingModule: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1 p-6 flex items-center justify-center">
+          <div className="flex-1 p-6 flex items-center justify-center overflow-auto">
             <div 
-              className={`bg-card rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 ${
-                previewDevice === 'desktop' ? 'w-full max-w-2xl h-96' :
-                previewDevice === 'tablet' ? 'w-80 h-[450px]' : 'w-64 h-[500px]'
+              className={`rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 ${
+                previewDevice === 'desktop' ? 'w-full max-w-3xl h-[550px]' :
+                previewDevice === 'tablet' ? 'w-96 h-[600px]' : 'w-72 h-[580px]'
               }`}
               style={{ 
-                backgroundColor: isDarkMode ? '#1a1a2e' : customColors.background,
+                backgroundColor: isDarkMode ? '#0f172a' : customColors.background,
                 color: isDarkMode ? '#ffffff' : customColors.text
               }}
             >
-              {/* Mock Preview */}
-              <div className="h-full flex flex-col">
-                {/* Header */}
-                <div 
-                  className="p-4 flex items-center justify-between"
-                  style={{ backgroundColor: customColors.primary }}
-                >
-                  <div className="flex items-center gap-2">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="Logo" className="h-8" />
-                    ) : (
-                      <div className="w-8 h-8 bg-white/20 rounded-lg" />
-                    )}
-                    <span className="font-bold text-white">Restaurant Demo</span>
-                  </div>
-                  <div className="w-8 h-8 bg-white/20 rounded-full" />
+              {/* Real Self-Order Preview */}
+              <div className="h-full flex flex-col relative overflow-hidden">
+                {/* Background Image Overlay - Idle Screen Style */}
+                <div className="absolute inset-0">
+                  <img 
+                    src="https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=1200" 
+                    alt="Background" 
+                    className="w-full h-full object-cover"
+                  />
+                  <div 
+                    className="absolute inset-0"
+                    style={{ 
+                      background: `linear-gradient(to top, ${isDarkMode ? 'rgba(15,23,42,0.95)' : 'rgba(0,0,0,0.7)'} 0%, transparent 50%, ${isDarkMode ? 'rgba(15,23,42,0.5)' : 'rgba(0,0,0,0.3)'} 100%)` 
+                    }}
+                  />
+                  <div 
+                    className="absolute inset-0"
+                    style={{ 
+                      background: `linear-gradient(to top, ${customColors.primary}60 0%, transparent 60%)` 
+                    }}
+                  />
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 p-4 space-y-4">
-                  <h2 className="text-lg font-bold">{labels.menuTitle}</h2>
-                  
-                  <div className="flex gap-2">
-                    {['Pizza', 'Paste', 'Salate'].map((cat) => (
-                      <span 
-                        key={cat}
-                        className="px-3 py-1 rounded-full text-xs font-medium"
-                        style={{ backgroundColor: `${customColors.primary}20`, color: customColors.primary }}
-                      >
-                        {cat}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="space-y-2">
-                    {[1, 2, 3].map((item) => (
-                      <div key={item} className="p-3 bg-muted/50 rounded-lg flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-muted rounded-lg" />
-                          <div>
-                            <p className="font-medium text-sm">Produs {item}</p>
-                            <p className="text-xs opacity-60">35 RON</p>
-                          </div>
-                        </div>
-                        <button 
-                          className="px-3 py-1.5 rounded-lg text-white text-xs font-medium"
-                          style={{ backgroundColor: customColors.primary }}
-                        >
-                          {labels.addToCart}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Footer */}
-                <div className="p-4 border-t">
-                  <button 
-                    className="w-full py-3 rounded-xl text-white font-bold"
-                    style={{ backgroundColor: customColors.accent }}
-                  >
-                    {labels.checkout} - 105 RON
+                {/* Language & Sound Buttons */}
+                <div className="relative z-10 flex justify-between items-center p-3">
+                  <button className="p-2 rounded-full bg-black/30 text-white">
+                    <Volume2 className="w-4 h-4" />
                   </button>
+                  <div className="flex gap-1.5">
+                    {['🇷🇴', '🇬🇧', '🇩🇪'].map((flag, idx) => (
+                      <button
+                        key={flag}
+                        className={`w-8 h-8 rounded-full text-sm flex items-center justify-center transition-all ${
+                          idx === 0 ? 'bg-white shadow-lg scale-105' : 'bg-white/30 hover:bg-white/50'
+                        }`}
+                      >
+                        {flag}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Main Content */}
+                <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-white px-4">
+                  {/* Logo */}
+                  <div className="mb-4">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Logo" className="h-16 object-contain" />
+                    ) : (
+                      <div 
+                        className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg"
+                        style={{ backgroundColor: customColors.primary }}
+                      >
+                        <UtensilsCrossed className="w-8 h-8 text-white" />
+                      </div>
+                    )}
+                  </div>
+                  
+                  <h1 className={`font-bold mb-2 text-center ${previewDevice === 'mobile' ? 'text-xl' : 'text-2xl'}`}>
+                    Bine ai venit!
+                  </h1>
+                  <p className="text-white/80 mb-6 text-center text-sm">
+                    Apasă pentru a comanda
+                  </p>
+
+                  {/* Order Options */}
+                  <div className={`flex flex-col gap-3 w-full ${previewDevice === 'mobile' ? 'max-w-[200px]' : 'max-w-xs'}`}>
+                    <button
+                      className="flex items-center gap-3 p-3 rounded-2xl bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all"
+                    >
+                      <div 
+                        className="w-11 h-11 rounded-xl flex items-center justify-center shadow-lg bg-white"
+                      >
+                        <QrCode className="w-5 h-5" style={{ color: customColors.primary }} />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <span className="text-sm font-bold block">{labels.tableLabel || 'Scanează masa'}</span>
+                        <span className="text-xs text-white/70">Comandă direct la masa ta</span>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-white/50" />
+                    </button>
+
+                    <button
+                      className="flex items-center gap-3 p-3 rounded-2xl bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all"
+                    >
+                      <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center shadow-lg">
+                        <Truck className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <span className="text-sm font-bold block">Livrare la domiciliu</span>
+                        <span className="text-xs text-white/70">Comandă acasă sau la birou</span>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-white/50" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Promo Indicators */}
+                <div className="relative z-10 pb-4 flex justify-center gap-2">
+                  {[0, 1, 2].map((idx) => (
+                    <div 
+                      key={idx}
+                      className={`h-1.5 rounded-full transition-all ${
+                        idx === 0 ? 'w-5 bg-white' : 'w-1.5 bg-white/50'
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                {/* Menu Preview Overlay (when in menu mode) */}
+                {previewDevice === 'desktop' && (
+                  <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-card/95 backdrop-blur-sm border-l border-border flex flex-col">
+                    {/* Menu Header */}
+                    <div 
+                      className="p-3 flex items-center justify-between"
+                      style={{ backgroundColor: customColors.primary }}
+                    >
+                      <div className="flex items-center gap-2">
+                        {logoUrl ? (
+                          <img src={logoUrl} alt="Logo" className="h-6" />
+                        ) : (
+                          <div className="w-6 h-6 bg-white/20 rounded-lg" />
+                        )}
+                        <span className="font-bold text-white text-sm">Restaurant Demo</span>
+                      </div>
+                      <Badge className="bg-white/20 text-white border-0 text-xs">
+                        <ShoppingCart className="w-3 h-3 mr-1" />
+                        3
+                      </Badge>
+                    </div>
+
+                    {/* Categories */}
+                    <div className="p-3 border-b border-border">
+                      <ScrollArea className="w-full">
+                        <div className="flex gap-2">
+                          {[
+                            { icon: '🍕', name: 'Pizza', active: true },
+                            { icon: '🍝', name: 'Paste', active: false },
+                            { icon: '🥗', name: 'Salate', active: false },
+                            { icon: '🥤', name: 'Băuturi', active: false },
+                          ].map((cat) => (
+                            <button
+                              key={cat.name}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+                                cat.active 
+                                  ? 'text-white shadow-lg' 
+                                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                              }`}
+                              style={cat.active ? { backgroundColor: customColors.primary } : {}}
+                            >
+                              <span>{cat.icon}</span>
+                              <span>{cat.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+
+                    {/* Menu Items */}
+                    <ScrollArea className="flex-1">
+                      <div className="p-3 space-y-2">
+                        {[
+                          { name: 'Pizza Margherita', price: 32, img: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=200' },
+                          { name: 'Pizza Quattro Formaggi', price: 38, img: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=200' },
+                          { name: 'Pizza Diavola', price: 35, img: 'https://images.unsplash.com/photo-1628840042765-356cda07504e?w=200' },
+                        ].map((item) => (
+                          <div 
+                            key={item.name} 
+                            className="p-2 rounded-xl flex items-center gap-3"
+                            style={{ backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }}
+                          >
+                            <img 
+                              src={item.img} 
+                              alt={item.name}
+                              className="w-12 h-12 rounded-lg object-cover"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-xs truncate" style={{ color: isDarkMode ? '#fff' : customColors.text }}>
+                                {item.name}
+                              </p>
+                              <p className="text-xs" style={{ color: customColors.primary }}>
+                                {item.price} RON
+                              </p>
+                            </div>
+                            <button 
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-white"
+                              style={{ backgroundColor: customColors.primary }}
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+
+                    {/* Cart Footer */}
+                    <div className="p-3 border-t border-border">
+                      <button 
+                        className="w-full py-2.5 rounded-xl text-white font-bold text-sm flex items-center justify-center gap-2"
+                        style={{ backgroundColor: customColors.accent }}
+                      >
+                        <ShoppingCart className="w-4 h-4" />
+                        {labels.checkout} - 105 RON
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
