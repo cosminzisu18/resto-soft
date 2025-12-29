@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation } from '@/data/mockData';
+import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation, upsellQuestions, UpsellQuestion, expiringProducts, ExpiringProduct, menuItems } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,7 +25,7 @@ interface AdminPanelProps {
   onLogout: () => void;
 }
 
-type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'extraIngredients' | 'kioskConfig' | 'kds' | 'reservations' | 'delivery' | 'waiters' | 'customers';
+type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'extraIngredients' | 'kioskConfig' | 'kds' | 'reservations' | 'delivery' | 'waiters' | 'customers' | 'upsellQuestions';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const isMobile = useIsMobile();
@@ -57,6 +57,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [showAddKdsStation, setShowAddKdsStation] = useState(false);
   const [editingKdsStation, setEditingKdsStation] = useState<KDSStation | null>(null);
   const [kdsForm, setKdsForm] = useState({ name: '', type: 'grill' as KDSStation['type'], color: 'bg-orange-500', icon: '🔥' });
+
+  // Upsell Questions state
+  const [localUpsellQuestions, setLocalUpsellQuestions] = useState<UpsellQuestion[]>(upsellQuestions);
+  const [localExpiringProducts, setLocalExpiringProducts] = useState<ExpiringProduct[]>(expiringProducts);
+  const [showAddUpsellQuestion, setShowAddUpsellQuestion] = useState(false);
+  const [editingUpsellQuestion, setEditingUpsellQuestion] = useState<UpsellQuestion | null>(null);
+  const [upsellForm, setUpsellForm] = useState({ question: '', type: 'simple' as UpsellQuestion['type'], category: '' });
+  const [showAddExpiringProduct, setShowAddExpiringProduct] = useState(false);
+  const [expiringForm, setExpiringForm] = useState({ productId: '', expiresIn: '2', quantity: '1' });
 
   const kdsTypeOptions = [
     { value: 'soups', label: 'Supe', icon: '🍲', color: 'bg-amber-500' },
@@ -305,6 +314,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     { id: 'orders' as AdminView, label: t('nav.orders'), icon: ShoppingCart },
     { id: 'menu' as AdminView, label: t('nav.menu'), icon: UtensilsCrossed },
     { id: 'extraIngredients' as AdminView, label: 'Ingrediente Extra', icon: Salad },
+    { id: 'upsellQuestions' as AdminView, label: 'Întrebări Upsell', icon: ShoppingCart },
     { id: 'kioskConfig' as AdminView, label: 'Kiosk/App Config', icon: Smartphone },
     { id: 'kds' as AdminView, label: t('nav.kds'), icon: Monitor },
     { id: 'reservations' as AdminView, label: t('nav.reservations'), icon: CalendarDays },
@@ -1011,6 +1021,161 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           </div>
         )}
 
+        {/* Upsell Questions Configuration */}
+        {activeView === 'upsellQuestions' && (
+          <div className="p-4 md:p-6">
+            <h2 className="text-2xl font-bold mb-6">Întrebări Upsell pentru Ospătari</h2>
+            <p className="text-muted-foreground mb-6">
+              Configurați întrebările care vor apărea ospătarilor înainte de a trimite comanda la bucătărie.
+            </p>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Questions List */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Întrebări Active</h3>
+                  <Button size="sm" onClick={() => setShowAddUpsellQuestion(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adaugă întrebare
+                  </Button>
+                </div>
+                
+                <div className="space-y-3">
+                  {localUpsellQuestions.sort((a, b) => a.order - b.order).map(question => (
+                    <div 
+                      key={question.id} 
+                      className={cn(
+                        "p-4 rounded-xl border-2 transition-all",
+                        question.enabled ? "border-primary/50 bg-card" : "border-border bg-secondary/30 opacity-60"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary font-bold">
+                            {question.order}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium">{question.question}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="secondary" className="text-xs">
+                                {question.type === 'simple' ? 'Întrebare simplă' : 'Produse aproape de expirare'}
+                              </Badge>
+                              {question.category && (
+                                <Badge variant="outline" className="text-xs">{question.category}</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch 
+                            checked={question.enabled}
+                            onCheckedChange={(enabled) => {
+                              setLocalUpsellQuestions(localUpsellQuestions.map(q => 
+                                q.id === question.id ? { ...q, enabled } : q
+                              ));
+                              toast({ title: enabled ? 'Întrebare activată' : 'Întrebare dezactivată' });
+                            }}
+                          />
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => {
+                              setEditingUpsellQuestion(question);
+                              setUpsellForm({ 
+                                question: question.question, 
+                                type: question.type, 
+                                category: question.category || '' 
+                              });
+                            }}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="text-destructive"
+                            onClick={() => {
+                              setLocalUpsellQuestions(localUpsellQuestions.filter(q => q.id !== question.id));
+                              toast({ title: 'Întrebare ștearsă' });
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Expiring Products */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Produse Aproape de Expirare</h3>
+                  <Button size="sm" onClick={() => setShowAddExpiringProduct(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adaugă produs
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Aceste produse vor fi sugerate cu reducere ospătarilor.
+                </p>
+                
+                <div className="space-y-3">
+                  {localExpiringProducts.map(ep => {
+                    const product = menuItems.find(m => m.id === ep.productId);
+                    const hoursRemaining = Math.max(0, Math.floor((ep.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60)));
+                    const minutesRemaining = Math.max(0, Math.floor(((ep.expiresAt.getTime() - Date.now()) % (1000 * 60 * 60)) / (1000 * 60)));
+                    
+                    return (
+                      <div 
+                        key={ep.productId} 
+                        className="p-4 rounded-xl border border-warning/50 bg-warning/10"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {product?.image && (
+                              <img src={product.image} alt={ep.productName} className="w-12 h-12 rounded-lg object-cover" />
+                            )}
+                            <div>
+                              <p className="font-medium">{ep.productName}</p>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <span>Cantitate: {ep.quantity}</span>
+                                <span>•</span>
+                                <span className="text-warning font-medium">
+                                  Expiră în {hoursRemaining}h {minutesRemaining}m
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="text-destructive"
+                            onClick={() => {
+                              setLocalExpiringProducts(localExpiringProducts.filter(p => p.productId !== ep.productId));
+                              toast({ title: 'Produs eliminat din listă' });
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {localExpiringProducts.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>Nu sunt produse aproape de expirare.</p>
+                      <p className="text-sm">Adăugați produse pentru a le sugera ospătarilor.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Delivery Platforms */}
         {activeView === 'delivery' && (
           <div className="p-4 md:p-6">
@@ -1418,6 +1583,161 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <Button className="w-full" onClick={editingKdsStation ? handleUpdateKdsStation : handleAddKdsStation}>
               <Save className="w-4 h-4 mr-2" />
               {editingKdsStation ? 'Salvează' : 'Adaugă'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Upsell Question Dialog */}
+      <Dialog open={showAddUpsellQuestion || !!editingUpsellQuestion} onOpenChange={(open) => {
+        if (!open) { 
+          setShowAddUpsellQuestion(false); 
+          setEditingUpsellQuestion(null); 
+          setUpsellForm({ question: '', type: 'simple', category: '' }); 
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingUpsellQuestion ? 'Editează întrebare' : 'Adaugă întrebare upsell'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Întrebare</label>
+              <Input 
+                value={upsellForm.question} 
+                onChange={e => setUpsellForm({...upsellForm, question: e.target.value})} 
+                placeholder="ex: Doriți un desert?" 
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Tip</label>
+              <Select 
+                value={upsellForm.type} 
+                onValueChange={(v: 'simple' | 'products') => setUpsellForm({...upsellForm, type: v})}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="simple">Întrebare simplă (cu produse din categorie)</SelectItem>
+                  <SelectItem value="products">Produse aproape de expirare</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {upsellForm.type === 'simple' && (
+              <div>
+                <label className="text-sm font-medium">Categorie produse sugerate</label>
+                <Select 
+                  value={upsellForm.category} 
+                  onValueChange={v => setUpsellForm({...upsellForm, category: v})}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selectează categoria" /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from(new Set(menuItems.map(m => m.category))).map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <Button 
+              className="w-full" 
+              onClick={() => {
+                if (editingUpsellQuestion) {
+                  setLocalUpsellQuestions(localUpsellQuestions.map(q => 
+                    q.id === editingUpsellQuestion.id 
+                      ? { ...q, question: upsellForm.question, type: upsellForm.type, category: upsellForm.category || undefined }
+                      : q
+                  ));
+                  toast({ title: 'Întrebare actualizată' });
+                } else {
+                  const newQuestion: UpsellQuestion = {
+                    id: `uq${Date.now()}`,
+                    question: upsellForm.question,
+                    type: upsellForm.type,
+                    enabled: true,
+                    order: localUpsellQuestions.length + 1,
+                    category: upsellForm.category || undefined,
+                  };
+                  setLocalUpsellQuestions([...localUpsellQuestions, newQuestion]);
+                  toast({ title: 'Întrebare adăugată' });
+                }
+                setShowAddUpsellQuestion(false);
+                setEditingUpsellQuestion(null);
+                setUpsellForm({ question: '', type: 'simple', category: '' });
+              }}
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {editingUpsellQuestion ? 'Salvează' : 'Adaugă'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Expiring Product Dialog */}
+      <Dialog open={showAddExpiringProduct} onOpenChange={setShowAddExpiringProduct}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adaugă produs aproape de expirare</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Produs</label>
+              <Select 
+                value={expiringForm.productId} 
+                onValueChange={v => setExpiringForm({...expiringForm, productId: v})}
+              >
+                <SelectTrigger><SelectValue placeholder="Selectează produsul" /></SelectTrigger>
+                <SelectContent>
+                  {menuItems.filter(m => !localExpiringProducts.find(ep => ep.productId === m.id)).map(item => (
+                    <SelectItem key={item.id} value={item.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{item.name}</span>
+                        <span className="text-muted-foreground">({item.category})</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Expiră în (ore)</label>
+                <Input 
+                  type="number" 
+                  value={expiringForm.expiresIn} 
+                  onChange={e => setExpiringForm({...expiringForm, expiresIn: e.target.value})} 
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Cantitate</label>
+                <Input 
+                  type="number" 
+                  value={expiringForm.quantity} 
+                  onChange={e => setExpiringForm({...expiringForm, quantity: e.target.value})} 
+                />
+              </div>
+            </div>
+            <Button 
+              className="w-full" 
+              onClick={() => {
+                const product = menuItems.find(m => m.id === expiringForm.productId);
+                if (!product) {
+                  toast({ title: 'Selectați un produs', variant: 'destructive' });
+                  return;
+                }
+                const newExpiring: ExpiringProduct = {
+                  productId: expiringForm.productId,
+                  productName: product.name,
+                  expiresAt: new Date(Date.now() + parseInt(expiringForm.expiresIn) * 60 * 60 * 1000),
+                  quantity: parseInt(expiringForm.quantity),
+                };
+                setLocalExpiringProducts([...localExpiringProducts, newExpiring]);
+                toast({ title: 'Produs adăugat' });
+                setShowAddExpiringProduct(false);
+                setExpiringForm({ productId: '', expiresIn: '2', quantity: '1' });
+              }}
+            >
+              <Save className="w-4 h-4 mr-2" />
+              Adaugă
             </Button>
           </div>
         </DialogContent>

@@ -867,3 +867,33 @@ export const restaurantInfo = {
   cui: 'RO12345678',
   regCom: 'J40/1234/2020',
 };
+
+// Upsell Questions for waiters
+export interface UpsellQuestion {
+  id: string;
+  question: string;
+  type: 'simple' | 'products';
+  enabled: boolean;
+  order: number;
+  suggestedProducts?: string[]; // Product IDs to suggest
+  category?: string; // Category filter for products
+}
+
+export interface ExpiringProduct {
+  productId: string;
+  productName: string;
+  expiresAt: Date;
+  quantity: number;
+}
+
+export const upsellQuestions: UpsellQuestion[] = [
+  { id: 'uq1', question: 'Doriți un desert?', type: 'simple', enabled: true, order: 1, category: 'Deserturi' },
+  { id: 'uq2', question: 'Doriți ceva de băut?', type: 'simple', enabled: true, order: 2, category: 'Băuturi' },
+  { id: 'uq3', question: 'Avem o ofertă specială pentru produsele aproape de expirare:', type: 'products', enabled: true, order: 3 },
+];
+
+export const expiringProducts: ExpiringProduct[] = [
+  { productId: 'm4', productName: 'Pizza Margherita', expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000), quantity: 3 },
+  { productId: 'm11', productName: 'Sarmale (5 buc)', expiresAt: new Date(Date.now() + 1 * 60 * 60 * 1000), quantity: 5 },
+  { productId: 'm2', productName: 'Supă de pui cu tăiței', expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000), quantity: 2 },
+];

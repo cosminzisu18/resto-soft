@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import Receipt from './Receipt';
 import AllergenBadges from './AllergenBadges';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
+import UpsellQuestionsDialog from './UpsellQuestionsDialog';
 
 interface OrderPanelProps {
   table: Table;
@@ -40,6 +41,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [modNotes, setModNotes] = useState('');
   const [modQuantity, setModQuantity] = useState(1);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [showUpsellDialog, setShowUpsellDialog] = useState(false);
   
   // Payment state
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
@@ -135,12 +137,42 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     setEditingItem(null);
   };
 
-  const handleSendToKitchen = () => {
+  const handleSendToKitchenClick = () => {
     if (!order) return;
     
     const pendingItems = order.items.filter(i => i.status === 'pending');
     if (pendingItems.length === 0) {
       toast({ title: 'Nu sunt articole noi de trimis', variant: 'destructive' });
+      return;
+    }
+
+    // Show upsell dialog before sending
+    setShowUpsellDialog(true);
+  };
+
+  const handleUpsellConfirm = (selectedProducts: MenuItem[]) => {
+    setShowUpsellDialog(false);
+    
+    // Add selected products to order
+    if (selectedProducts.length > 0 && order) {
+      selectedProducts.forEach(product => {
+        addItemToOrder(order.id, product, 1);
+      });
+      toast({ 
+        title: `${selectedProducts.length} produse adăugate`,
+        description: 'Produsele au fost adăugate în comandă',
+      });
+    }
+    
+    // Now send to kitchen
+    handleSendToKitchen();
+  };
+
+  const handleSendToKitchen = () => {
+    if (!order) return;
+    
+    const pendingItems = order.items.filter(i => i.status === 'pending');
+    if (pendingItems.length === 0) {
       return;
     }
 
@@ -483,7 +515,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               
               <Button 
                 className="w-full gradient-primary text-sm"
-                onClick={handleSendToKitchen}
+                onClick={handleSendToKitchenClick}
                 disabled={order.items.filter(i => i.status === 'pending').length === 0}
               >
                 <Send className="w-4 h-4 mr-2" />
@@ -737,6 +769,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           onClose={() => { setShowReceipt(false); onClose(); }} 
         />
       )}
+
+      {/* Upsell Questions Dialog */}
+      <UpsellQuestionsDialog
+        open={showUpsellDialog}
+        onClose={() => setShowUpsellDialog(false)}
+        onConfirm={handleUpsellConfirm}
+        currentOrderItems={order?.items.map(i => i.menuItem.id) || []}
+      />
     </div>
   );
 };
