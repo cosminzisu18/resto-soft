@@ -63,7 +63,7 @@ const navItems: NavItem[] = [
   { id: 'stocks', label: 'Stocuri & Rețete', icon: Package },
   { id: 'employees', label: 'Angajați', icon: Users },
   { id: 'reports', label: 'Rapoarte', icon: BarChart3 },
-  { id: 'management', label: 'Gestiune', icon: FileText },
+  
   { id: 'suppliers', label: 'Furnizori B2B', icon: Building2 },
   { id: 'customers', label: 'Clienți', icon: UserCircle },
   { id: 'delivery', label: 'Delivery', icon: Truck },
