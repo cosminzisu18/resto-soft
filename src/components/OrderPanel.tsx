@@ -42,6 +42,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [modQuantity, setModQuantity] = useState(1);
   const [showReceipt, setShowReceipt] = useState(false);
   const [showUpsellDialog, setShowUpsellDialog] = useState(false);
+  const [upsellAnsweredForOrder, setUpsellAnsweredForOrder] = useState<string | null>(null);
   
   // Payment state
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
@@ -146,12 +147,22 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       return;
     }
 
-    // Show upsell dialog before sending
-    setShowUpsellDialog(true);
+    // Only show upsell dialog if not already answered for this order
+    if (upsellAnsweredForOrder !== order.id) {
+      setShowUpsellDialog(true);
+    } else {
+      // Already answered, send directly to kitchen
+      handleSendToKitchen();
+    }
   };
 
   const handleUpsellConfirm = (selectedProducts: MenuItem[]) => {
     setShowUpsellDialog(false);
+    
+    // Mark this order as having answered upsell questions
+    if (order) {
+      setUpsellAnsweredForOrder(order.id);
+    }
     
     // Add selected products to order
     if (selectedProducts.length > 0 && order) {
