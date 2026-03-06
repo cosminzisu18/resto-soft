@@ -31,6 +31,8 @@ import SubscriptionsAdminModule from '@/components/modules/SubscriptionsAdminMod
 import CommunicationModule from '@/components/modules/CommunicationModule';
 import OfflineModeModule from '@/components/modules/OfflineModeModule';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
+import WaiterProfileDialog from '@/components/WaiterProfileDialog';
+import CashRegisterDialog from '@/components/CashRegisterDialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
