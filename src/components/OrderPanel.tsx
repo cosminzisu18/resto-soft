@@ -1041,45 +1041,121 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             {/* Payment Method Selection */}
             <div>
               <p className="font-medium mb-3">Metodă de plată</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <button
                   onClick={() => setPaymentMethod('cash')}
                   className={cn(
-                    "p-3 md:p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    "p-3 rounded-xl border-2 flex flex-col items-center gap-1.5 transition-all",
                     paymentMethod === 'cash'
                       ? "border-primary bg-primary/10"
                       : "border-border hover:border-primary/50"
                   )}
                 >
-                  <Banknote className={cn("w-7 h-7 md:w-8 md:h-8", paymentMethod === 'cash' ? "text-primary" : "text-muted-foreground")} />
-                  <span className={cn("text-sm font-medium", paymentMethod === 'cash' && "text-primary")}>Cash</span>
+                  <Banknote className={cn("w-6 h-6", paymentMethod === 'cash' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-xs font-medium", paymentMethod === 'cash' && "text-primary")}>Cash</span>
                 </button>
                 <button
                   onClick={() => setPaymentMethod('card')}
                   className={cn(
-                    "p-3 md:p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    "p-3 rounded-xl border-2 flex flex-col items-center gap-1.5 transition-all",
                     paymentMethod === 'card'
                       ? "border-primary bg-primary/10"
                       : "border-border hover:border-primary/50"
                   )}
                 >
-                  <CardIcon className={cn("w-7 h-7 md:w-8 md:h-8", paymentMethod === 'card' ? "text-primary" : "text-muted-foreground")} />
-                  <span className={cn("text-sm font-medium", paymentMethod === 'card' && "text-primary")}>Card</span>
+                  <CardIcon className={cn("w-6 h-6", paymentMethod === 'card' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-xs font-medium", paymentMethod === 'card' && "text-primary")}>Card</span>
                 </button>
                 <button
                   onClick={() => setPaymentMethod('usage_card')}
                   className={cn(
-                    "p-3 md:p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    "p-3 rounded-xl border-2 flex flex-col items-center gap-1.5 transition-all",
                     paymentMethod === 'usage_card'
                       ? "border-primary bg-primary/10"
                       : "border-border hover:border-primary/50"
                   )}
                 >
-                  <Barcode className={cn("w-7 h-7 md:w-8 md:h-8", paymentMethod === 'usage_card' ? "text-primary" : "text-muted-foreground")} />
-                  <span className={cn("text-sm font-medium text-center", paymentMethod === 'usage_card' && "text-primary")}>Card Utilizare</span>
+                  <Barcode className={cn("w-6 h-6", paymentMethod === 'usage_card' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-xs font-medium text-center", paymentMethod === 'usage_card' && "text-primary")}>Card Util.</span>
+                </button>
+                <button
+                  onClick={() => { setPaymentMethod('mixed'); setMixedCash(''); setMixedCard(''); setMixedUsageCard(''); }}
+                  className={cn(
+                    "p-3 rounded-xl border-2 flex flex-col items-center gap-1.5 transition-all",
+                    paymentMethod === 'mixed'
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <div className={cn("flex w-6 h-6 items-center justify-center", paymentMethod === 'mixed' ? "text-primary" : "text-muted-foreground")}>
+                    <Banknote className="w-4 h-4 -mr-1" />
+                    <CardIcon className="w-4 h-4" />
+                  </div>
+                  <span className={cn("text-xs font-medium", paymentMethod === 'mixed' && "text-primary")}>Mixt</span>
                 </button>
               </div>
             </div>
+
+            {/* Cash Received Input */}
+            {paymentMethod === 'cash' && (() => {
+              const totalToPay = getPayableAmount() + calculateTip();
+              const received = parseFloat(cashReceived) || 0;
+              const change = received - totalToPay;
+              return (
+                <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                  <p className="font-medium mb-2 text-sm flex items-center gap-2">
+                    <Banknote className="w-4 h-4" />
+                    Suma primită de la client
+                  </p>
+                  <Input
+                    type="number"
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value)}
+                    placeholder="Introduceți suma primită (RON)"
+                    className="text-lg font-mono mb-2"
+                  />
+                  <div className="flex gap-2 mb-2">
+                    {[50, 100, 200, 500].map(amt => (
+                      <Button
+                        key={amt}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs"
+                        onClick={() => setCashReceived(String(amt))}
+                      >
+                        {amt}
+                      </Button>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => setCashReceived(String(Math.ceil(totalToPay)))}
+                    >
+                      Exact
+                    </Button>
+                  </div>
+                  {cashReceived && (
+                    <div className={cn(
+                      "p-2 rounded-lg text-sm font-medium",
+                      change >= 0 ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive"
+                    )}>
+                      {change >= 0 ? (
+                        <div className="flex justify-between">
+                          <span>Rest de dat:</span>
+                          <span className="text-lg font-bold">{change.toFixed(2)} RON</span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between">
+                          <span>⚠️ Lipsesc:</span>
+                          <span className="text-lg font-bold">{Math.abs(change).toFixed(2)} RON</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Usage Card Code Input */}
             {paymentMethod === 'usage_card' && (
@@ -1096,6 +1172,107 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 />
               </div>
             )}
+
+            {/* Mixed Payment */}
+            {paymentMethod === 'mixed' && (() => {
+              const totalToPay = getPayableAmount() + calculateTip();
+              const mixedCashVal = parseFloat(mixedCash) || 0;
+              const mixedCardVal = parseFloat(mixedCard) || 0;
+              const mixedUsageVal = parseFloat(mixedUsageCard) || 0;
+              const mixedTotal = mixedCashVal + mixedCardVal + mixedUsageVal;
+              const mixedDiff = mixedTotal - totalToPay;
+              const isCovered = mixedTotal >= totalToPay;
+              return (
+                <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 space-y-3">
+                  <p className="font-medium text-sm">Setează suma pentru fiecare metodă</p>
+                  
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                        <Banknote className="w-3 h-3" /> Cash
+                      </label>
+                      <Input
+                        type="number"
+                        value={mixedCash}
+                        onChange={(e) => setMixedCash(e.target.value)}
+                        placeholder="0.00 RON"
+                        className="font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                        <CardIcon className="w-3 h-3" /> Card
+                      </label>
+                      <Input
+                        type="number"
+                        value={mixedCard}
+                        onChange={(e) => setMixedCard(e.target.value)}
+                        placeholder="0.00 RON"
+                        className="font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                        <Barcode className="w-3 h-3" /> Card Utilizare
+                      </label>
+                      <Input
+                        type="number"
+                        value={mixedUsageCard}
+                        onChange={(e) => setMixedUsageCard(e.target.value)}
+                        placeholder="0.00 RON"
+                        className="font-mono"
+                      />
+                      {mixedUsageVal > 0 && (
+                        <Input
+                          value={mixedUsageCardCode}
+                          onChange={(e) => setMixedUsageCardCode(e.target.value)}
+                          placeholder="Cod card utilizare"
+                          className="font-mono mt-1"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Quick fill remaining */}
+                  {!isCovered && mixedTotal > 0 && (
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={() => setMixedCash(String((parseFloat(mixedCash) || 0) + (totalToPay - mixedTotal)))}>
+                        Restul cash ({(totalToPay - mixedTotal).toFixed(2)})
+                      </Button>
+                      <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={() => setMixedCard(String((parseFloat(mixedCard) || 0) + (totalToPay - mixedTotal)))}>
+                        Restul card ({(totalToPay - mixedTotal).toFixed(2)})
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  <div className={cn(
+                    "p-2 rounded-lg text-sm",
+                    isCovered ? "bg-green-500/10" : "bg-destructive/10"
+                  )}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-muted-foreground">De plată:</span>
+                      <span className="font-medium">{totalToPay.toFixed(2)} RON</span>
+                    </div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-muted-foreground">Alocat:</span>
+                      <span className="font-medium">{mixedTotal.toFixed(2)} RON</span>
+                    </div>
+                    <div className={cn("flex justify-between font-bold pt-1 border-t", isCovered ? "text-green-700 dark:text-green-400 border-green-500/20" : "text-destructive border-destructive/20")}>
+                      {isCovered ? (
+                        mixedDiff > 0 ? (
+                          <><span>Rest de dat (cash):</span><span>{mixedDiff.toFixed(2)} RON</span></>
+                        ) : (
+                          <><span>✓ Suma acoperită</span><span>0.00 RON rest</span></>
+                        )
+                      ) : (
+                        <><span>⚠️ Lipsesc:</span><span>{Math.abs(mixedDiff).toFixed(2)} RON</span></>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Tip */}
             <div>
