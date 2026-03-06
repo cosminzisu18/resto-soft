@@ -499,6 +499,13 @@ const RestaurantApp: React.FC = () => {
             Deconectare
           </Button>
         </div>
+
+        <OrderHistoryDialog
+          open={showGlobalHistory}
+          onClose={() => setShowGlobalHistory(false)}
+          orders={orders}
+          onUpdateOrder={updateOrder}
+        />
       </div>
     );
   }
