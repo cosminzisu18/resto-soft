@@ -106,6 +106,15 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     toast({ title: 'Produs eliminat' });
   };
 
+  const handleClearAll = () => {
+    if (!order) return;
+    const nonPendingItems = order.items.filter(i => i.status !== 'pending');
+    const totalAmount = nonPendingItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+    updateOrder({ ...order, items: nonPendingItems, totalAmount });
+    setShowClearConfirm(false);
+    toast({ title: 'Toate produsele noi au fost șterse' });
+  };
+
   const handleConfirmModifier = () => {
     if (!showModifier || !order) return;
     
