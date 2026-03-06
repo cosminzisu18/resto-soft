@@ -550,14 +550,37 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 <span>{order.totalAmount.toFixed(2)} RON</span>
               </div>
               
-              <Button 
-                className="w-full gradient-primary text-sm"
-                onClick={handleSendToKitchenClick}
-                disabled={order.items.filter(i => i.status === 'pending').length === 0}
-              >
-                <Send className="w-4 h-4 mr-2" />
-                Trimite ({order.items.filter(i => i.status === 'pending').length})
-              </Button>
+              {showClearConfirm ? (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <span className="text-sm text-destructive font-medium flex-1">Ștergi toate produsele?</span>
+                  <Button size="sm" variant="destructive" onClick={handleClearAll}>
+                    Da, șterge
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowClearConfirm(false)}>
+                    Nu
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10"
+                    onClick={() => setShowClearConfirm(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Șterge tot
+                  </Button>
+                  <Button 
+                    className="flex-1 gradient-primary text-sm"
+                    onClick={handleSendToKitchenClick}
+                    disabled={order.items.filter(i => i.status === 'pending').length === 0}
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    Trimite ({order.items.filter(i => i.status === 'pending').length})
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
