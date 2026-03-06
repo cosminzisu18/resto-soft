@@ -1402,11 +1402,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             {/* CUI */}
             <div>
               <p className="font-medium mb-2">CUI Firmă (opțional)</p>
-              <Input
-                value={cui}
-                onChange={(e) => setCui(e.target.value)}
-                placeholder="RO12345678"
-              />
+              <div
+                className={cn(
+                  "flex items-center justify-between p-2 rounded-lg bg-card border cursor-pointer transition-colors",
+                  activeNumpad === 'cui' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
+                )}
+                onClick={() => setActiveNumpad(activeNumpad === 'cui' ? null : 'cui')}
+              >
+                <span className={cn("font-mono", !cui && "text-muted-foreground text-sm")}>
+                  {cui || 'Apasă pentru a introduce CUI'}
+                </span>
+              </div>
+              <NumpadKeyboard field="cui" label="CUI Firmă" />
               <p className="text-xs text-muted-foreground mt-1">
                 Pentru factură fiscală
               </p>
