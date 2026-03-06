@@ -14,7 +14,8 @@ import {
   Truck, Monitor, Bell, Clock, ShoppingCart, 
   ChevronRight, Globe, Phone, ArrowLeft, Eye,
   CheckCircle, XCircle, Bike, MapPin, User,
-  ChefHat, Check, Printer, MessageSquare, AlertTriangle
+  ChefHat, Check, Printer, MessageSquare, AlertTriangle,
+  Plus, Zap
 } from 'lucide-react';
 
 interface ExternalOrdersNotificationProps {
