@@ -107,7 +107,7 @@ export interface OrderItem {
   complimentary?: boolean;
 }
 
-export type OrderSource = 'restaurant' | 'glovo' | 'wolt' | 'bolt' | 'own_website' | 'phone';
+export type OrderSource = 'restaurant' | 'glovo' | 'wolt' | 'bolt' | 'own_website' | 'phone' | 'kiosk';
 export type PaymentMethod = 'cash' | 'card' | 'usage_card';
 
 export interface UsageCard {
