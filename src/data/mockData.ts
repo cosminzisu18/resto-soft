@@ -95,6 +95,7 @@ export interface OrderItem {
   menuItemId: string;
   menuItem: MenuItem;
   quantity: number;
+  weightGrams?: number; // used when unitType is 'gram'
   modifications: {
     added: string[];
     removed: string[];
