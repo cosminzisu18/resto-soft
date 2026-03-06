@@ -42,6 +42,8 @@ export const allergens: Allergen[] = [
   { id: 'sesame', name: 'Susan', icon: '⚪', color: 'bg-stone-400' },
 ];
 
+export type UnitType = 'buc' | 'portie' | 'gram';
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -54,6 +56,7 @@ export interface MenuItem {
   allergenIds?: string[];
   availableExtras?: string[]; // IDs of extra ingredients available for this item
   image?: string;
+  unitType?: UnitType; // 'buc' = per piece (default), 'portie' = per portion, 'gram' = price per 100g
   availability?: {
     restaurant: boolean;
     kiosk: boolean;
