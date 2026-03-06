@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -7,14 +7,19 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useRestaurant } from '@/context/RestaurantContext';
-import { Table, Order, OrderItem } from '@/data/mockData';
+import { Table, Order, OrderItem, PaymentMethod } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
   Search, Plus, CreditCard, Banknote, Clock, ChefHat, Check, Printer,
   Package, Phone, ArrowLeft, List, Eye, Filter, Utensils, Monitor, 
-  Globe, RefreshCw, Calendar, PanelLeftClose, PanelRightClose
+  Globe, RefreshCw, Calendar, PanelLeftClose, PanelRightClose,
+  Download, FileText, Receipt, Barcode, Edit2, User
 } from 'lucide-react';
+import { format } from 'date-fns';
+import { ro } from 'date-fns/locale';
 import TableMap from '@/components/TableMap';
 import OrderPanel from '@/components/OrderPanel';
 import ReservationManager from '@/components/ReservationManager';
@@ -25,7 +30,7 @@ type POSView = 'tables' | 'all-orders';
 
 const POSModule: React.FC = () => {
   const { 
-    tables, orders, reservations, createReservation, updateReservation, deleteReservation
+    tables, orders, reservations, createReservation, updateReservation, deleteReservation, updateOrder
   } = useRestaurant();
   const { toast } = useToast();
   
@@ -39,12 +44,27 @@ const POSModule: React.FC = () => {
   const [ordersFilter, setOrdersFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
+  const [filterPayment, setFilterPayment] = useState<string>('all');
+  const [filterWaiter, setFilterWaiter] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<Date | undefined>(undefined);
+  
+  // Invoice state
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [invoiceCui, setInvoiceCui] = useState('');
+  const [invoiceCompanyName, setInvoiceCompanyName] = useState('');
+  const [invoiceCompanyAddress, setInvoiceCompanyAddress] = useState('');
+  
+  // Payment edit state
+  const [editingPaymentOrderId, setEditingPaymentOrderId] = useState<string | null>(null);
   
   // Phone/Takeaway order dialog
   const [showPhoneOrderDialog, setShowPhoneOrderDialog] = useState(false);
   const [showTakeawayDialog, setShowTakeawayDialog] = useState(false);
   const [phoneCustomerName, setPhoneCustomerName] = useState('');
   const [phoneCustomerPhone, setPhoneCustomerPhone] = useState('');
+
+  // Unique values for filters
+  const uniqueWaiters = useMemo(() => [...new Set(orders.map(o => o.waiterName).filter(Boolean))], [orders]);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -74,18 +94,34 @@ const POSModule: React.FC = () => {
   };
 
   // Filter orders for All Orders view
-  const filteredOrders = orders.filter(order => {
-    if (ordersFilter !== 'all' && order.status !== ordersFilter) return false;
-    if (sourceFilter !== 'all' && order.source !== sourceFilter) return false;
-    if (ordersSearchQuery) {
-      const searchLower = ordersSearchQuery.toLowerCase();
-      const matchesTable = order.tableNumber?.toString().includes(searchLower);
-      const matchesId = order.id.toLowerCase().includes(searchLower);
-      const matchesWaiter = order.waiterName?.toLowerCase().includes(searchLower);
-      if (!matchesTable && !matchesId && !matchesWaiter) return false;
-    }
-    return true;
-  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      if (ordersFilter !== 'all' && order.status !== ordersFilter) return false;
+      if (sourceFilter !== 'all' && order.source !== sourceFilter) return false;
+      if (filterPayment !== 'all') {
+        if (filterPayment === 'unpaid' && order.paymentMethod) return false;
+        if (filterPayment !== 'unpaid' && order.paymentMethod !== filterPayment) return false;
+      }
+      if (filterWaiter !== 'all' && order.waiterName !== filterWaiter) return false;
+      if (filterDate) {
+        const orderDate = new Date(order.createdAt);
+        if (orderDate.toDateString() !== filterDate.toDateString()) return false;
+      }
+      if (ordersSearchQuery) {
+        const searchLower = ordersSearchQuery.toLowerCase();
+        const matchesTable = order.tableNumber?.toString().includes(searchLower);
+        const matchesId = order.id.toLowerCase().includes(searchLower);
+        const matchesWaiter = order.waiterName?.toLowerCase().includes(searchLower);
+        const matchesCustomer = order.customerName?.toLowerCase().includes(searchLower);
+        if (!matchesTable && !matchesId && !matchesWaiter && !matchesCustomer) return false;
+      }
+      return true;
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [orders, ordersFilter, sourceFilter, filterPayment, filterWaiter, filterDate, ordersSearchQuery]);
+
+  // Summary stats for filtered orders
+  const filteredRevenue = filteredOrders.reduce((s, o) => s + o.totalAmount, 0);
+  const filteredTips = filteredOrders.reduce((s, o) => s + (o.tip || 0), 0);
 
   // Order stats
   const orderStats = {
@@ -126,7 +162,6 @@ const POSModule: React.FC = () => {
       toast({ title: 'Introduceți numele clientului', variant: 'destructive' });
       return;
     }
-    // Find first free table to use for phone order
     const freeTable = tables.find(t => t.status === 'free');
     if (freeTable) {
       setShowPhoneOrderDialog(false);
@@ -137,6 +172,90 @@ const POSModule: React.FC = () => {
     }
     setPhoneCustomerName('');
     setPhoneCustomerPhone('');
+  };
+
+  const getPaymentLabel = (method?: string) => {
+    switch (method) {
+      case 'cash': return 'Cash';
+      case 'card': return 'Card';
+      case 'usage_card': return 'Card Utilizare';
+      default: return 'Neplătit';
+    }
+  };
+
+  const getPaymentIcon = (method?: string) => {
+    switch (method) {
+      case 'cash': return <Banknote className="w-4 h-4" />;
+      case 'card': return <CreditCard className="w-4 h-4" />;
+      case 'usage_card': return <Barcode className="w-4 h-4" />;
+      default: return <Clock className="w-4 h-4" />;
+    }
+  };
+
+  const handleChangePaymentMethod = (orderId: string, newMethod: PaymentMethod) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order && updateOrder) {
+      updateOrder({ ...order, paymentMethod: newMethod });
+      if (selectedOrderDetails?.id === orderId) {
+        setSelectedOrderDetails({ ...order, paymentMethod: newMethod });
+      }
+      toast({ title: 'Metodă de plată actualizată', description: `Schimbată la ${getPaymentLabel(newMethod)}` });
+    }
+    setEditingPaymentOrderId(null);
+  };
+
+  const handleGenerateInvoice = (order: Order) => {
+    setInvoiceOrder(order);
+    setInvoiceCui(order.cui || '');
+    setInvoiceCompanyName('');
+    setInvoiceCompanyAddress('');
+  };
+
+  const handlePrintInvoice = () => {
+    if (!invoiceOrder) return;
+    if (!invoiceCui.trim()) {
+      toast({ title: 'CUI obligatoriu', description: 'Introduceți CUI-ul pentru factură', variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Factură generată', description: `Factura pentru comanda #${invoiceOrder.id.slice(0, 8)} a fost generată` });
+    setInvoiceOrder(null);
+  };
+
+  const handleExportExcel = () => {
+    const headers = ['ID Comandă', 'Data', 'Masa', 'Sursă', 'Ospătar', 'Client', 'Produse', 'Cantitate', 'Subtotal', 'Bacșiș', 'Total', 'Metodă Plată', 'Status', 'CUI'];
+    const rows = filteredOrders.map(order => {
+      const products = order.items.map(i => `${i.quantity}x ${i.menuItem.name}${i.complimentary ? ' (gratis)' : ''}`).join('; ');
+      const totalItems = order.items.reduce((s, i) => s + i.quantity, 0);
+      const source = sourceConfig[order.source]?.label || order.source;
+      return [
+        order.id.slice(0, 8),
+        new Date(order.createdAt).toLocaleString('ro-RO'),
+        order.tableNumber || 'N/A',
+        source,
+        order.waiterName || 'N/A',
+        order.customerName || 'N/A',
+        products,
+        totalItems,
+        order.totalAmount.toFixed(2),
+        (order.tip || 0).toFixed(2),
+        (order.totalAmount + (order.tip || 0)).toFixed(2),
+        getPaymentLabel(order.paymentMethod),
+        order.status === 'completed' ? 'Finalizat' : order.status === 'active' ? 'Activ' : 'Anulat',
+        order.cui || ''
+      ];
+    });
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `comenzi-pos-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Export realizat', description: `${filteredOrders.length} comenzi exportate` });
   };
 
   const handleStartTakeawayOrder = () => {
@@ -341,34 +460,99 @@ const POSModule: React.FC = () => {
               </div>
 
               {/* Filters Row */}
-              <div className="flex gap-3 mb-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Caută după masă, ID, ospătar..." 
-                    value={ordersSearchQuery}
-                    onChange={(e) => setOrdersSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
+              <div className="space-y-2 mb-4">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input 
+                      placeholder="Caută după masă, ID, ospătar, client..." 
+                      value={ordersSearchQuery}
+                      onChange={(e) => setOrdersSearchQuery(e.target.value)}
+                      className="pl-9 h-8"
+                    />
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleExportExcel}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Export
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => toast({ title: 'Se actualizează...' })}>
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
                 </div>
-                <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Sursă" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Toate sursele</SelectItem>
-                    <SelectItem value="restaurant">POS</SelectItem>
-                    <SelectItem value="kiosk">Kiosk</SelectItem>
-                    <SelectItem value="phone">Telefon</SelectItem>
-                    <SelectItem value="glovo">Glovo</SelectItem>
-                    <SelectItem value="wolt">Wolt</SelectItem>
-                    <SelectItem value="bolt">Bolt</SelectItem>
-                    <SelectItem value="own_website">Website</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" size="icon" onClick={() => toast({ title: 'Se actualizează...' })}>
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {/* Date Picker */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={cn("h-8 text-xs", filterDate && "border-primary text-primary")}>
+                        <Calendar className="w-3 h-3 mr-1" />
+                        {filterDate ? format(filterDate, 'dd MMM yyyy', { locale: ro }) : 'Toate zilele'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={filterDate}
+                        onSelect={setFilterDate}
+                        className={cn("p-3 pointer-events-auto")}
+                      />
+                      {filterDate && (
+                        <div className="p-2 border-t">
+                          <Button variant="ghost" size="sm" className="w-full" onClick={() => setFilterDate(undefined)}>
+                            Resetează
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                    <SelectTrigger className="w-[130px] h-8 text-xs">
+                      <SelectValue placeholder="Sursă" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toate sursele</SelectItem>
+                      <SelectItem value="restaurant">POS</SelectItem>
+                      <SelectItem value="kiosk">Kiosk</SelectItem>
+                      <SelectItem value="phone">Telefon</SelectItem>
+                      <SelectItem value="glovo">Glovo</SelectItem>
+                      <SelectItem value="wolt">Wolt</SelectItem>
+                      <SelectItem value="bolt">Bolt</SelectItem>
+                      <SelectItem value="own_website">Website</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={filterWaiter} onValueChange={setFilterWaiter}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectValue placeholder="Ospătar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toți ospătarii</SelectItem>
+                      {uniqueWaiters.map(w => (
+                        <SelectItem key={w} value={w!}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={filterPayment} onValueChange={setFilterPayment}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectValue placeholder="Plată" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toate</SelectItem>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="usage_card">Card Utilizare</SelectItem>
+                      <SelectItem value="unpaid">Neplătit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Summary Bar */}
+              <div className="flex gap-3 text-sm mb-3">
+                <span className="text-muted-foreground">{filteredOrders.length} comenzi</span>
+                <span className="font-medium">Total: {filteredRevenue.toFixed(2)} RON</span>
+                {filteredTips > 0 && <span className="text-muted-foreground">Bacșișuri: {filteredTips.toFixed(2)} RON</span>}
               </div>
 
               {/* Orders List */}
@@ -529,7 +713,7 @@ const POSModule: React.FC = () => {
       </Dialog>
 
       {/* Order Details Dialog */}
-      <Dialog open={!!selectedOrderDetails} onOpenChange={() => setSelectedOrderDetails(null)}>
+      <Dialog open={!!selectedOrderDetails && !invoiceOrder} onOpenChange={() => setSelectedOrderDetails(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -559,11 +743,31 @@ const POSModule: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Plată</p>
-                  <div className="flex items-center gap-1">
-                    {selectedOrderDetails.paymentMethod === 'cash' && <><Banknote className="w-3 h-3" /> Cash</>}
-                    {selectedOrderDetails.paymentMethod === 'card' && <><CreditCard className="w-3 h-3" /> Card</>}
-                    {!selectedOrderDetails.paymentMethod && <span className="text-muted-foreground">Neplătit</span>}
-                  </div>
+                  {editingPaymentOrderId === selectedOrderDetails.id ? (
+                    <div className="flex gap-1 mt-1">
+                      {(['cash', 'card', 'usage_card'] as PaymentMethod[]).map(method => (
+                        <button
+                          key={method}
+                          className={cn(
+                            "flex items-center gap-1 px-2 py-1 rounded-md border text-xs transition-colors",
+                            selectedOrderDetails.paymentMethod === method
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:border-primary/50"
+                          )}
+                          onClick={() => handleChangePaymentMethod(selectedOrderDetails.id, method)}
+                        >
+                          {getPaymentIcon(method)}
+                          {getPaymentLabel(method)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 cursor-pointer" onClick={() => setEditingPaymentOrderId(selectedOrderDetails.id)}>
+                      {getPaymentIcon(selectedOrderDetails.paymentMethod)}
+                      <span className="font-medium">{getPaymentLabel(selectedOrderDetails.paymentMethod)}</span>
+                      <Edit2 className="w-3 h-3 text-muted-foreground ml-1" />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -578,6 +782,9 @@ const POSModule: React.FC = () => {
                           <span className="font-medium">{item.quantity}x</span>
                           <span>{item.menuItem.name}</span>
                           {getStatusIcon(item.status)}
+                          {item.complimentary && (
+                            <Badge variant="secondary" className="text-[10px] px-1 py-0">Gratis</Badge>
+                          )}
                         </div>
                         {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
                           <p className="text-xs text-muted-foreground">
@@ -586,7 +793,9 @@ const POSModule: React.FC = () => {
                           </p>
                         )}
                       </div>
-                      <span className="font-medium">{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
+                      <span className={cn("font-medium", item.complimentary && "line-through text-muted-foreground")}>
+                        {(item.menuItem.price * item.quantity).toFixed(2)} RON
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -603,9 +812,70 @@ const POSModule: React.FC = () => {
                 <Button variant="outline" className="flex-1" onClick={() => setSelectedOrderDetails(null)}>
                   Închide
                 </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleGenerateInvoice(selectedOrderDetails)}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Factură
+                </Button>
                 <Button className="flex-1">
                   <Printer className="w-4 h-4 mr-2" />
                   Printează
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Dialog */}
+      <Dialog open={!!invoiceOrder} onOpenChange={() => setInvoiceOrder(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Generare Factură
+            </DialogTitle>
+          </DialogHeader>
+          {invoiceOrder && (
+            <div className="space-y-4">
+              <div className="p-3 bg-muted rounded-lg text-sm">
+                <p>Comandă: <span className="font-mono font-medium">#{invoiceOrder.id.slice(0, 8)}</span></p>
+                <p>Total: <span className="font-bold">{invoiceOrder.totalAmount.toFixed(2)} RON</span></p>
+                <p>Data: {new Date(invoiceOrder.createdAt).toLocaleString('ro-RO')}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">CUI *</label>
+                <Input
+                  value={invoiceCui}
+                  onChange={(e) => setInvoiceCui(e.target.value)}
+                  placeholder="Ex: RO12345678"
+                  className="h-10"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Denumire Firmă</label>
+                <Input
+                  value={invoiceCompanyName}
+                  onChange={(e) => setInvoiceCompanyName(e.target.value)}
+                  placeholder="Ex: SC Firma SRL"
+                  className="h-10"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Adresă</label>
+                <Input
+                  value={invoiceCompanyAddress}
+                  onChange={(e) => setInvoiceCompanyAddress(e.target.value)}
+                  placeholder="Ex: Str. Exemplu nr. 1, București"
+                  className="h-10"
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setInvoiceOrder(null)}>
+                  Anulează
+                </Button>
+                <Button className="flex-1" onClick={handlePrintInvoice}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Generează Factură
                 </Button>
               </div>
             </div>
