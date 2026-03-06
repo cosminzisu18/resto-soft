@@ -1385,12 +1385,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   </Button>
                 ))}
               </div>
-              <Input
-                type="number"
-                value={tipType === 'value' ? tipValue : ''}
-                onChange={(e) => { setTipType('value'); setTipValue(e.target.value); }}
-                placeholder="Sumă fixă (RON)"
-              />
+              <div
+                className={cn(
+                  "flex items-center justify-between p-2 rounded-lg bg-card border cursor-pointer transition-colors",
+                  activeNumpad === 'tipValue' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
+                )}
+                onClick={() => setActiveNumpad(activeNumpad === 'tipValue' ? null : 'tipValue')}
+              >
+                <span className={cn("font-mono", !(tipType === 'value' && tipValue) && "text-muted-foreground text-sm")}>
+                  {tipType === 'value' && tipValue ? `${tipValue} RON` : 'Sumă fixă (apasă)'}
+                </span>
+              </div>
+              <NumpadKeyboard field="tipValue" label="Bacșiș sumă fixă" suffix="RON" />
             </div>
 
             {/* CUI */}
