@@ -30,7 +30,7 @@ type POSView = 'tables' | 'all-orders';
 
 const POSModule: React.FC = () => {
   const { 
-    tables, orders, reservations, createReservation, updateReservation, deleteReservation
+    tables, orders, reservations, createReservation, updateReservation, deleteReservation, updateOrder
   } = useRestaurant();
   const { toast } = useToast();
   
@@ -44,12 +44,27 @@ const POSModule: React.FC = () => {
   const [ordersFilter, setOrdersFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [ordersSearchQuery, setOrdersSearchQuery] = useState('');
+  const [filterPayment, setFilterPayment] = useState<string>('all');
+  const [filterWaiter, setFilterWaiter] = useState<string>('all');
+  const [filterDate, setFilterDate] = useState<Date | undefined>(undefined);
+  
+  // Invoice state
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const [invoiceCui, setInvoiceCui] = useState('');
+  const [invoiceCompanyName, setInvoiceCompanyName] = useState('');
+  const [invoiceCompanyAddress, setInvoiceCompanyAddress] = useState('');
+  
+  // Payment edit state
+  const [editingPaymentOrderId, setEditingPaymentOrderId] = useState<string | null>(null);
   
   // Phone/Takeaway order dialog
   const [showPhoneOrderDialog, setShowPhoneOrderDialog] = useState(false);
   const [showTakeawayDialog, setShowTakeawayDialog] = useState(false);
   const [phoneCustomerName, setPhoneCustomerName] = useState('');
   const [phoneCustomerPhone, setPhoneCustomerPhone] = useState('');
+
+  // Unique values for filters
+  const uniqueWaiters = useMemo(() => [...new Set(orders.map(o => o.waiterName).filter(Boolean))], [orders]);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
