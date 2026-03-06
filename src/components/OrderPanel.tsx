@@ -8,10 +8,11 @@ import {
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
   Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode, Search, ChevronUp, ChevronDown,
-  PanelLeftClose, PanelRightClose, ShoppingCart
+  PanelLeftClose, PanelRightClose, ShoppingCart, Info
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import Receipt from './Receipt';
 import AllergenBadges from './AllergenBadges';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -338,32 +339,47 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   onClick={() => handleAddItem(item)}
                   className="rounded-xl bg-card border border-border hover:border-primary hover:shadow-md transition-all text-left overflow-hidden"
                 >
-                  {/* Product Image */}
-                  {item.image && (
-                    <div className="relative aspect-video w-full bg-secondary">
+                  {/* Product Image with overlay info */}
+                  <div className="relative aspect-[4/3] w-full bg-secondary">
+                    {item.image && (
                       <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                      <span className="absolute top-1 right-1 text-xs text-white bg-black/60 rounded-full px-1.5 py-0.5 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {item.prepTime}'
-                      </span>
-                    </div>
-                  )}
-                  <div className="p-3 md:p-4">
-                    <h3 className="font-medium text-xs md:text-sm mb-1 line-clamp-2">{item.name}</h3>
-                    <p className="text-xs text-muted-foreground line-clamp-2 mb-1 hidden md:block">
-                      {item.description}
-                    </p>
-                    {/* Allergens badges */}
-                    <AllergenBadges allergenIds={item.allergenIds} size="sm" className="mb-1" />
-                    {/* Ingredients */}
-                    {item.ingredients && item.ingredients.length > 0 && (
-                      <p className="text-[10px] text-muted-foreground mb-2 line-clamp-1">
-                        Conține: {item.ingredients.slice(0, 3).join(', ')}{item.ingredients.length > 3 ? '...' : ''}
-                      </p>
                     )}
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-primary text-sm">{item.price} RON</span>
+                    {/* Title & Price overlay top */}
+                    <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent p-2">
+                      <div className="flex items-start justify-between gap-1">
+                        <h3 className="font-semibold text-white text-xs md:text-sm line-clamp-2 leading-tight">{item.name}</h3>
+                        <span className="font-bold text-white text-xs md:text-sm whitespace-nowrap">{item.price} RON</span>
+                      </div>
                     </div>
+                    {/* Clock badge */}
+                    <span className="absolute bottom-1 left-1 text-xs text-white bg-black/60 rounded-full px-1.5 py-0.5 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {item.prepTime}'
+                    </span>
+                    {/* Info button */}
+                    <Popover>
+                      <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <button className="absolute bottom-1 right-1 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 transition-colors">
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 text-sm" side="top" onClick={(e) => e.stopPropagation()}>
+                        {item.description && (
+                          <p className="text-muted-foreground mb-2">{item.description}</p>
+                        )}
+                        {item.ingredients && item.ingredients.length > 0 && (
+                          <p className="text-xs text-muted-foreground mb-2">
+                            <span className="font-medium text-foreground">Conține:</span> {item.ingredients.join(', ')}
+                          </p>
+                        )}
+                        {item.allergenIds && item.allergenIds.length > 0 && (
+                          <div>
+                            <span className="text-xs font-medium text-foreground">Alergeni:</span>
+                            <AllergenBadges allergenIds={item.allergenIds} size="sm" className="mt-1" />
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </button>
               ))}
