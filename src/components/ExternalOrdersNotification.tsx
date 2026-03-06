@@ -478,6 +478,15 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
                     <div className="text-center py-8 text-muted-foreground">
                       <Truck className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p>Nu sunt comenzi externe active</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 gap-2"
+                        onClick={handleSimulateOrder}
+                      >
+                        <Zap className="w-4 h-4" />
+                        Simulează Comandă
+                      </Button>
                     </div>
                   ) : (
                     externalOrders.map(order => {
