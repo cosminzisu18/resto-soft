@@ -63,12 +63,102 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [mixedUsageCard, setMixedUsageCard] = useState('');
   const [mixedUsageCardCode, setMixedUsageCardCode] = useState('');
   
+  // Virtual numpad state
+  const [activeNumpad, setActiveNumpad] = useState<'cashReceived' | 'tipValue' | 'cui' | 'mixedCash' | 'mixedCard' | 'mixedUsageCard' | 'customAmount' | null>(null);
+
   // Split payment state
   const [splitMode, setSplitMode] = useState<'full' | 'custom' | 'items' | 'persons'>('full');
   const [customAmount, setCustomAmount] = useState('');
   const [selectedPayItems, setSelectedPayItems] = useState<Record<string, number>>({});
   const [splitPersons, setSplitPersons] = useState(2);
   const [paidAmounts, setPaidAmounts] = useState<number[]>([]);
+
+  // Numpad helper
+  const getNumpadValue = (field: typeof activeNumpad): string => {
+    switch (field) {
+      case 'cashReceived': return cashReceived;
+      case 'tipValue': return tipType === 'value' ? tipValue : '';
+      case 'cui': return cui;
+      case 'mixedCash': return mixedCash;
+      case 'mixedCard': return mixedCard;
+      case 'mixedUsageCard': return mixedUsageCard;
+      case 'customAmount': return customAmount;
+      default: return '';
+    }
+  };
+
+  const setNumpadValue = (field: typeof activeNumpad, val: string) => {
+    switch (field) {
+      case 'cashReceived': setCashReceived(val); break;
+      case 'tipValue': setTipType('value'); setTipValue(val); break;
+      case 'cui': setCui(val); break;
+      case 'mixedCash': setMixedCash(val); break;
+      case 'mixedCard': setMixedCard(val); break;
+      case 'mixedUsageCard': setMixedUsageCard(val); break;
+      case 'customAmount': setCustomAmount(val); break;
+    }
+  };
+
+  const handleNumpadKey = (key: string) => {
+    if (!activeNumpad) return;
+    const current = getNumpadValue(activeNumpad);
+    if (key === '⌫') {
+      setNumpadValue(activeNumpad, current.slice(0, -1));
+    } else if (key === 'C') {
+      setNumpadValue(activeNumpad, '');
+    } else if (key === '.') {
+      if (!current.includes('.')) {
+        setNumpadValue(activeNumpad, current + '.');
+      }
+    } else {
+      const newVal = current + key;
+      if (activeNumpad === 'cui') {
+        if (newVal.length <= 15) setNumpadValue(activeNumpad, newVal);
+      } else {
+        if (parseFloat(newVal) <= 99999) setNumpadValue(activeNumpad, newVal);
+      }
+    }
+  };
+
+  const NumpadKeyboard = ({ field, label, suffix }: { field: typeof activeNumpad; label: string; suffix?: string }) => {
+    if (activeNumpad !== field) return null;
+    const value = getNumpadValue(field);
+    const isCui = field === 'cui';
+    return (
+      <div className="mt-2 p-3 rounded-lg bg-muted border border-border">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-medium text-muted-foreground">{label}</span>
+          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setActiveNumpad(null)}>
+            ✓ Gata
+          </Button>
+        </div>
+        <div className="text-center p-2 rounded-lg bg-card mb-2">
+          <span className="text-2xl font-bold font-mono">{value || '0'}</span>
+          {suffix && <span className="text-lg text-muted-foreground ml-1">{suffix}</span>}
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {['1', '2', '3', '⌫', '4', '5', '6', 'C', '7', '8', '9', isCui ? '' : '.', isCui ? '' : '00', '0', isCui ? '' : '000', ''].map((key, idx) => 
+            key ? (
+              <Button
+                key={idx}
+                variant={key === '⌫' || key === 'C' ? 'secondary' : 'outline'}
+                className="h-11 text-base font-bold"
+                onClick={() => {
+                  if (key === '000') {
+                    handleNumpadKey('0'); handleNumpadKey('0'); handleNumpadKey('0');
+                  } else {
+                    handleNumpadKey(key);
+                  }
+                }}
+              >
+                {key}
+              </Button>
+            ) : <div key={idx} />
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
