@@ -17,6 +17,7 @@ import Receipt from './Receipt';
 import AllergenBadges from './AllergenBadges';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import UpsellQuestionsDialog from './UpsellQuestionsDialog';
+import OrderHistoryDialog from './OrderHistoryDialog';
 
 interface OrderPanelProps {
   table: Table;
