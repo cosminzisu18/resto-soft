@@ -226,21 +226,57 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     });
   };
 
+  const getPayableAmount = (): number => {
+    if (!order) return 0;
+    const remaining = order.totalAmount - paidAmounts.reduce((s, a) => s + a, 0);
+    switch (splitMode) {
+      case 'full': return remaining;
+      case 'custom': return Math.min(parseFloat(customAmount) || 0, remaining);
+      case 'items': return Object.entries(selectedPayItems).reduce((sum, [itemId, qty]) => {
+        const item = order.items.find(i => i.id === itemId);
+        if (!item) return sum;
+        return sum + (item.complimentary ? 0 : item.menuItem.price * qty);
+      }, 0);
+      case 'persons': return remaining / splitPersons;
+      default: return remaining;
+    }
+  };
+
   const calculateTip = (): number => {
     if (!tipValue || !order) return 0;
     const val = parseFloat(tipValue);
     if (isNaN(val)) return 0;
-    return tipType === 'percent' ? (order.totalAmount * val / 100) : val;
+    const base = getPayableAmount();
+    return tipType === 'percent' ? (base * val / 100) : val;
   };
 
   const handleCompletePayment = () => {
     if (!order) return;
+    const amount = getPayableAmount();
     const tip = calculateTip();
+    const remaining = order.totalAmount - paidAmounts.reduce((s, a) => s + a, 0);
+    
+    if (splitMode !== 'full' && amount < remaining) {
+      // Partial payment
+      setPaidAmounts([...paidAmounts, amount]);
+      toast({ 
+        title: 'Plată parțială procesată',
+        description: `${amount.toFixed(2)} RON plătit. Rămas: ${(remaining - amount).toFixed(2)} RON`,
+      });
+      // Reset for next partial payment
+      setCustomAmount('');
+      setSelectedPayItems({});
+      setTipValue('');
+      return;
+    }
+    
+    // Full/final payment
     completeOrder(order.id, tip, cui || undefined);
     toast({ 
       title: 'Plată procesată',
-      description: `Total: ${(order.totalAmount + tip).toFixed(2)} RON`,
+      description: `Total: ${(amount + tip).toFixed(2)} RON`,
     });
+    setPaidAmounts([]);
     setShowReceipt(true);
   };
 
