@@ -898,6 +898,12 @@ const POSModule: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+      <CashRegisterDialog
+        open={showCashRegister}
+        onClose={() => setShowCashRegister(false)}
+        orders={orders}
+        operatorName="Admin"
+      />
     </div>
   );
 };
