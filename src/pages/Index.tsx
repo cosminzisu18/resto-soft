@@ -451,6 +451,16 @@ const RestaurantApp: React.FC = () => {
               <Calculator className="w-4 h-4" />
               <span className="hidden md:inline">Casierie</span>
             </Button>
+            <ExternalOrdersNotification
+              orders={orders}
+              onViewOrder={(order) => {
+                // Navigate to the order's table if it has one
+                if (order.tableNumber) {
+                  const t = tables.find(tbl => tbl.number === order.tableNumber);
+                  if (t) handleTableSelect(t);
+                }
+              }}
+            />
             <Button
               variant="outline"
               size="sm"
