@@ -146,12 +146,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     if (!showModifier || !order) return;
     
     if (editingItem) {
-      // Update existing item
+      const wg = showModifier.unitType === 'gram' ? parseInt(modWeightGrams) || 0 : undefined;
       const updatedItems = order.items.map(item => {
         if (item.id !== editingItem.id) return item;
         return {
           ...item,
           quantity: modQuantity,
+          weightGrams: wg,
           modifications: {
             added: modAdditions,
             removed: modRemovals,
@@ -159,16 +160,27 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           }
         };
       });
-      const totalAmount = updatedItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+      const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
       updateOrder({ ...order, items: updatedItems, totalAmount });
       toast({ title: 'Produs actualizat' });
     } else {
-      // Add new item
-      addItemToOrder(order.id, showModifier, modQuantity, {
-        added: modAdditions,
-        removed: modRemovals,
-        notes: modNotes,
-      });
+      const wg = showModifier.unitType === 'gram' ? parseInt(modWeightGrams) || 0 : undefined;
+      const newItem: OrderItem = {
+        id: Date.now().toString(),
+        menuItemId: showModifier.id,
+        menuItem: showModifier,
+        quantity: modQuantity,
+        weightGrams: wg,
+        modifications: {
+          added: modAdditions,
+          removed: modRemovals,
+          notes: modNotes,
+        },
+        status: 'pending',
+      };
+      const updatedItems = [...order.items, newItem];
+      const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
+      updateOrder({ ...order, items: updatedItems, totalAmount });
       toast({ title: `${showModifier.name} adăugat` });
     }
     
