@@ -431,11 +431,17 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
                       <Badge variant="destructive" className="text-xs">{newCount} noi</Badge>
                     )}
                   </span>
-                  {newCount > 0 && (
-                    <Button variant="outline" size="sm" onClick={handleAcknowledgeAll}>
-                      Marchează citite
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={handleSimulateOrder} className="gap-1">
+                      <Zap className="w-3 h-3" />
+                      Simulează
                     </Button>
-                  )}
+                    {newCount > 0 && (
+                      <Button variant="outline" size="sm" onClick={handleAcknowledgeAll}>
+                        Marchează citite
+                      </Button>
+                    )}
+                  </div>
                 </DialogTitle>
               </DialogHeader>
 
