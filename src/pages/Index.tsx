@@ -150,6 +150,7 @@ const RestaurantApp: React.FC = () => {
   const [kdsModuleStation, setKdsModuleStation] = useState<KDSStation | null>(null);
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showGlobalHistory, setShowGlobalHistory] = useState(false);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
