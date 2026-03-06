@@ -1066,6 +1066,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
         onClose={() => setShowOrderHistory(false)}
         orders={orders}
         tableNumber={table.number}
+        onUpdateOrder={updateOrder}
       />
     </div>
   );
