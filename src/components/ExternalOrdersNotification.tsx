@@ -345,7 +345,10 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
         size="sm"
         onClick={handleOpenDialog}
         className={cn(
-          "relative flex items-center gap-2 transition-all border-orange-500/50 bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400"
+          "relative flex items-center gap-2 transition-all",
+          externalOrders.length > 0
+            ? "border-orange-500/50 bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400"
+            : ""
         )}
       >
         <Truck className="w-4 h-4" />
@@ -353,6 +356,11 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
         {newCount > 0 && (
           <Badge className="absolute -top-2 -right-2 h-5 min-w-5 px-1 flex items-center justify-center bg-destructive text-destructive-foreground text-xs font-bold">
             {newCount}
+          </Badge>
+        )}
+        {externalOrders.length > 0 && newCount === 0 && (
+          <Badge variant="secondary" className="absolute -top-2 -right-2 h-5 min-w-5 px-1 flex items-center justify-center text-xs">
+            {externalOrders.length}
           </Badge>
         )}
       </Button>
