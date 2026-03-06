@@ -59,7 +59,9 @@ import {
   Calendar,
   Wifi,
   Eye,
-  History
+  History,
+  UserCircle as UserCircleIcon,
+  Calculator
 } from 'lucide-react';
 
 type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard' | 'order-monitor';
