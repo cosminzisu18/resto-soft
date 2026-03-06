@@ -50,7 +50,44 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const { playDelivery, playNewOrder, initAudioContext } = useNotificationSound();
   const { toast } = useToast();
+  const { createDeliveryOrder, addItemToOrder } = useRestaurant();
   const prevCountRef = useRef(0);
+
+  const SIMULATION_NAMES = ['Ion Popescu', 'Ana Mihai', 'George Stan', 'Andreea Radu', 'Vlad Neagu', 'Cristina Dinu'];
+  const SIMULATION_ADDRESSES = [
+    'Str. Victoriei 45, București', 'Bd. Unirii 120, Et. 3', 'Calea Moșilor 88, Sector 2',
+    'Str. Lipscani 15, București', 'Bd. Decebal 30, Ap. 12', 'Str. Traian 67, Sector 3'
+  ];
+
+  const handleSimulateOrder = useCallback(() => {
+    const sources = ['glovo', 'wolt', 'bolt', 'kiosk'] as const;
+    const source = sources[Math.floor(Math.random() * sources.length)];
+    const name = SIMULATION_NAMES[Math.floor(Math.random() * SIMULATION_NAMES.length)];
+    const address = SIMULATION_ADDRESSES[Math.floor(Math.random() * SIMULATION_ADDRESSES.length)];
+    const phone = `07${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const platformId = source !== 'kiosk' ? `${source.toUpperCase().slice(0, 3)}-${Math.floor(10000 + Math.random() * 90000)}` : undefined;
+
+    const newOrder = createDeliveryOrder(source, {
+      name,
+      phone,
+      address: source !== 'kiosk' ? address : undefined,
+      platformOrderId: platformId,
+    });
+
+    // Add 2-4 random items
+    const itemCount = 2 + Math.floor(Math.random() * 3);
+    const availableItems = menuItems.filter(m => m.available);
+    for (let i = 0; i < itemCount && i < availableItems.length; i++) {
+      const randomItem = availableItems[Math.floor(Math.random() * availableItems.length)];
+      const qty = 1 + Math.floor(Math.random() * 3);
+      addItemToOrder(newOrder.id, randomItem, qty);
+    }
+
+    toast({
+      title: `🔔 Comandă nouă simulată`,
+      description: `${sourceConfig[source]?.label} - ${name}`,
+    });
+  }, [createDeliveryOrder, addItemToOrder, toast]);
 
   const externalOrders = useMemo(() =>
     orders.filter(o => 
