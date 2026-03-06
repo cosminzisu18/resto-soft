@@ -426,6 +426,15 @@ const RestaurantApp: React.FC = () => {
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
           <h1 className="font-semibold">RestoPOS - Ospătar</h1>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowGlobalHistory(true)}
+              className="flex items-center gap-2"
+            >
+              <History className="w-4 h-4" />
+              <span className="hidden md:inline">Istoric</span>
+            </Button>
             {!sidebarOpen && (
               <Button
                 variant="outline"
