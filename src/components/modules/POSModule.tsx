@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -16,8 +16,10 @@ import {
   Search, Plus, CreditCard, Banknote, Clock, ChefHat, Check, Printer,
   Package, Phone, ArrowLeft, List, Eye, Filter, Utensils, Monitor, 
   Globe, RefreshCw, Calendar, PanelLeftClose, PanelRightClose,
-  Download, FileText, Receipt, Barcode, Edit2, User
+  Download, FileText, Receipt, Barcode, Edit2, User, Calculator
 } from 'lucide-react';
+import CashRegisterDialog from '@/components/CashRegisterDialog';
+import ExternalOrdersNotification from '@/components/ExternalOrdersNotification';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 import TableMap from '@/components/TableMap';
@@ -62,6 +64,7 @@ const POSModule: React.FC = () => {
   const [showTakeawayDialog, setShowTakeawayDialog] = useState(false);
   const [phoneCustomerName, setPhoneCustomerName] = useState('');
   const [phoneCustomerPhone, setPhoneCustomerPhone] = useState('');
+  const [showCashRegister, setShowCashRegister] = useState(false);
 
   // Unique values for filters
   const uniqueWaiters = useMemo(() => [...new Set(orders.map(o => o.waiterName).filter(Boolean))], [orders]);
@@ -333,6 +336,19 @@ const POSModule: React.FC = () => {
         <h1 className="font-semibold">RestoPOS</h1>
         <div className="flex items-center gap-2">
           {/* Quick Actions */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCashRegister(true)}
+            className="flex items-center gap-2"
+          >
+            <Calculator className="w-4 h-4" />
+            <span className="hidden md:inline">Casierie</span>
+          </Button>
+          <ExternalOrdersNotification
+            orders={orders}
+            onUpdateOrder={updateOrder}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -882,6 +898,12 @@ const POSModule: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+      <CashRegisterDialog
+        open={showCashRegister}
+        onClose={() => setShowCashRegister(false)}
+        orders={orders}
+        operatorName="Admin"
+      />
     </div>
   );
 };
