@@ -155,6 +155,8 @@ const RestaurantApp: React.FC = () => {
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showGlobalHistory, setShowGlobalHistory] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showCashRegister, setShowCashRegister] = useState(false);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
