@@ -530,6 +530,21 @@ const RestaurantApp: React.FC = () => {
           orders={orders}
           onUpdateOrder={updateOrder}
         />
+
+        <WaiterProfileDialog
+          open={showProfile}
+          onClose={() => setShowProfile(false)}
+          user={currentUser}
+          orders={orders}
+          onLogout={handleLogout}
+        />
+
+        <CashRegisterDialog
+          open={showCashRegister}
+          onClose={() => setShowCashRegister(false)}
+          orders={orders}
+          operatorName={currentUser?.name || 'Operator'}
+        />
       </div>
     );
   }
