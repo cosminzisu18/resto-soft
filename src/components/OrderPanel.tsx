@@ -71,19 +71,35 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     enabled: true,
   });
 
+  const getUnitLabel = (unitType?: UnitType) => {
+    switch (unitType) {
+      case 'portie': return 'Por.';
+      case 'gram': return '100g';
+      default: return 'Buc';
+    }
+  };
+
+  const getItemPrice = (item: MenuItem | OrderItem['menuItem'], quantity: number, weightGrams?: number) => {
+    if (item.unitType === 'gram' && weightGrams) {
+      return item.price * weightGrams / 100;
+    }
+    return item.price * quantity;
+  };
+
   let order = getActiveOrderForTable(table.id);
   if (!order) {
     order = createOrder(table.id);
   }
 
   const handleAddItem = (item: MenuItem) => {
-    if (item.ingredients.length > 0) {
+    if (item.ingredients.length > 0 || item.unitType === 'gram') {
       setShowModifier(item);
       setEditingItem(null);
       setModAdditions([]);
       setModRemovals([]);
       setModNotes('');
       setModQuantity(1);
+      setModWeightGrams(item.unitType === 'gram' ? '200' : '');
     } else {
       addItemToOrder(order!.id, item, 1);
       toast({ title: `${item.name} adăugat` });
