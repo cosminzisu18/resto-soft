@@ -117,6 +117,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     setModRemovals(item.modifications.removed);
     setModNotes(item.modifications.notes);
     setModQuantity(item.quantity);
+    setModWeightGrams(item.weightGrams ? String(item.weightGrams) : '');
   };
 
   const handleRemoveItem = (itemId: string) => {
