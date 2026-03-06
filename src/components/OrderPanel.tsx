@@ -44,6 +44,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [showReceipt, setShowReceipt] = useState(false);
   const [showUpsellDialog, setShowUpsellDialog] = useState(false);
   const [upsellAnsweredForOrder, setUpsellAnsweredForOrder] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   
   // Payment state
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
