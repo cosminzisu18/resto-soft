@@ -64,6 +64,7 @@ const POSModule: React.FC = () => {
   const [showTakeawayDialog, setShowTakeawayDialog] = useState(false);
   const [phoneCustomerName, setPhoneCustomerName] = useState('');
   const [phoneCustomerPhone, setPhoneCustomerPhone] = useState('');
+  const [showCashRegister, setShowCashRegister] = useState(false);
 
   // Unique values for filters
   const uniqueWaiters = useMemo(() => [...new Set(orders.map(o => o.waiterName).filter(Boolean))], [orders]);
