@@ -435,6 +435,24 @@ const RestaurantApp: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setShowProfile(true)}
+              className="flex items-center gap-2"
+            >
+              <UserCircleIcon className="w-4 h-4" />
+              <span className="hidden md:inline">Profilul Meu</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCashRegister(true)}
+              className="flex items-center gap-2"
+            >
+              <Calculator className="w-4 h-4" />
+              <span className="hidden md:inline">Casierie</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setShowGlobalHistory(true)}
               className="flex items-center gap-2"
             >
