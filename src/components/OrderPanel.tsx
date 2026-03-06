@@ -1197,13 +1197,19 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     <Banknote className="w-4 h-4" />
                     Suma primită de la client
                   </p>
-                  <Input
-                    type="number"
-                    value={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.value)}
-                    placeholder="Introduceți suma primită (RON)"
-                    className="text-lg font-mono mb-2"
-                  />
+                  <div
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg bg-card border cursor-pointer mb-2 transition-colors",
+                      activeNumpad === 'cashReceived' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
+                    )}
+                    onClick={() => setActiveNumpad(activeNumpad === 'cashReceived' ? null : 'cashReceived')}
+                  >
+                    <span className={cn("text-lg font-mono", !cashReceived && "text-muted-foreground")}>
+                      {cashReceived || 'Apasă pentru a introduce suma'}
+                    </span>
+                    {cashReceived && <span className="text-sm text-muted-foreground">RON</span>}
+                  </div>
+                  <NumpadKeyboard field="cashReceived" label="Sumă primită" suffix="RON" />
                   <div className="flex gap-2 mb-2">
                     {[50, 100, 200, 500].map(amt => (
                       <Button
