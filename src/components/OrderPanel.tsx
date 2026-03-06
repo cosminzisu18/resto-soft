@@ -53,8 +53,15 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
   const [tipValue, setTipValue] = useState('');
   const [cui, setCui] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'usage_card'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'usage_card' | 'mixed'>('cash');
   const [usageCardCode, setUsageCardCode] = useState('');
+  const [cashReceived, setCashReceived] = useState('');
+  
+  // Mixed payment state
+  const [mixedCash, setMixedCash] = useState('');
+  const [mixedCard, setMixedCard] = useState('');
+  const [mixedUsageCard, setMixedUsageCard] = useState('');
+  const [mixedUsageCardCode, setMixedUsageCardCode] = useState('');
   
   // Split payment state
   const [splitMode, setSplitMode] = useState<'full' | 'custom' | 'items' | 'persons'>('full');
