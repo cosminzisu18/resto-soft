@@ -57,7 +57,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'pos', label: 'RestoPOS', icon: ShoppingCart },
+  { id: 'pos', label: 'RestoSoft', icon: ShoppingCart },
   { id: 'kiosk', label: 'Kiosk Self-Order', icon: Store },
   { id: 'kds', label: 'KDS & Producție', icon: UtensilsCrossed },
   { id: 'stocks', label: 'Stocuri & Rețete', icon: Package },

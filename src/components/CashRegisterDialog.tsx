@@ -411,7 +411,7 @@ const CashRegisterDialog: React.FC<CashRegisterDialogProps> = ({ open, onClose, 
                 <div className="bg-muted rounded-xl p-4 font-mono text-sm space-y-1">
                   <div className="text-center font-bold text-base mb-2">RAPORT X</div>
                   <div className="text-center text-xs text-muted-foreground mb-3">
-                    RestoPOS • {today.toLocaleDateString('ro-RO')} • {today.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                    RestoSoft • {today.toLocaleDateString('ro-RO')} • {today.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
                   </div>
                   <Separator />
 

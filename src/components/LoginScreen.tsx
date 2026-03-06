@@ -359,7 +359,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          RestoPOS v2.0 • © 2024
+          RestoSoft v1.0 • © 2026
         </p>
       </div>
     </div>

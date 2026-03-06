@@ -431,7 +431,7 @@ const RestaurantApp: React.FC = () => {
     return (
       <div className="h-screen flex flex-col" {...swipeHandlers}>
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-          <h1 className="font-semibold">RestoPOS - Ospătar ({currentUser?.name})</h1>
+          <h1 className="font-semibold">RestoSoft - Ospătar ({currentUser?.name})</h1>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
