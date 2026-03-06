@@ -117,7 +117,7 @@ const CashRegisterDialog: React.FC<CashRegisterDialogProps> = ({ open, onClose, 
 
   const handleExportXReport = () => {
     const reportLines = [
-      'RAPORT X - RestoPOS',
+      'RAPORT X - RestoSoft',
       `Data: ${today.toLocaleDateString('ro-RO')}`,
       `Ora: ${today.toLocaleTimeString('ro-RO')}`,
       `Operator: ${operatorName}`,
