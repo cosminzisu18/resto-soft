@@ -63,12 +63,102 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [mixedUsageCard, setMixedUsageCard] = useState('');
   const [mixedUsageCardCode, setMixedUsageCardCode] = useState('');
   
+  // Virtual numpad state
+  const [activeNumpad, setActiveNumpad] = useState<'cashReceived' | 'tipValue' | 'cui' | 'mixedCash' | 'mixedCard' | 'mixedUsageCard' | 'customAmount' | null>(null);
+
   // Split payment state
   const [splitMode, setSplitMode] = useState<'full' | 'custom' | 'items' | 'persons'>('full');
   const [customAmount, setCustomAmount] = useState('');
   const [selectedPayItems, setSelectedPayItems] = useState<Record<string, number>>({});
   const [splitPersons, setSplitPersons] = useState(2);
   const [paidAmounts, setPaidAmounts] = useState<number[]>([]);
+
+  // Numpad helper
+  const getNumpadValue = (field: typeof activeNumpad): string => {
+    switch (field) {
+      case 'cashReceived': return cashReceived;
+      case 'tipValue': return tipType === 'value' ? tipValue : '';
+      case 'cui': return cui;
+      case 'mixedCash': return mixedCash;
+      case 'mixedCard': return mixedCard;
+      case 'mixedUsageCard': return mixedUsageCard;
+      case 'customAmount': return customAmount;
+      default: return '';
+    }
+  };
+
+  const setNumpadValue = (field: typeof activeNumpad, val: string) => {
+    switch (field) {
+      case 'cashReceived': setCashReceived(val); break;
+      case 'tipValue': setTipType('value'); setTipValue(val); break;
+      case 'cui': setCui(val); break;
+      case 'mixedCash': setMixedCash(val); break;
+      case 'mixedCard': setMixedCard(val); break;
+      case 'mixedUsageCard': setMixedUsageCard(val); break;
+      case 'customAmount': setCustomAmount(val); break;
+    }
+  };
+
+  const handleNumpadKey = (key: string) => {
+    if (!activeNumpad) return;
+    const current = getNumpadValue(activeNumpad);
+    if (key === '⌫') {
+      setNumpadValue(activeNumpad, current.slice(0, -1));
+    } else if (key === 'C') {
+      setNumpadValue(activeNumpad, '');
+    } else if (key === '.') {
+      if (!current.includes('.')) {
+        setNumpadValue(activeNumpad, current + '.');
+      }
+    } else {
+      const newVal = current + key;
+      if (activeNumpad === 'cui') {
+        if (newVal.length <= 15) setNumpadValue(activeNumpad, newVal);
+      } else {
+        if (parseFloat(newVal) <= 99999) setNumpadValue(activeNumpad, newVal);
+      }
+    }
+  };
+
+  const NumpadKeyboard = ({ field, label, suffix }: { field: typeof activeNumpad; label: string; suffix?: string }) => {
+    if (activeNumpad !== field) return null;
+    const value = getNumpadValue(field);
+    const isCui = field === 'cui';
+    return (
+      <div className="mt-2 p-3 rounded-lg bg-muted border border-border">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-medium text-muted-foreground">{label}</span>
+          <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setActiveNumpad(null)}>
+            ✓ Gata
+          </Button>
+        </div>
+        <div className="text-center p-2 rounded-lg bg-card mb-2">
+          <span className="text-2xl font-bold font-mono">{value || '0'}</span>
+          {suffix && <span className="text-lg text-muted-foreground ml-1">{suffix}</span>}
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {['1', '2', '3', '⌫', '4', '5', '6', 'C', '7', '8', '9', isCui ? '' : '.', isCui ? '' : '00', '0', isCui ? '' : '000', ''].map((key, idx) => 
+            key ? (
+              <Button
+                key={idx}
+                variant={key === '⌫' || key === 'C' ? 'secondary' : 'outline'}
+                className="h-11 text-base font-bold"
+                onClick={() => {
+                  if (key === '000') {
+                    handleNumpadKey('0'); handleNumpadKey('0'); handleNumpadKey('0');
+                  } else {
+                    handleNumpadKey(key);
+                  }
+                }}
+              >
+                {key}
+              </Button>
+            ) : <div key={idx} />
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -869,7 +959,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={showPayment} onOpenChange={(open) => { setShowPayment(open); if (!open) { setSplitMode('full'); setPaidAmounts([]); setCustomAmount(''); setSelectedPayItems({}); setCashReceived(''); setMixedCash(''); setMixedCard(''); setMixedUsageCard(''); setMixedUsageCardCode(''); } }}>
+      <Dialog open={showPayment} onOpenChange={(open) => { setShowPayment(open); if (!open) { setSplitMode('full'); setPaidAmounts([]); setCustomAmount(''); setSelectedPayItems({}); setCashReceived(''); setMixedCash(''); setMixedCard(''); setMixedUsageCard(''); setMixedUsageCardCode(''); setActiveNumpad(null); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Procesare plată - Masa {table.number}</DialogTitle>
@@ -1107,13 +1197,19 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     <Banknote className="w-4 h-4" />
                     Suma primită de la client
                   </p>
-                  <Input
-                    type="number"
-                    value={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.value)}
-                    placeholder="Introduceți suma primită (RON)"
-                    className="text-lg font-mono mb-2"
-                  />
+                  <div
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-lg bg-card border cursor-pointer mb-2 transition-colors",
+                      activeNumpad === 'cashReceived' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
+                    )}
+                    onClick={() => setActiveNumpad(activeNumpad === 'cashReceived' ? null : 'cashReceived')}
+                  >
+                    <span className={cn("text-lg font-mono", !cashReceived && "text-muted-foreground")}>
+                      {cashReceived || 'Apasă pentru a introduce suma'}
+                    </span>
+                    {cashReceived && <span className="text-sm text-muted-foreground">RON</span>}
+                  </div>
+                  <NumpadKeyboard field="cashReceived" label="Sumă primită" suffix="RON" />
                   <div className="flex gap-2 mb-2">
                     {[50, 100, 200, 500].map(amt => (
                       <Button
@@ -1289,22 +1385,35 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   </Button>
                 ))}
               </div>
-              <Input
-                type="number"
-                value={tipType === 'value' ? tipValue : ''}
-                onChange={(e) => { setTipType('value'); setTipValue(e.target.value); }}
-                placeholder="Sumă fixă (RON)"
-              />
+              <div
+                className={cn(
+                  "flex items-center justify-between p-2 rounded-lg bg-card border cursor-pointer transition-colors",
+                  activeNumpad === 'tipValue' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
+                )}
+                onClick={() => setActiveNumpad(activeNumpad === 'tipValue' ? null : 'tipValue')}
+              >
+                <span className={cn("font-mono", !(tipType === 'value' && tipValue) && "text-muted-foreground text-sm")}>
+                  {tipType === 'value' && tipValue ? `${tipValue} RON` : 'Sumă fixă (apasă)'}
+                </span>
+              </div>
+              <NumpadKeyboard field="tipValue" label="Bacșiș sumă fixă" suffix="RON" />
             </div>
 
             {/* CUI */}
             <div>
               <p className="font-medium mb-2">CUI Firmă (opțional)</p>
-              <Input
-                value={cui}
-                onChange={(e) => setCui(e.target.value)}
-                placeholder="RO12345678"
-              />
+              <div
+                className={cn(
+                  "flex items-center justify-between p-2 rounded-lg bg-card border cursor-pointer transition-colors",
+                  activeNumpad === 'cui' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
+                )}
+                onClick={() => setActiveNumpad(activeNumpad === 'cui' ? null : 'cui')}
+              >
+                <span className={cn("font-mono", !cui && "text-muted-foreground text-sm")}>
+                  {cui || 'Apasă pentru a introduce CUI'}
+                </span>
+              </div>
+              <NumpadKeyboard field="cui" label="CUI Firmă" />
               <p className="text-xs text-muted-foreground mt-1">
                 Pentru factură fiscală
               </p>
