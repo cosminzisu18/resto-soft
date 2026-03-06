@@ -1317,11 +1317,19 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               <Button 
                 className="flex-1 gradient-primary" 
                 onClick={handleCompletePayment}
-                disabled={(paymentMethod === 'usage_card' && !usageCardCode) || (splitMode === 'custom' && (!customAmount || parseFloat(customAmount) <= 0)) || (splitMode === 'items' && Object.values(selectedPayItems).every(v => v === 0))}
+                disabled={
+                  (paymentMethod === 'usage_card' && !usageCardCode) || 
+                  (splitMode === 'custom' && (!customAmount || parseFloat(customAmount) <= 0)) || 
+                  (splitMode === 'items' && Object.values(selectedPayItems).every(v => v === 0)) ||
+                  (paymentMethod === 'cash' && cashReceived !== '' && (parseFloat(cashReceived) || 0) < (getPayableAmount() + calculateTip())) ||
+                  (paymentMethod === 'mixed' && ((parseFloat(mixedCash) || 0) + (parseFloat(mixedCard) || 0) + (parseFloat(mixedUsageCard) || 0)) < (getPayableAmount() + calculateTip())) ||
+                  (paymentMethod === 'mixed' && (parseFloat(mixedUsageCard) || 0) > 0 && !mixedUsageCardCode)
+                }
               >
                 {paymentMethod === 'cash' && <Banknote className="w-4 h-4 mr-2" />}
                 {paymentMethod === 'card' && <CardIcon className="w-4 h-4 mr-2" />}
                 {paymentMethod === 'usage_card' && <Barcode className="w-4 h-4 mr-2" />}
+                {paymentMethod === 'mixed' && <><Banknote className="w-3 h-3 mr-1" /><CardIcon className="w-3 h-3 mr-1" /></>}
                 {splitMode !== 'full' && getPayableAmount() < ((order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0))
                   ? `Plătește ${getPayableAmount().toFixed(2)} RON`
                   : 'Finalizează'
