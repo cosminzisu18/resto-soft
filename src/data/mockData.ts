@@ -42,6 +42,8 @@ export const allergens: Allergen[] = [
   { id: 'sesame', name: 'Susan', icon: '⚪', color: 'bg-stone-400' },
 ];
 
+export type UnitType = 'buc' | 'portie' | 'gram';
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -54,6 +56,7 @@ export interface MenuItem {
   allergenIds?: string[];
   availableExtras?: string[]; // IDs of extra ingredients available for this item
   image?: string;
+  unitType?: UnitType; // 'buc' = per piece (default), 'portie' = per portion, 'gram' = price per 100g
   availability?: {
     restaurant: boolean;
     kiosk: boolean;
@@ -92,6 +95,7 @@ export interface OrderItem {
   menuItemId: string;
   menuItem: MenuItem;
   quantity: number;
+  weightGrams?: number; // used when unitType is 'gram'
   modifications: {
     added: string[];
     removed: string[];
@@ -380,8 +384,8 @@ export const menuItems: MenuItem[] = [
   { id: 'm16', name: 'Shaorma mare', description: 'Shaorma cu de toate', price: 30, category: 'Giros', kdsStation: 'giros', prepTime: 8, ingredients: ['Carne pui', 'Cartofi', 'Varză', 'Morcov', 'Sos'], allergenIds: ['gluten', 'mustard'], availableExtras: ['ei8', 'ei10', 'ei11', 'ei16', 'ei17', 'ei18'], image: 'https://images.unsplash.com/photo-1561758033-d89a9ad46330?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
 
   // Garnituri
-  { id: 'm17', name: 'Cartofi prăjiți', description: 'Porție cartofi aurii', price: 12, category: 'Garnituri', kdsStation: 'grill', prepTime: 8, ingredients: ['Cartofi', 'Sare'], availableExtras: ['ei16', 'ei17', 'ei18'], image: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=400', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
-  { id: 'm18', name: 'Salată mixtă', description: 'Salată de sezon', price: 14, category: 'Garnituri', kdsStation: 'grill', prepTime: 3, ingredients: ['Roșii', 'Castraveți', 'Ceapă', 'Măsline'], availableExtras: ['ei4', 'ei21'], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm17', name: 'Cartofi prăjiți', description: 'Porție cartofi aurii', price: 12, category: 'Garnituri', kdsStation: 'grill', prepTime: 8, ingredients: ['Cartofi', 'Sare'], availableExtras: ['ei16', 'ei17', 'ei18'], image: 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=400', unitType: 'portie', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
+  { id: 'm18', name: 'Salată mixtă', description: 'Salată de sezon', price: 8, category: 'Garnituri', kdsStation: 'grill', prepTime: 3, ingredients: ['Roșii', 'Castraveți', 'Ceapă', 'Măsline'], availableExtras: ['ei4', 'ei21'], image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400', unitType: 'gram', availability: { restaurant: true, kiosk: true, app: true, delivery: true } },
 
   // Băuturi
   { id: 'm19', name: 'Cola 330ml', description: '', price: 8, category: 'Băuturi', kdsStation: 'grill', prepTime: 0, ingredients: [], availability: { restaurant: true, kiosk: true, app: true, delivery: true } },

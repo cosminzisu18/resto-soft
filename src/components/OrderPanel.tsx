@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, MenuItem, Order, OrderItem, menuCategories } from '@/data/mockData';
+import { Table, MenuItem, Order, OrderItem, menuCategories, UnitType } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { 
@@ -44,6 +44,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [modQuantity, setModQuantity] = useState(1);
   const [showReceipt, setShowReceipt] = useState(false);
   const [showUpsellDialog, setShowUpsellDialog] = useState(false);
+  const [modWeightGrams, setModWeightGrams] = useState<string>('');
   const [upsellAnsweredForOrder, setUpsellAnsweredForOrder] = useState<string | null>(null);
   const [showOrderHistory, setShowOrderHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -70,19 +71,35 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     enabled: true,
   });
 
+  const getUnitLabel = (unitType?: UnitType) => {
+    switch (unitType) {
+      case 'portie': return 'Por.';
+      case 'gram': return '100g';
+      default: return 'Buc';
+    }
+  };
+
+  const getItemPrice = (item: MenuItem | OrderItem['menuItem'], quantity: number, weightGrams?: number) => {
+    if (item.unitType === 'gram' && weightGrams) {
+      return item.price * weightGrams / 100;
+    }
+    return item.price * quantity;
+  };
+
   let order = getActiveOrderForTable(table.id);
   if (!order) {
     order = createOrder(table.id);
   }
 
   const handleAddItem = (item: MenuItem) => {
-    if (item.ingredients.length > 0) {
+    if (item.ingredients.length > 0 || item.unitType === 'gram') {
       setShowModifier(item);
       setEditingItem(null);
       setModAdditions([]);
       setModRemovals([]);
       setModNotes('');
       setModQuantity(1);
+      setModWeightGrams(item.unitType === 'gram' ? '200' : '');
     } else {
       addItemToOrder(order!.id, item, 1);
       toast({ title: `${item.name} adăugat` });
@@ -100,6 +117,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     setModRemovals(item.modifications.removed);
     setModNotes(item.modifications.notes);
     setModQuantity(item.quantity);
+    setModWeightGrams(item.weightGrams ? String(item.weightGrams) : '');
   };
 
   const handleRemoveItem = (itemId: string) => {
@@ -110,7 +128,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       return;
     }
     const updatedItems = order.items.filter(i => i.id !== itemId);
-    const totalAmount = updatedItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+    const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
     updateOrder({ ...order, items: updatedItems, totalAmount });
     toast({ title: 'Produs eliminat' });
   };
@@ -118,7 +136,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const handleClearAll = () => {
     if (!order) return;
     const nonPendingItems = order.items.filter(i => i.status !== 'pending');
-    const totalAmount = nonPendingItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+    const totalAmount = nonPendingItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
     updateOrder({ ...order, items: nonPendingItems, totalAmount });
     setShowClearConfirm(false);
     toast({ title: 'Toate produsele noi au fost șterse' });
@@ -128,12 +146,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     if (!showModifier || !order) return;
     
     if (editingItem) {
-      // Update existing item
+      const wg = showModifier.unitType === 'gram' ? parseInt(modWeightGrams) || 0 : undefined;
       const updatedItems = order.items.map(item => {
         if (item.id !== editingItem.id) return item;
         return {
           ...item,
           quantity: modQuantity,
+          weightGrams: wg,
           modifications: {
             added: modAdditions,
             removed: modRemovals,
@@ -141,16 +160,27 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           }
         };
       });
-      const totalAmount = updatedItems.reduce((sum, i) => sum + (i.menuItem.price * i.quantity), 0);
+      const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
       updateOrder({ ...order, items: updatedItems, totalAmount });
       toast({ title: 'Produs actualizat' });
     } else {
-      // Add new item
-      addItemToOrder(order.id, showModifier, modQuantity, {
-        added: modAdditions,
-        removed: modRemovals,
-        notes: modNotes,
-      });
+      const wg = showModifier.unitType === 'gram' ? parseInt(modWeightGrams) || 0 : undefined;
+      const newItem: OrderItem = {
+        id: Date.now().toString(),
+        menuItemId: showModifier.id,
+        menuItem: showModifier,
+        quantity: modQuantity,
+        weightGrams: wg,
+        modifications: {
+          added: modAdditions,
+          removed: modRemovals,
+          notes: modNotes,
+        },
+        status: 'pending',
+      };
+      const updatedItems = [...order.items, newItem];
+      const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
+      updateOrder({ ...order, items: updatedItems, totalAmount });
       toast({ title: `${showModifier.name} adăugat` });
     }
     
@@ -411,7 +441,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/50 to-transparent p-2.5 md:p-3 pb-6 md:pb-8">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="font-semibold text-white text-sm md:text-base line-clamp-2 leading-tight">{item.name}</h3>
-                        <span className="font-bold text-white text-sm md:text-base whitespace-nowrap">{item.price} RON</span>
+                        <span className="font-bold text-white text-sm md:text-base whitespace-nowrap">{item.price} RON/{getUnitLabel(item.unitType)}</span>
                       </div>
                     </div>
                     {/* Clock badge */}
@@ -538,8 +568,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1 md:gap-2">
-                          <span className="font-medium text-xs md:text-sm">{item.quantity}x</span>
+                          <span className="font-medium text-xs md:text-sm">
+                            {item.menuItem.unitType === 'gram' && item.weightGrams 
+                              ? `${item.weightGrams}g` 
+                              : `${item.quantity}x`
+                            }
+                          </span>
                           <span className="font-medium text-xs md:text-sm truncate">{item.menuItem.name}</span>
+                          {item.menuItem.unitType && item.menuItem.unitType !== 'buc' && (
+                            <span className="text-[10px] text-muted-foreground bg-muted px-1 rounded">
+                              {getUnitLabel(item.menuItem.unitType)}
+                            </span>
+                          )}
                         </div>
                         {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
                           <div className="text-xs text-muted-foreground mt-1">
@@ -566,9 +606,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                       <div className="flex flex-col items-end gap-1">
                         <span className="font-medium text-xs md:text-sm">
                           {item.complimentary ? (
-                            <span className="text-success line-through decoration-success/50">{(item.menuItem.price * item.quantity).toFixed(2)}</span>
+                            <span className="text-success line-through decoration-success/50">{getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)}</span>
                           ) : (
-                            (item.menuItem.price * item.quantity).toFixed(2)
+                            getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)
                           )}
                         </span>
                         {item.complimentary && (
@@ -585,7 +625,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                                   if (i.id !== item.id) return i;
                                   return { ...i, complimentary: !i.complimentary };
                                 });
-                                const totalAmount = updatedItems.reduce((sum, i) => sum + (i.complimentary ? 0 : i.menuItem.price * i.quantity), 0);
+                                const totalAmount = updatedItems.reduce((sum, i) => sum + (i.complimentary ? 0 : getItemPrice(i.menuItem, i.quantity, i.weightGrams)), 0);
                                 updateOrder({ ...order!, items: updatedItems, totalAmount });
                                 toast({ title: item.complimentary ? 'Produs taxat normal' : 'Produs oferit din partea casei' });
                               }}
@@ -673,27 +713,88 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           </DialogHeader>
           
           <div className="space-y-4">
-            {/* Quantity */}
-            <div className="flex items-center justify-between">
-              <span className="font-medium">Cantitate</span>
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setModQuantity(Math.max(1, modQuantity - 1))}
-                >
-                  <Minus className="w-4 h-4" />
-                </Button>
-                <span className="w-8 text-center font-bold">{modQuantity}</span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setModQuantity(modQuantity + 1)}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
+            {/* Unit type indicator */}
+            {showModifier?.unitType && showModifier.unitType !== 'buc' && (
+              <div className="p-2 rounded-lg bg-primary/10 text-center">
+                <span className="text-sm font-medium text-primary">
+                  Preț: {showModifier.price} RON / {getUnitLabel(showModifier.unitType)}
+                </span>
               </div>
-            </div>
+            )}
+
+            {/* Quantity or Weight Input */}
+            {showModifier?.unitType === 'gram' ? (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">Gramaj</span>
+                  <span className="text-sm text-muted-foreground">{showModifier.price} RON / 100g</span>
+                </div>
+                {/* Weight display */}
+                <div className="text-center p-3 rounded-lg bg-secondary mb-3">
+                  <span className="text-3xl font-bold font-mono">{modWeightGrams || '0'}</span>
+                  <span className="text-lg text-muted-foreground ml-1">g</span>
+                </div>
+                {/* Virtual numpad */}
+                <div className="grid grid-cols-3 gap-2">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map(key => (
+                    <Button
+                      key={key}
+                      variant="outline"
+                      className="h-12 text-lg font-bold"
+                      onClick={() => {
+                        if (key === '⌫') {
+                          setModWeightGrams(modWeightGrams.slice(0, -1));
+                        } else {
+                          const newVal = modWeightGrams + key;
+                          if (parseInt(newVal) <= 9999) {
+                            setModWeightGrams(newVal);
+                          }
+                        }
+                      }}
+                    >
+                      {key}
+                    </Button>
+                  ))}
+                </div>
+                {/* Quick weight buttons */}
+                <div className="flex gap-2 mt-2">
+                  {['100', '150', '200', '250', '300', '500'].map(w => (
+                    <Button
+                      key={w}
+                      variant={modWeightGrams === w ? 'default' : 'outline'}
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => setModWeightGrams(w)}
+                    >
+                      {w}g
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="font-medium">
+                  Cantitate {showModifier?.unitType === 'portie' ? '(porții)' : '(buc)'}
+                </span>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setModQuantity(Math.max(1, modQuantity - 1))}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </Button>
+                  <span className="w-8 text-center font-bold">{modQuantity}</span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setModQuantity(modQuantity + 1)}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Ingredients */}
             {showModifier && showModifier.ingredients.length > 0 && (
@@ -750,7 +851,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             </div>
 
             <Button className="w-full" onClick={handleConfirmModifier}>
-              {editingItem ? 'Actualizează' : 'Adaugă în comandă'} - {((showModifier?.price || 0) * modQuantity).toFixed(2)} RON
+              {editingItem ? 'Actualizează' : 'Adaugă în comandă'} - {
+                showModifier?.unitType === 'gram' 
+                  ? ((showModifier?.price || 0) * (parseInt(modWeightGrams) || 0) / 100).toFixed(2)
+                  : ((showModifier?.price || 0) * modQuantity).toFixed(2)
+              } RON
             </Button>
           </div>
         </DialogContent>
