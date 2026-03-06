@@ -363,10 +363,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     )}
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-primary text-sm">{item.price} RON</span>
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {item.prepTime}'
-                      </span>
                     </div>
                   </div>
                 </button>
