@@ -5,7 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Order, OrderItem } from '@/data/mockData';
+import { Order, OrderItem, menuItems } from '@/data/mockData';
+import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { useNotificationSound } from '@/hooks/useNotificationSound';
 import { useToast } from '@/hooks/use-toast';
@@ -13,7 +14,8 @@ import {
   Truck, Monitor, Bell, Clock, ShoppingCart, 
   ChevronRight, Globe, Phone, ArrowLeft, Eye,
   CheckCircle, XCircle, Bike, MapPin, User,
-  ChefHat, Check, Printer, MessageSquare, AlertTriangle
+  ChefHat, Check, Printer, MessageSquare, AlertTriangle,
+  Plus, Zap
 } from 'lucide-react';
 
 interface ExternalOrdersNotificationProps {
@@ -48,7 +50,44 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const { playDelivery, playNewOrder, initAudioContext } = useNotificationSound();
   const { toast } = useToast();
+  const { createDeliveryOrder, addItemToOrder } = useRestaurant();
   const prevCountRef = useRef(0);
+
+  const SIMULATION_NAMES = ['Ion Popescu', 'Ana Mihai', 'George Stan', 'Andreea Radu', 'Vlad Neagu', 'Cristina Dinu'];
+  const SIMULATION_ADDRESSES = [
+    'Str. Victoriei 45, București', 'Bd. Unirii 120, Et. 3', 'Calea Moșilor 88, Sector 2',
+    'Str. Lipscani 15, București', 'Bd. Decebal 30, Ap. 12', 'Str. Traian 67, Sector 3'
+  ];
+
+  const handleSimulateOrder = useCallback(() => {
+    const sources = ['glovo', 'wolt', 'bolt', 'kiosk'] as const;
+    const source = sources[Math.floor(Math.random() * sources.length)];
+    const name = SIMULATION_NAMES[Math.floor(Math.random() * SIMULATION_NAMES.length)];
+    const address = SIMULATION_ADDRESSES[Math.floor(Math.random() * SIMULATION_ADDRESSES.length)];
+    const phone = `07${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const platformId = source !== 'kiosk' ? `${source.toUpperCase().slice(0, 3)}-${Math.floor(10000 + Math.random() * 90000)}` : undefined;
+
+    const newOrder = createDeliveryOrder(source, {
+      name,
+      phone,
+      address: source !== 'kiosk' ? address : undefined,
+      platformOrderId: platformId,
+    });
+
+    // Add 2-4 random items
+    const itemCount = 2 + Math.floor(Math.random() * 3);
+    const availableItems = menuItems;
+    for (let i = 0; i < itemCount && i < availableItems.length; i++) {
+      const randomItem = availableItems[Math.floor(Math.random() * availableItems.length)];
+      const qty = 1 + Math.floor(Math.random() * 3);
+      addItemToOrder(newOrder.id, randomItem, qty);
+    }
+
+    toast({
+      title: `🔔 Comandă nouă simulată`,
+      description: `${sourceConfig[source]?.label} - ${name}`,
+    });
+  }, [createDeliveryOrder, addItemToOrder, toast]);
 
   const externalOrders = useMemo(() =>
     orders.filter(o => 
@@ -392,11 +431,17 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
                       <Badge variant="destructive" className="text-xs">{newCount} noi</Badge>
                     )}
                   </span>
-                  {newCount > 0 && (
-                    <Button variant="outline" size="sm" onClick={handleAcknowledgeAll}>
-                      Marchează citite
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={handleSimulateOrder} className="gap-1">
+                      <Zap className="w-3 h-3" />
+                      Simulează
                     </Button>
-                  )}
+                    {newCount > 0 && (
+                      <Button variant="outline" size="sm" onClick={handleAcknowledgeAll}>
+                        Marchează citite
+                      </Button>
+                    )}
+                  </div>
                 </DialogTitle>
               </DialogHeader>
 
@@ -439,6 +484,15 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
                     <div className="text-center py-8 text-muted-foreground">
                       <Truck className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p>Nu sunt comenzi externe active</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 gap-2"
+                        onClick={handleSimulateOrder}
+                      >
+                        <Zap className="w-4 h-4" />
+                        Simulează Comandă
+                      </Button>
                     </div>
                   ) : (
                     externalOrders.map(order => {
