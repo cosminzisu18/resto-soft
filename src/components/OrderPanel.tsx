@@ -568,8 +568,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1 md:gap-2">
-                          <span className="font-medium text-xs md:text-sm">{item.quantity}x</span>
+                          <span className="font-medium text-xs md:text-sm">
+                            {item.menuItem.unitType === 'gram' && item.weightGrams 
+                              ? `${item.weightGrams}g` 
+                              : `${item.quantity}x`
+                            }
+                          </span>
                           <span className="font-medium text-xs md:text-sm truncate">{item.menuItem.name}</span>
+                          {item.menuItem.unitType && item.menuItem.unitType !== 'buc' && (
+                            <span className="text-[10px] text-muted-foreground bg-muted px-1 rounded">
+                              {getUnitLabel(item.menuItem.unitType)}
+                            </span>
+                          )}
                         </div>
                         {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
                           <div className="text-xs text-muted-foreground mt-1">
@@ -596,9 +606,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                       <div className="flex flex-col items-end gap-1">
                         <span className="font-medium text-xs md:text-sm">
                           {item.complimentary ? (
-                            <span className="text-success line-through decoration-success/50">{(item.menuItem.price * item.quantity).toFixed(2)}</span>
+                            <span className="text-success line-through decoration-success/50">{getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)}</span>
                           ) : (
-                            (item.menuItem.price * item.quantity).toFixed(2)
+                            getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)
                           )}
                         </span>
                         {item.complimentary && (
