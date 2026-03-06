@@ -460,34 +460,99 @@ const POSModule: React.FC = () => {
               </div>
 
               {/* Filters Row */}
-              <div className="flex gap-3 mb-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Caută după masă, ID, ospătar..." 
-                    value={ordersSearchQuery}
-                    onChange={(e) => setOrdersSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
+              <div className="space-y-2 mb-4">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input 
+                      placeholder="Caută după masă, ID, ospătar, client..." 
+                      value={ordersSearchQuery}
+                      onChange={(e) => setOrdersSearchQuery(e.target.value)}
+                      className="pl-9 h-8"
+                    />
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleExportExcel}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Export
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => toast({ title: 'Se actualizează...' })}>
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
                 </div>
-                <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Sursă" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Toate sursele</SelectItem>
-                    <SelectItem value="restaurant">POS</SelectItem>
-                    <SelectItem value="kiosk">Kiosk</SelectItem>
-                    <SelectItem value="phone">Telefon</SelectItem>
-                    <SelectItem value="glovo">Glovo</SelectItem>
-                    <SelectItem value="wolt">Wolt</SelectItem>
-                    <SelectItem value="bolt">Bolt</SelectItem>
-                    <SelectItem value="own_website">Website</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" size="icon" onClick={() => toast({ title: 'Se actualizează...' })}>
-                  <RefreshCw className="w-4 h-4" />
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {/* Date Picker */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={cn("h-8 text-xs", filterDate && "border-primary text-primary")}>
+                        <Calendar className="w-3 h-3 mr-1" />
+                        {filterDate ? format(filterDate, 'dd MMM yyyy', { locale: ro }) : 'Toate zilele'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={filterDate}
+                        onSelect={setFilterDate}
+                        className={cn("p-3 pointer-events-auto")}
+                      />
+                      {filterDate && (
+                        <div className="p-2 border-t">
+                          <Button variant="ghost" size="sm" className="w-full" onClick={() => setFilterDate(undefined)}>
+                            Resetează
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                    <SelectTrigger className="w-[130px] h-8 text-xs">
+                      <SelectValue placeholder="Sursă" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toate sursele</SelectItem>
+                      <SelectItem value="restaurant">POS</SelectItem>
+                      <SelectItem value="kiosk">Kiosk</SelectItem>
+                      <SelectItem value="phone">Telefon</SelectItem>
+                      <SelectItem value="glovo">Glovo</SelectItem>
+                      <SelectItem value="wolt">Wolt</SelectItem>
+                      <SelectItem value="bolt">Bolt</SelectItem>
+                      <SelectItem value="own_website">Website</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={filterWaiter} onValueChange={setFilterWaiter}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectValue placeholder="Ospătar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toți ospătarii</SelectItem>
+                      {uniqueWaiters.map(w => (
+                        <SelectItem key={w} value={w!}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={filterPayment} onValueChange={setFilterPayment}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectValue placeholder="Plată" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toate</SelectItem>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="usage_card">Card Utilizare</SelectItem>
+                      <SelectItem value="unpaid">Neplătit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Summary Bar */}
+              <div className="flex gap-3 text-sm mb-3">
+                <span className="text-muted-foreground">{filteredOrders.length} comenzi</span>
+                <span className="font-medium">Total: {filteredRevenue.toFixed(2)} RON</span>
+                {filteredTips > 0 && <span className="text-muted-foreground">Bacșișuri: {filteredTips.toFixed(2)} RON</span>}
               </div>
 
               {/* Orders List */}
