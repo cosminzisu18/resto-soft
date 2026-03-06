@@ -8,7 +8,7 @@ import {
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
   Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode, Search, ChevronUp, ChevronDown,
-  PanelLeftClose, PanelRightClose, ShoppingCart, Info, Gift
+  PanelLeftClose, PanelRightClose, ShoppingCart, Info, Gift, Users, ListChecks, Hash
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -52,6 +52,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [cui, setCui] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'usage_card'>('cash');
   const [usageCardCode, setUsageCardCode] = useState('');
+  
+  // Split payment state
+  const [splitMode, setSplitMode] = useState<'full' | 'custom' | 'items' | 'persons'>('full');
+  const [customAmount, setCustomAmount] = useState('');
+  const [selectedPayItems, setSelectedPayItems] = useState<Record<string, number>>({});
+  const [splitPersons, setSplitPersons] = useState(2);
+  const [paidAmounts, setPaidAmounts] = useState<number[]>([]);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -219,21 +226,57 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     });
   };
 
+  const getPayableAmount = (): number => {
+    if (!order) return 0;
+    const remaining = order.totalAmount - paidAmounts.reduce((s, a) => s + a, 0);
+    switch (splitMode) {
+      case 'full': return remaining;
+      case 'custom': return Math.min(parseFloat(customAmount) || 0, remaining);
+      case 'items': return Object.entries(selectedPayItems).reduce((sum, [itemId, qty]) => {
+        const item = order.items.find(i => i.id === itemId);
+        if (!item) return sum;
+        return sum + (item.complimentary ? 0 : item.menuItem.price * qty);
+      }, 0);
+      case 'persons': return remaining / splitPersons;
+      default: return remaining;
+    }
+  };
+
   const calculateTip = (): number => {
     if (!tipValue || !order) return 0;
     const val = parseFloat(tipValue);
     if (isNaN(val)) return 0;
-    return tipType === 'percent' ? (order.totalAmount * val / 100) : val;
+    const base = getPayableAmount();
+    return tipType === 'percent' ? (base * val / 100) : val;
   };
 
   const handleCompletePayment = () => {
     if (!order) return;
+    const amount = getPayableAmount();
     const tip = calculateTip();
+    const remaining = order.totalAmount - paidAmounts.reduce((s, a) => s + a, 0);
+    
+    if (splitMode !== 'full' && amount < remaining) {
+      // Partial payment
+      setPaidAmounts([...paidAmounts, amount]);
+      toast({ 
+        title: 'Plată parțială procesată',
+        description: `${amount.toFixed(2)} RON plătit. Rămas: ${(remaining - amount).toFixed(2)} RON`,
+      });
+      // Reset for next partial payment
+      setCustomAmount('');
+      setSelectedPayItems({});
+      setTipValue('');
+      return;
+    }
+    
+    // Full/final payment
     completeOrder(order.id, tip, cui || undefined);
     toast({ 
       title: 'Plată procesată',
-      description: `Total: ${(order.totalAmount + tip).toFixed(2)} RON`,
+      description: `Total: ${(amount + tip).toFixed(2)} RON`,
     });
+    setPaidAmounts([]);
     setShowReceipt(true);
   };
 
@@ -704,18 +747,42 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={showPayment} onOpenChange={setShowPayment}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-auto">
+      <Dialog open={showPayment} onOpenChange={(open) => { setShowPayment(open); if (!open) { setSplitMode('full'); setPaidAmounts([]); setCustomAmount(''); setSelectedPayItems({}); } }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Procesare plată - Masa {table.number}</DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
+            {/* Paid amounts indicator */}
+            {paidAmounts.length > 0 && (
+              <div className="p-3 rounded-lg bg-success/10 border border-success/20">
+                <p className="text-sm font-medium text-success mb-1">Plăți efectuate:</p>
+                {paidAmounts.map((amt, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span>Plata {i + 1}</span>
+                    <span className="font-medium">{amt.toFixed(2)} RON</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm font-bold mt-1 pt-1 border-t border-success/20">
+                  <span>Rămas de plată</span>
+                  <span>{((order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0)).toFixed(2)} RON</span>
+                </div>
+              </div>
+            )}
+
+            {/* Summary */}
             <div className="p-4 rounded-lg bg-secondary">
-              <div className="flex justify-between text-lg">
-                <span>Subtotal</span>
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Total comandă</span>
                 <span>{order?.totalAmount.toFixed(2)} RON</span>
               </div>
+              {splitMode !== 'full' && (
+                <div className="flex justify-between text-lg font-bold mt-1">
+                  <span>De plată acum</span>
+                  <span className="text-primary">{getPayableAmount().toFixed(2)} RON</span>
+                </div>
+              )}
               {calculateTip() > 0 && (
                 <div className="flex justify-between text-sm text-muted-foreground mt-1">
                   <span>Bacșiș</span>
@@ -724,9 +791,130 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               )}
               <div className="flex justify-between text-xl font-bold mt-2 pt-2 border-t border-border">
                 <span>Total</span>
-                <span>{((order?.totalAmount || 0) + calculateTip()).toFixed(2)} RON</span>
+                <span>{(getPayableAmount() + calculateTip()).toFixed(2)} RON</span>
               </div>
             </div>
+
+            {/* Split Mode Selection */}
+            <div>
+              <p className="font-medium mb-3">Tip plată</p>
+              <div className="grid grid-cols-4 gap-2">
+                {([
+                  { mode: 'full' as const, label: 'Integral', icon: CreditCard },
+                  { mode: 'custom' as const, label: 'Sumă', icon: Hash },
+                  { mode: 'items' as const, label: 'Produse', icon: ListChecks },
+                  { mode: 'persons' as const, label: 'Persoane', icon: Users },
+                ]).map(({ mode, label, icon: Icon }) => (
+                  <button
+                    key={mode}
+                    onClick={() => { setSplitMode(mode); setSelectedPayItems({}); setCustomAmount(''); }}
+                    className={cn(
+                      "p-3 md:p-4 rounded-xl border-2 flex flex-col items-center gap-1.5 transition-all",
+                      splitMode === mode
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <Icon className={cn("w-6 h-6 md:w-7 md:h-7", splitMode === mode ? "text-primary" : "text-muted-foreground")} />
+                    <span className={cn("text-xs md:text-sm font-medium", splitMode === mode && "text-primary")}>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Amount Input */}
+            {splitMode === 'custom' && (
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <p className="font-medium mb-2 text-sm">Sumă de plată</p>
+                <Input
+                  type="number"
+                  value={customAmount}
+                  onChange={(e) => setCustomAmount(e.target.value)}
+                  placeholder="Introduceți suma (RON)"
+                  className="text-lg font-mono"
+                  max={(order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Maxim: {((order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0)).toFixed(2)} RON
+                </p>
+              </div>
+            )}
+
+            {/* Select Items */}
+            {splitMode === 'items' && order && (
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 max-h-48 overflow-auto">
+                <p className="font-medium mb-2 text-sm">Selectează produsele de plată</p>
+                <div className="space-y-2">
+                  {order.items.map(item => {
+                    const selectedQty = selectedPayItems[item.id] || 0;
+                    return (
+                      <div key={item.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-card">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium truncate block">{item.menuItem.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {item.menuItem.price} RON × {item.quantity}
+                            {item.complimentary && ' (gratis)'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={selectedQty === 0}
+                            onClick={() => setSelectedPayItems({ ...selectedPayItems, [item.id]: selectedQty - 1 })}
+                          >
+                            <Minus className="w-3 h-3" />
+                          </Button>
+                          <span className="w-6 text-center text-sm font-medium">{selectedQty}</span>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={selectedQty >= item.quantity}
+                            onClick={() => setSelectedPayItems({ ...selectedPayItems, [item.id]: selectedQty + 1 })}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Split by Persons */}
+            {splitMode === 'persons' && (
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <p className="font-medium mb-2 text-sm">Împarte la</p>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10"
+                    disabled={splitPersons <= 2}
+                    onClick={() => setSplitPersons(splitPersons - 1)}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </Button>
+                  <span className="text-2xl font-bold w-12 text-center">{splitPersons}</span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10"
+                    disabled={splitPersons >= 20}
+                    onClick={() => setSplitPersons(splitPersons + 1)}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground">persoane</span>
+                </div>
+                <p className="text-sm mt-2">
+                  Fiecare plătește: <span className="font-bold text-primary">{getPayableAmount().toFixed(2)} RON</span>
+                </p>
+              </div>
+            )}
 
             {/* Payment Method Selection */}
             <div>
@@ -735,37 +923,37 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 <button
                   onClick={() => setPaymentMethod('cash')}
                   className={cn(
-                    "p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    "p-3 md:p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
                     paymentMethod === 'cash'
                       ? "border-primary bg-primary/10"
                       : "border-border hover:border-primary/50"
                   )}
                 >
-                  <Banknote className={cn("w-8 h-8", paymentMethod === 'cash' ? "text-primary" : "text-muted-foreground")} />
+                  <Banknote className={cn("w-7 h-7 md:w-8 md:h-8", paymentMethod === 'cash' ? "text-primary" : "text-muted-foreground")} />
                   <span className={cn("text-sm font-medium", paymentMethod === 'cash' && "text-primary")}>Cash</span>
                 </button>
                 <button
                   onClick={() => setPaymentMethod('card')}
                   className={cn(
-                    "p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    "p-3 md:p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
                     paymentMethod === 'card'
                       ? "border-primary bg-primary/10"
                       : "border-border hover:border-primary/50"
                   )}
                 >
-                  <CardIcon className={cn("w-8 h-8", paymentMethod === 'card' ? "text-primary" : "text-muted-foreground")} />
+                  <CardIcon className={cn("w-7 h-7 md:w-8 md:h-8", paymentMethod === 'card' ? "text-primary" : "text-muted-foreground")} />
                   <span className={cn("text-sm font-medium", paymentMethod === 'card' && "text-primary")}>Card</span>
                 </button>
                 <button
                   onClick={() => setPaymentMethod('usage_card')}
                   className={cn(
-                    "p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
+                    "p-3 md:p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all",
                     paymentMethod === 'usage_card'
                       ? "border-primary bg-primary/10"
                       : "border-border hover:border-primary/50"
                   )}
                 >
-                  <Barcode className={cn("w-8 h-8", paymentMethod === 'usage_card' ? "text-primary" : "text-muted-foreground")} />
+                  <Barcode className={cn("w-7 h-7 md:w-8 md:h-8", paymentMethod === 'usage_card' ? "text-primary" : "text-muted-foreground")} />
                   <span className={cn("text-sm font-medium text-center", paymentMethod === 'usage_card' && "text-primary")}>Card Utilizare</span>
                 </button>
               </div>
@@ -773,8 +961,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
 
             {/* Usage Card Code Input */}
             {paymentMethod === 'usage_card' && (
-              <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
-                <p className="font-medium mb-2 flex items-center gap-2">
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <p className="font-medium mb-2 flex items-center gap-2 text-sm">
                   <Barcode className="w-4 h-4" />
                   Cod card de utilizare
                 </p>
@@ -784,9 +972,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   placeholder="Scanează sau introdu codul"
                   className="font-mono text-lg"
                 />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Scanează codul de bare al cardului sau introdu-l manual
-                </p>
               </div>
             )}
 
@@ -833,12 +1018,15 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               <Button 
                 className="flex-1 gradient-primary" 
                 onClick={handleCompletePayment}
-                disabled={paymentMethod === 'usage_card' && !usageCardCode}
+                disabled={(paymentMethod === 'usage_card' && !usageCardCode) || (splitMode === 'custom' && (!customAmount || parseFloat(customAmount) <= 0)) || (splitMode === 'items' && Object.values(selectedPayItems).every(v => v === 0))}
               >
                 {paymentMethod === 'cash' && <Banknote className="w-4 h-4 mr-2" />}
                 {paymentMethod === 'card' && <CardIcon className="w-4 h-4 mr-2" />}
                 {paymentMethod === 'usage_card' && <Barcode className="w-4 h-4 mr-2" />}
-                Finalizează
+                {splitMode !== 'full' && getPayableAmount() < ((order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0))
+                  ? `Plătește ${getPayableAmount().toFixed(2)} RON`
+                  : 'Finalizează'
+                }
               </Button>
             </div>
           </div>
