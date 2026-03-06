@@ -437,19 +437,17 @@ const OrderHistoryDialog: React.FC<OrderHistoryDialogProps> = ({ open, onClose, 
                           </div>
 
                           {/* Actions */}
-                          {order.status === 'completed' && (
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1"
-                                onClick={() => handleGenerateInvoice(order)}
-                              >
-                                <FileText className="w-4 h-4 mr-2" />
-                                Generează Factură
-                              </Button>
-                            </div>
-                          )}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => handleGenerateInvoice(order)}
+                            >
+                              <FileText className="w-4 h-4 mr-2" />
+                              Generează Factură
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
