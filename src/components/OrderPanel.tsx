@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, MenuItem, Order, OrderItem, menuCategories } from '@/data/mockData';
+import { Table, MenuItem, Order, OrderItem, menuCategories, UnitType } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { 
