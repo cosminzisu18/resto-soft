@@ -625,7 +625,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                                   if (i.id !== item.id) return i;
                                   return { ...i, complimentary: !i.complimentary };
                                 });
-                                const totalAmount = updatedItems.reduce((sum, i) => sum + (i.complimentary ? 0 : i.menuItem.price * i.quantity), 0);
+                                const totalAmount = updatedItems.reduce((sum, i) => sum + (i.complimentary ? 0 : getItemPrice(i.menuItem, i.quantity, i.weightGrams)), 0);
                                 updateOrder({ ...order!, items: updatedItems, totalAmount });
                                 toast({ title: item.complimentary ? 'Produs taxat normal' : 'Produs oferit din partea casei' });
                               }}
