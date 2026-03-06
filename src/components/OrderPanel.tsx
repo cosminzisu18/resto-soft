@@ -1059,6 +1059,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
         onConfirm={handleUpsellConfirm}
         currentOrderItems={order?.items.map(i => i.menuItem.id) || []}
       />
+
+      {/* Order History Dialog */}
+      <OrderHistoryDialog
+        open={showOrderHistory}
+        onClose={() => setShowOrderHistory(false)}
+        orders={orders}
+        tableNumber={table.number}
+      />
     </div>
   );
 };
