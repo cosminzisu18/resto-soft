@@ -16,8 +16,10 @@ import {
   Search, Plus, CreditCard, Banknote, Clock, ChefHat, Check, Printer,
   Package, Phone, ArrowLeft, List, Eye, Filter, Utensils, Monitor, 
   Globe, RefreshCw, Calendar, PanelLeftClose, PanelRightClose,
-  Download, FileText, Receipt, Barcode, Edit2, User
+  Download, FileText, Receipt, Barcode, Edit2, User, Calculator
 } from 'lucide-react';
+import CashRegisterDialog from '@/components/CashRegisterDialog';
+import ExternalOrdersNotification from '@/components/ExternalOrdersNotification';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 import TableMap from '@/components/TableMap';
