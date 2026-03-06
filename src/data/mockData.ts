@@ -100,6 +100,7 @@ export interface OrderItem {
   status: 'pending' | 'cooking' | 'ready' | 'served';
   startedAt?: Date;
   readyAt?: Date;
+  complimentary?: boolean;
 }
 
 export type OrderSource = 'restaurant' | 'glovo' | 'wolt' | 'bolt' | 'own_website' | 'phone';
