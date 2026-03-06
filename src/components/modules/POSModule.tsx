@@ -713,7 +713,7 @@ const POSModule: React.FC = () => {
       </Dialog>
 
       {/* Order Details Dialog */}
-      <Dialog open={!!selectedOrderDetails} onOpenChange={() => setSelectedOrderDetails(null)}>
+      <Dialog open={!!selectedOrderDetails && !invoiceOrder} onOpenChange={() => setSelectedOrderDetails(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -743,11 +743,31 @@ const POSModule: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Plată</p>
-                  <div className="flex items-center gap-1">
-                    {selectedOrderDetails.paymentMethod === 'cash' && <><Banknote className="w-3 h-3" /> Cash</>}
-                    {selectedOrderDetails.paymentMethod === 'card' && <><CreditCard className="w-3 h-3" /> Card</>}
-                    {!selectedOrderDetails.paymentMethod && <span className="text-muted-foreground">Neplătit</span>}
-                  </div>
+                  {editingPaymentOrderId === selectedOrderDetails.id ? (
+                    <div className="flex gap-1 mt-1">
+                      {(['cash', 'card', 'usage_card'] as PaymentMethod[]).map(method => (
+                        <button
+                          key={method}
+                          className={cn(
+                            "flex items-center gap-1 px-2 py-1 rounded-md border text-xs transition-colors",
+                            selectedOrderDetails.paymentMethod === method
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:border-primary/50"
+                          )}
+                          onClick={() => handleChangePaymentMethod(selectedOrderDetails.id, method)}
+                        >
+                          {getPaymentIcon(method)}
+                          {getPaymentLabel(method)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 cursor-pointer" onClick={() => setEditingPaymentOrderId(selectedOrderDetails.id)}>
+                      {getPaymentIcon(selectedOrderDetails.paymentMethod)}
+                      <span className="font-medium">{getPaymentLabel(selectedOrderDetails.paymentMethod)}</span>
+                      <Edit2 className="w-3 h-3 text-muted-foreground ml-1" />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -762,6 +782,9 @@ const POSModule: React.FC = () => {
                           <span className="font-medium">{item.quantity}x</span>
                           <span>{item.menuItem.name}</span>
                           {getStatusIcon(item.status)}
+                          {item.complimentary && (
+                            <Badge variant="secondary" className="text-[10px] px-1 py-0">Gratis</Badge>
+                          )}
                         </div>
                         {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
                           <p className="text-xs text-muted-foreground">
@@ -770,7 +793,9 @@ const POSModule: React.FC = () => {
                           </p>
                         )}
                       </div>
-                      <span className="font-medium">{(item.menuItem.price * item.quantity).toFixed(2)} RON</span>
+                      <span className={cn("font-medium", item.complimentary && "line-through text-muted-foreground")}>
+                        {(item.menuItem.price * item.quantity).toFixed(2)} RON
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -787,9 +812,70 @@ const POSModule: React.FC = () => {
                 <Button variant="outline" className="flex-1" onClick={() => setSelectedOrderDetails(null)}>
                   Închide
                 </Button>
+                <Button variant="outline" className="flex-1" onClick={() => handleGenerateInvoice(selectedOrderDetails)}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Factură
+                </Button>
                 <Button className="flex-1">
                   <Printer className="w-4 h-4 mr-2" />
                   Printează
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Dialog */}
+      <Dialog open={!!invoiceOrder} onOpenChange={() => setInvoiceOrder(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Generare Factură
+            </DialogTitle>
+          </DialogHeader>
+          {invoiceOrder && (
+            <div className="space-y-4">
+              <div className="p-3 bg-muted rounded-lg text-sm">
+                <p>Comandă: <span className="font-mono font-medium">#{invoiceOrder.id.slice(0, 8)}</span></p>
+                <p>Total: <span className="font-bold">{invoiceOrder.totalAmount.toFixed(2)} RON</span></p>
+                <p>Data: {new Date(invoiceOrder.createdAt).toLocaleString('ro-RO')}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">CUI *</label>
+                <Input
+                  value={invoiceCui}
+                  onChange={(e) => setInvoiceCui(e.target.value)}
+                  placeholder="Ex: RO12345678"
+                  className="h-10"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Denumire Firmă</label>
+                <Input
+                  value={invoiceCompanyName}
+                  onChange={(e) => setInvoiceCompanyName(e.target.value)}
+                  placeholder="Ex: SC Firma SRL"
+                  className="h-10"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Adresă</label>
+                <Input
+                  value={invoiceCompanyAddress}
+                  onChange={(e) => setInvoiceCompanyAddress(e.target.value)}
+                  placeholder="Ex: Str. Exemplu nr. 1, București"
+                  className="h-10"
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setInvoiceOrder(null)}>
+                  Anulează
+                </Button>
+                <Button className="flex-1" onClick={handlePrintInvoice}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Generează Factură
                 </Button>
               </div>
             </div>
