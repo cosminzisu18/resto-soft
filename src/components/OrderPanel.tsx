@@ -326,6 +326,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           <Button 
             variant="outline" 
             size="sm"
+            onClick={() => setShowOrderHistory(true)}
+          >
+            <History className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Istoric</span>
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
             onClick={() => setShowPayment(true)}
             disabled={!order || order.items.length === 0}
           >
