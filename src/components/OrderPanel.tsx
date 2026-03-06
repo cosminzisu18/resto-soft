@@ -984,7 +984,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               </div>
             )}
 
-            {/* Summary */}
+            {/* Summary + Tip compact */}
             <div className="p-4 rounded-lg bg-secondary">
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Total comandă</span>
@@ -996,6 +996,37 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   <span className="text-primary">{getPayableAmount().toFixed(2)} RON</span>
                 </div>
               )}
+
+              {/* Inline Tip */}
+              <div className="mt-2 pt-2 border-t border-border">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-muted-foreground">Bacșiș:</span>
+                  {['10', '15', '20'].map(pct => (
+                    <Button
+                      key={pct}
+                      variant={tipType === 'percent' && tipValue === pct ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => { setTipType('percent'); setTipValue(pct); }}
+                    >
+                      {pct}%
+                    </Button>
+                  ))}
+                  <div
+                    className={cn(
+                      "flex-1 min-w-[80px] px-2 py-1 rounded-lg bg-card border cursor-pointer transition-colors text-sm",
+                      activeNumpad === 'tipValue' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
+                    )}
+                    onClick={() => setActiveNumpad(activeNumpad === 'tipValue' ? null : 'tipValue')}
+                  >
+                    <span className={cn("font-mono text-xs", !(tipType === 'value' && tipValue) && "text-muted-foreground")}>
+                      {tipType === 'value' && tipValue ? `${tipValue} RON` : 'Sumă fixă'}
+                    </span>
+                  </div>
+                </div>
+                <NumpadKeyboard field="tipValue" label="Bacșiș sumă fixă" suffix="RON" />
+              </div>
+
               {calculateTip() > 0 && (
                 <div className="flex justify-between text-sm text-muted-foreground mt-1">
                   <span>Bacșiș</span>
@@ -1371,34 +1402,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               );
             })()}
 
-            {/* Tip */}
-            <div>
-              <p className="font-medium mb-2">Bacșiș</p>
-              <div className="flex gap-2 mb-2">
-                {['10', '15', '20'].map(pct => (
-                  <Button
-                    key={pct}
-                    variant={tipType === 'percent' && tipValue === pct ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => { setTipType('percent'); setTipValue(pct); }}
-                  >
-                    {pct}%
-                  </Button>
-                ))}
-              </div>
-              <div
-                className={cn(
-                  "flex items-center justify-between p-2 rounded-lg bg-card border cursor-pointer transition-colors",
-                  activeNumpad === 'tipValue' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
-                )}
-                onClick={() => setActiveNumpad(activeNumpad === 'tipValue' ? null : 'tipValue')}
-              >
-                <span className={cn("font-mono", !(tipType === 'value' && tipValue) && "text-muted-foreground text-sm")}>
-                  {tipType === 'value' && tipValue ? `${tipValue} RON` : 'Sumă fixă (apasă)'}
-                </span>
-              </div>
-              <NumpadKeyboard field="tipValue" label="Bacșiș sumă fixă" suffix="RON" />
-            </div>
 
             {/* CUI */}
             <div>
