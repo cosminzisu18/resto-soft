@@ -1402,34 +1402,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               );
             })()}
 
-            {/* Tip */}
-            <div>
-              <p className="font-medium mb-2">Bacșiș</p>
-              <div className="flex gap-2 mb-2">
-                {['10', '15', '20'].map(pct => (
-                  <Button
-                    key={pct}
-                    variant={tipType === 'percent' && tipValue === pct ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => { setTipType('percent'); setTipValue(pct); }}
-                  >
-                    {pct}%
-                  </Button>
-                ))}
-              </div>
-              <div
-                className={cn(
-                  "flex items-center justify-between p-2 rounded-lg bg-card border cursor-pointer transition-colors",
-                  activeNumpad === 'tipValue' ? "border-primary ring-1 ring-primary/30" : "border-border hover:border-primary/50"
-                )}
-                onClick={() => setActiveNumpad(activeNumpad === 'tipValue' ? null : 'tipValue')}
-              >
-                <span className={cn("font-mono", !(tipType === 'value' && tipValue) && "text-muted-foreground text-sm")}>
-                  {tipType === 'value' && tipValue ? `${tipValue} RON` : 'Sumă fixă (apasă)'}
-                </span>
-              </div>
-              <NumpadKeyboard field="tipValue" label="Bacșiș sumă fixă" suffix="RON" />
-            </div>
 
             {/* CUI */}
             <div>
