@@ -52,6 +52,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [cui, setCui] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'usage_card'>('cash');
   const [usageCardCode, setUsageCardCode] = useState('');
+  
+  // Split payment state
+  const [splitMode, setSplitMode] = useState<'full' | 'custom' | 'items' | 'persons'>('full');
+  const [customAmount, setCustomAmount] = useState('');
+  const [selectedPayItems, setSelectedPayItems] = useState<Record<string, number>>({});
+  const [splitPersons, setSplitPersons] = useState(2);
+  const [paidAmounts, setPaidAmounts] = useState<number[]>([]);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
