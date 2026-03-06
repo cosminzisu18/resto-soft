@@ -53,6 +53,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
   const [tipValue, setTipValue] = useState('');
   const [cui, setCui] = useState('');
+  const [cuiRoPrefix, setCuiRoPrefix] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'usage_card' | 'mixed'>('cash');
   const [usageCardCode, setUsageCardCode] = useState('');
   const [cashReceived, setCashReceived] = useState('');
@@ -1401,7 +1402,17 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
 
             {/* CUI */}
             <div>
-              <p className="font-medium mb-2">CUI Firmă (opțional)</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-medium">CUI Firmă (opțional)</p>
+                <Button
+                  variant={cuiRoPrefix ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 px-3 text-xs font-bold"
+                  onClick={() => setCuiRoPrefix(!cuiRoPrefix)}
+                >
+                  RO
+                </Button>
+              </div>
               <div
                 className={cn(
                   "flex items-center justify-between p-2 rounded-lg bg-card border cursor-pointer transition-colors",
@@ -1410,7 +1421,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 onClick={() => setActiveNumpad(activeNumpad === 'cui' ? null : 'cui')}
               >
                 <span className={cn("font-mono", !cui && "text-muted-foreground text-sm")}>
-                  {cui || 'Apasă pentru a introduce CUI'}
+                  {cui ? `${cuiRoPrefix ? 'RO' : ''}${cui}` : 'Apasă pentru a introduce CUI'}
                 </span>
               </div>
               <NumpadKeyboard field="cui" label="CUI Firmă" />
