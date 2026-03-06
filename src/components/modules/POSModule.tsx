@@ -94,18 +94,34 @@ const POSModule: React.FC = () => {
   };
 
   // Filter orders for All Orders view
-  const filteredOrders = orders.filter(order => {
-    if (ordersFilter !== 'all' && order.status !== ordersFilter) return false;
-    if (sourceFilter !== 'all' && order.source !== sourceFilter) return false;
-    if (ordersSearchQuery) {
-      const searchLower = ordersSearchQuery.toLowerCase();
-      const matchesTable = order.tableNumber?.toString().includes(searchLower);
-      const matchesId = order.id.toLowerCase().includes(searchLower);
-      const matchesWaiter = order.waiterName?.toLowerCase().includes(searchLower);
-      if (!matchesTable && !matchesId && !matchesWaiter) return false;
-    }
-    return true;
-  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      if (ordersFilter !== 'all' && order.status !== ordersFilter) return false;
+      if (sourceFilter !== 'all' && order.source !== sourceFilter) return false;
+      if (filterPayment !== 'all') {
+        if (filterPayment === 'unpaid' && order.paymentMethod) return false;
+        if (filterPayment !== 'unpaid' && order.paymentMethod !== filterPayment) return false;
+      }
+      if (filterWaiter !== 'all' && order.waiterName !== filterWaiter) return false;
+      if (filterDate) {
+        const orderDate = new Date(order.createdAt);
+        if (orderDate.toDateString() !== filterDate.toDateString()) return false;
+      }
+      if (ordersSearchQuery) {
+        const searchLower = ordersSearchQuery.toLowerCase();
+        const matchesTable = order.tableNumber?.toString().includes(searchLower);
+        const matchesId = order.id.toLowerCase().includes(searchLower);
+        const matchesWaiter = order.waiterName?.toLowerCase().includes(searchLower);
+        const matchesCustomer = order.customerName?.toLowerCase().includes(searchLower);
+        if (!matchesTable && !matchesId && !matchesWaiter && !matchesCustomer) return false;
+      }
+      return true;
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [orders, ordersFilter, sourceFilter, filterPayment, filterWaiter, filterDate, ordersSearchQuery]);
+
+  // Summary stats for filtered orders
+  const filteredRevenue = filteredOrders.reduce((s, o) => s + o.totalAmount, 0);
+  const filteredTips = filteredOrders.reduce((s, o) => s + (o.tip || 0), 0);
 
   // Order stats
   const orderStats = {
