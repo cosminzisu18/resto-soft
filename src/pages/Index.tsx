@@ -136,6 +136,8 @@ const RestaurantApp: React.FC = () => {
     clearNotifications,
     reservations,
     tables,
+    orders,
+    updateOrder,
     createReservation,
     updateReservation,
     deleteReservation
