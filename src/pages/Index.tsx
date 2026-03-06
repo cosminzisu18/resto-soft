@@ -453,13 +453,7 @@ const RestaurantApp: React.FC = () => {
             </Button>
             <ExternalOrdersNotification
               orders={orders}
-              onViewOrder={(order) => {
-                // Navigate to the order's table if it has one
-                if (order.tableNumber) {
-                  const t = tables.find(tbl => tbl.number === order.tableNumber);
-                  if (t) handleTableSelect(t);
-                }
-              }}
+              onUpdateOrder={updateOrder}
             />
             <Button
               variant="outline"
