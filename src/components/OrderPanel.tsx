@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import Receipt from './Receipt';
 import AllergenBadges from './AllergenBadges';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
