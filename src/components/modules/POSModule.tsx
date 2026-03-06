@@ -339,6 +339,19 @@ const POSModule: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowCashRegister(true)}
+            className="flex items-center gap-2"
+          >
+            <Calculator className="w-4 h-4" />
+            <span className="hidden md:inline">Casierie</span>
+          </Button>
+          <ExternalOrdersNotification
+            orders={orders}
+            onUpdateOrder={updateOrder}
+          />
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowTakeawayDialog(true)}
             className="hidden md:flex items-center gap-2"
           >
