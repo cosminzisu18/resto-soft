@@ -340,8 +340,12 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 >
                   {/* Product Image */}
                   {item.image && (
-                    <div className="aspect-video w-full bg-secondary">
+                    <div className="relative aspect-video w-full bg-secondary">
                       <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                      <span className="absolute top-1 right-1 text-xs text-white bg-black/60 rounded-full px-1.5 py-0.5 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {item.prepTime}'
+                      </span>
                     </div>
                   )}
                   <div className="p-3 md:p-4">
@@ -359,10 +363,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     )}
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-primary text-sm">{item.price} RON</span>
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {item.prepTime}'
-                      </span>
                     </div>
                   </div>
                 </button>
