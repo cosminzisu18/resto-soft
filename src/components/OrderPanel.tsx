@@ -8,7 +8,7 @@ import {
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
   Trash2, Printer, FileText, Banknote, CreditCard as CardIcon, Barcode, Search, ChevronUp, ChevronDown,
-  PanelLeftClose, PanelRightClose, ShoppingCart, Info, Gift, Users, ListChecks, Hash
+  PanelLeftClose, PanelRightClose, ShoppingCart, Info, Gift, Users, ListChecks, Hash, History
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -17,6 +17,7 @@ import Receipt from './Receipt';
 import AllergenBadges from './AllergenBadges';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import UpsellQuestionsDialog from './UpsellQuestionsDialog';
+import OrderHistoryDialog from './OrderHistoryDialog';
 
 interface OrderPanelProps {
   table: Table;
@@ -44,6 +45,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
   const [showReceipt, setShowReceipt] = useState(false);
   const [showUpsellDialog, setShowUpsellDialog] = useState(false);
   const [upsellAnsweredForOrder, setUpsellAnsweredForOrder] = useState<string | null>(null);
+  const [showOrderHistory, setShowOrderHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   
   // Payment state
@@ -321,6 +323,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowOrderHistory(true)}
+          >
+            <History className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Istoric</span>
+          </Button>
           <Button 
             variant="outline" 
             size="sm"
@@ -1048,6 +1058,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
         onClose={() => setShowUpsellDialog(false)}
         onConfirm={handleUpsellConfirm}
         currentOrderItems={order?.items.map(i => i.menuItem.id) || []}
+      />
+
+      {/* Order History Dialog */}
+      <OrderHistoryDialog
+        open={showOrderHistory}
+        onClose={() => setShowOrderHistory(false)}
+        orders={orders}
+        tableNumber={table.number}
       />
     </div>
   );
