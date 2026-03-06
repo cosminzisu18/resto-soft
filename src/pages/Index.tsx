@@ -31,6 +31,8 @@ import SubscriptionsAdminModule from '@/components/modules/SubscriptionsAdminMod
 import CommunicationModule from '@/components/modules/CommunicationModule';
 import OfflineModeModule from '@/components/modules/OfflineModeModule';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
+import WaiterProfileDialog from '@/components/WaiterProfileDialog';
+import CashRegisterDialog from '@/components/CashRegisterDialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -57,7 +59,9 @@ import {
   Calendar,
   Wifi,
   Eye,
-  History
+  History,
+  UserCircle as UserCircleIcon,
+  Calculator
 } from 'lucide-react';
 
 type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard' | 'order-monitor';
@@ -151,6 +155,8 @@ const RestaurantApp: React.FC = () => {
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showGlobalHistory, setShowGlobalHistory] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showCashRegister, setShowCashRegister] = useState(false);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -429,6 +435,24 @@ const RestaurantApp: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setShowProfile(true)}
+              className="flex items-center gap-2"
+            >
+              <UserCircleIcon className="w-4 h-4" />
+              <span className="hidden md:inline">Profilul Meu</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCashRegister(true)}
+              className="flex items-center gap-2"
+            >
+              <Calculator className="w-4 h-4" />
+              <span className="hidden md:inline">Casierie</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setShowGlobalHistory(true)}
               className="flex items-center gap-2"
             >
@@ -505,6 +529,21 @@ const RestaurantApp: React.FC = () => {
           onClose={() => setShowGlobalHistory(false)}
           orders={orders}
           onUpdateOrder={updateOrder}
+        />
+
+        <WaiterProfileDialog
+          open={showProfile}
+          onClose={() => setShowProfile(false)}
+          user={currentUser}
+          orders={orders}
+          onLogout={handleLogout}
+        />
+
+        <CashRegisterDialog
+          open={showCashRegister}
+          onClose={() => setShowCashRegister(false)}
+          orders={orders}
+          operatorName={currentUser?.name || 'Operator'}
         />
       </div>
     );
