@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -7,14 +7,19 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useRestaurant } from '@/context/RestaurantContext';
-import { Table, Order, OrderItem } from '@/data/mockData';
+import { Table, Order, OrderItem, PaymentMethod } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { 
   Search, Plus, CreditCard, Banknote, Clock, ChefHat, Check, Printer,
   Package, Phone, ArrowLeft, List, Eye, Filter, Utensils, Monitor, 
-  Globe, RefreshCw, Calendar, PanelLeftClose, PanelRightClose
+  Globe, RefreshCw, Calendar, PanelLeftClose, PanelRightClose,
+  Download, FileText, Receipt, Barcode, Edit2, User
 } from 'lucide-react';
+import { format } from 'date-fns';
+import { ro } from 'date-fns/locale';
 import TableMap from '@/components/TableMap';
 import OrderPanel from '@/components/OrderPanel';
 import ReservationManager from '@/components/ReservationManager';
