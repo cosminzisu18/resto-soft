@@ -512,25 +512,49 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <span className="font-medium text-xs md:text-sm">
-                          {(item.menuItem.price * item.quantity).toFixed(2)}
+                          {item.complimentary ? (
+                            <span className="text-success line-through decoration-success/50">{(item.menuItem.price * item.quantity).toFixed(2)}</span>
+                          ) : (
+                            (item.menuItem.price * item.quantity).toFixed(2)
+                          )}
                         </span>
+                        {item.complimentary && (
+                          <span className="text-[10px] text-success font-medium">Din partea casei</span>
+                        )}
                         {item.status === 'pending' && (
                           <div className="flex gap-1">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6"
-                              onClick={() => handleEditItem(item)}
+                              className="h-8 w-8 md:h-7 md:w-7"
+                              onClick={() => {
+                                const updatedItems = order!.items.map(i => {
+                                  if (i.id !== item.id) return i;
+                                  return { ...i, complimentary: !i.complimentary };
+                                });
+                                const totalAmount = updatedItems.reduce((sum, i) => sum + (i.complimentary ? 0 : i.menuItem.price * i.quantity), 0);
+                                updateOrder({ ...order!, items: updatedItems, totalAmount });
+                                toast({ title: item.complimentary ? 'Produs taxat normal' : 'Produs oferit din partea casei' });
+                              }}
+                              title="Din partea casei"
                             >
-                              <Edit2 className="w-3 h-3" />
+                              <Gift className={cn("w-3.5 h-3.5", item.complimentary && "text-success")} />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 text-destructive"
+                              className="h-8 w-8 md:h-7 md:w-7"
+                              onClick={() => handleEditItem(item)}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 md:h-7 md:w-7 text-destructive"
                               onClick={() => handleRemoveItem(item.id)}
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         )}
