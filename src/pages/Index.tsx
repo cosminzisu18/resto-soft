@@ -69,7 +69,7 @@ type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | '
 
 const moduleConfig: Record<ModuleType, { title: string; description: string; icon: any; features: string[] }> = {
   dashboard: { title: '', description: '', icon: null, features: [] },
-  pos: { title: 'RestoPOS', description: 'Sistem de vânzare complet', icon: ShoppingCart, features: ['Comenzi mese', 'La pachet', 'Telefonic', 'Vizualizare comenzi'] },
+  pos: { title: 'RestoSoft', description: 'Sistem de vânzare complet', icon: ShoppingCart, features: ['Comenzi mese', 'La pachet', 'Telefonic', 'Vizualizare comenzi'] },
   kiosk: { title: 'Kiosk Self-Order', description: 'Comenzi self-service pentru clienți', icon: Store, features: ['Upsell automat', 'Plăți card/cash', 'QR status'] },
   kds: { title: 'KDS & Producție', description: 'Afișaj bucătărie și producție', icon: UtensilsCrossed, features: ['Comenzi pe stații', 'Timer preparare', 'Rețetar integrat'] },
   stocks: { title: '', description: '', icon: null, features: [] },
@@ -431,7 +431,7 @@ const RestaurantApp: React.FC = () => {
     return (
       <div className="h-screen flex flex-col" {...swipeHandlers}>
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-          <h1 className="font-semibold">RestoPOS - Ospătar ({currentUser?.name})</h1>
+          <h1 className="font-semibold">RestoSoft - Ospătar ({currentUser?.name})</h1>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"

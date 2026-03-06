@@ -333,7 +333,7 @@ const POSModule: React.FC = () => {
     <div className="h-full flex flex-col" {...swipeHandlers}>
       {/* Header with Tabs */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-        <h1 className="font-semibold">RestoPOS</h1>
+        <h1 className="font-semibold">RestoSoft</h1>
         <div className="flex items-center gap-2">
           {/* Quick Actions */}
           <Button

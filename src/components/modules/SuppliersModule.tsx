@@ -126,7 +126,7 @@ const mockClients = [
 ];
 
 const availableModules = [
-  { id: 'pos', name: 'RestoPOS', description: 'Sistem point of sale', icon: '💳' },
+  { id: 'pos', name: 'RestoSoft', description: 'Sistem point of sale', icon: '💳' },
   { id: 'kds', name: 'KDS', description: 'Kitchen Display System', icon: '👨‍🍳' },
   { id: 'stocks', name: 'Stocuri', description: 'Gestiune stocuri', icon: '📦' },
   { id: 'delivery', name: 'Delivery', description: 'Integrări livrare', icon: '🚚' },

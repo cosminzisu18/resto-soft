@@ -129,7 +129,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             <ChefHat className="w-10 h-10 text-primary-foreground" />
           </div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-            RestoPOS
+            RestoSoft
           </h1>
           <p className="text-muted-foreground mt-2">Sistem de gestiune restaurant</p>
         </div>
@@ -359,7 +359,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground mt-6">
-          RestoPOS v2.0 • © 2024
+          RestoSoft v1.0 • © 2026
         </p>
       </div>
     </div>
