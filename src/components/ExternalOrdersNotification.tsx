@@ -76,7 +76,7 @@ const ExternalOrdersNotification: React.FC<ExternalOrdersNotificationProps> = ({
 
     // Add 2-4 random items
     const itemCount = 2 + Math.floor(Math.random() * 3);
-    const availableItems = menuItems.filter(m => m.isAvailable !== false);
+    const availableItems = menuItems;
     for (let i = 0; i < itemCount && i < availableItems.length; i++) {
       const randomItem = availableItems[Math.floor(Math.random() * availableItems.length)];
       const qty = 1 + Math.floor(Math.random() * 3);
