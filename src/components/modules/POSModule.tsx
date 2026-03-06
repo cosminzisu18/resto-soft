@@ -162,7 +162,6 @@ const POSModule: React.FC = () => {
       toast({ title: 'Introduceți numele clientului', variant: 'destructive' });
       return;
     }
-    // Find first free table to use for phone order
     const freeTable = tables.find(t => t.status === 'free');
     if (freeTable) {
       setShowPhoneOrderDialog(false);
@@ -173,6 +172,90 @@ const POSModule: React.FC = () => {
     }
     setPhoneCustomerName('');
     setPhoneCustomerPhone('');
+  };
+
+  const getPaymentLabel = (method?: string) => {
+    switch (method) {
+      case 'cash': return 'Cash';
+      case 'card': return 'Card';
+      case 'usage_card': return 'Card Utilizare';
+      default: return 'Neplătit';
+    }
+  };
+
+  const getPaymentIcon = (method?: string) => {
+    switch (method) {
+      case 'cash': return <Banknote className="w-4 h-4" />;
+      case 'card': return <CreditCard className="w-4 h-4" />;
+      case 'usage_card': return <Barcode className="w-4 h-4" />;
+      default: return <Clock className="w-4 h-4" />;
+    }
+  };
+
+  const handleChangePaymentMethod = (orderId: string, newMethod: PaymentMethod) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order && updateOrder) {
+      updateOrder({ ...order, paymentMethod: newMethod });
+      if (selectedOrderDetails?.id === orderId) {
+        setSelectedOrderDetails({ ...order, paymentMethod: newMethod });
+      }
+      toast({ title: 'Metodă de plată actualizată', description: `Schimbată la ${getPaymentLabel(newMethod)}` });
+    }
+    setEditingPaymentOrderId(null);
+  };
+
+  const handleGenerateInvoice = (order: Order) => {
+    setInvoiceOrder(order);
+    setInvoiceCui(order.cui || '');
+    setInvoiceCompanyName('');
+    setInvoiceCompanyAddress('');
+  };
+
+  const handlePrintInvoice = () => {
+    if (!invoiceOrder) return;
+    if (!invoiceCui.trim()) {
+      toast({ title: 'CUI obligatoriu', description: 'Introduceți CUI-ul pentru factură', variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Factură generată', description: `Factura pentru comanda #${invoiceOrder.id.slice(0, 8)} a fost generată` });
+    setInvoiceOrder(null);
+  };
+
+  const handleExportExcel = () => {
+    const headers = ['ID Comandă', 'Data', 'Masa', 'Sursă', 'Ospătar', 'Client', 'Produse', 'Cantitate', 'Subtotal', 'Bacșiș', 'Total', 'Metodă Plată', 'Status', 'CUI'];
+    const rows = filteredOrders.map(order => {
+      const products = order.items.map(i => `${i.quantity}x ${i.menuItem.name}${i.complimentary ? ' (gratis)' : ''}`).join('; ');
+      const totalItems = order.items.reduce((s, i) => s + i.quantity, 0);
+      const source = sourceConfig[order.source]?.label || order.source;
+      return [
+        order.id.slice(0, 8),
+        new Date(order.createdAt).toLocaleString('ro-RO'),
+        order.tableNumber || 'N/A',
+        source,
+        order.waiterName || 'N/A',
+        order.customerName || 'N/A',
+        products,
+        totalItems,
+        order.totalAmount.toFixed(2),
+        (order.tip || 0).toFixed(2),
+        (order.totalAmount + (order.tip || 0)).toFixed(2),
+        getPaymentLabel(order.paymentMethod),
+        order.status === 'completed' ? 'Finalizat' : order.status === 'active' ? 'Activ' : 'Anulat',
+        order.cui || ''
+      ];
+    });
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `comenzi-pos-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Export realizat', description: `${filteredOrders.length} comenzi exportate` });
   };
 
   const handleStartTakeawayOrder = () => {
