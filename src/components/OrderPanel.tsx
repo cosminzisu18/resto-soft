@@ -869,7 +869,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={showPayment} onOpenChange={(open) => { setShowPayment(open); if (!open) { setSplitMode('full'); setPaidAmounts([]); setCustomAmount(''); setSelectedPayItems({}); } }}>
+      <Dialog open={showPayment} onOpenChange={(open) => { setShowPayment(open); if (!open) { setSplitMode('full'); setPaidAmounts([]); setCustomAmount(''); setSelectedPayItems({}); setCashReceived(''); setMixedCash(''); setMixedCard(''); setMixedUsageCard(''); setMixedUsageCardCode(''); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Procesare plată - Masa {table.number}</DialogTitle>
