@@ -441,7 +441,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/50 to-transparent p-2.5 md:p-3 pb-6 md:pb-8">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="font-semibold text-white text-sm md:text-base line-clamp-2 leading-tight">{item.name}</h3>
-                        <span className="font-bold text-white text-sm md:text-base whitespace-nowrap">{item.price} RON</span>
+                        <span className="font-bold text-white text-sm md:text-base whitespace-nowrap">{item.price} RON/{getUnitLabel(item.unitType)}</span>
                       </div>
                     </div>
                     {/* Clock badge */}
