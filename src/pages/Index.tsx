@@ -30,6 +30,7 @@ import BrandingModule from '@/components/modules/BrandingModule';
 import SubscriptionsAdminModule from '@/components/modules/SubscriptionsAdminModule';
 import CommunicationModule from '@/components/modules/CommunicationModule';
 import OfflineModeModule from '@/components/modules/OfflineModeModule';
+import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -55,7 +56,8 @@ import {
   PanelRightClose,
   Calendar,
   Wifi,
-  Eye
+  Eye,
+  History
 } from 'lucide-react';
 
 type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard' | 'order-monitor';
@@ -134,6 +136,8 @@ const RestaurantApp: React.FC = () => {
     clearNotifications,
     reservations,
     tables,
+    orders,
+    updateOrder,
     createReservation,
     updateReservation,
     deleteReservation
@@ -146,6 +150,7 @@ const RestaurantApp: React.FC = () => {
   const [kdsModuleStation, setKdsModuleStation] = useState<KDSStation | null>(null);
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showGlobalHistory, setShowGlobalHistory] = useState(false);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -421,6 +426,15 @@ const RestaurantApp: React.FC = () => {
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
           <h1 className="font-semibold">RestoPOS - Ospătar</h1>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowGlobalHistory(true)}
+              className="flex items-center gap-2"
+            >
+              <History className="w-4 h-4" />
+              <span className="hidden md:inline">Istoric</span>
+            </Button>
             {!sidebarOpen && (
               <Button
                 variant="outline"
@@ -485,6 +499,13 @@ const RestaurantApp: React.FC = () => {
             Deconectare
           </Button>
         </div>
+
+        <OrderHistoryDialog
+          open={showGlobalHistory}
+          onClose={() => setShowGlobalHistory(false)}
+          orders={orders}
+          onUpdateOrder={updateOrder}
+        />
       </div>
     );
   }
