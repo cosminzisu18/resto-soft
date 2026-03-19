@@ -20,7 +20,7 @@ const KDSDisplay: React.FC<KDSDisplayProps> = ({ station, onLogout }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
-  const stationOrders = getOrdersForStation(station.id);
+  const stationOrders = getOrdersForStation(station);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
+import { menuApi, storageApi, tablesApi, type KdsStationApi, type KdsStationType, type StorageZoneApi, type TableApi } from '@/lib/api';
 import {
   Settings,
   MapPin,
@@ -50,7 +51,8 @@ import {
   Salad,
   CirclePlus,
   GripVertical,
-  Move
+  Move,
+  Warehouse
 } from 'lucide-react';
 
 // Mock data pentru locații
@@ -86,17 +88,7 @@ const roles = [
   { id: 'cashier', name: 'Casier', permissions: ['pos', 'reports'] },
 ];
 
-// Mock data pentru mese
-const mockTables = [
-  { id: 1, name: 'M1', seats: 4, zone: 'Interior', status: 'free' },
-  { id: 2, name: 'M2', seats: 2, zone: 'Interior', status: 'occupied' },
-  { id: 3, name: 'M3', seats: 6, zone: 'Interior', status: 'reserved' },
-  { id: 4, name: 'M4', seats: 4, zone: 'Interior', status: 'free' },
-  { id: 5, name: 'T1', seats: 4, zone: 'Terasă', status: 'free' },
-  { id: 6, name: 'T2', seats: 6, zone: 'Terasă', status: 'occupied' },
-  { id: 7, name: 'B1', seats: 8, zone: 'Bar', status: 'free' },
-  { id: 8, name: 'B2', seats: 4, zone: 'Bar', status: 'free' },
-];
+const TABLE_ZONE_PRESETS = ['Interior', 'Terasă', 'Bar'] as const;
 
 // Mock data pentru disponibilitate meniu
 const mockMenuAvailability = [
@@ -108,58 +100,13 @@ const mockMenuAvailability = [
   { id: 6, name: 'Cola 330ml', restaurant: true, kiosk: true, app: true, delivery: true },
 ];
 
-// Mock data pentru stații KDS
-const mockKdsStations = [
-  { 
-    id: 1, 
-    name: 'Supe & Ciorbe', 
-    icon: '🍕', 
-    products: [
-      { name: 'Ciorbă de burtă', time: 5 },
-      { name: 'Supă de pui cu tăiței', time: 5 },
-      { name: 'Ciorbă de legume', time: 5 },
-    ]
-  },
-  { 
-    id: 2, 
-    name: 'Pizza', 
-    icon: '🍕', 
-    products: [
-      { name: 'Pizza Margherita', time: 15 },
-      { name: 'Pizza Quattro Formaggi', time: 15 },
-      { name: 'Pizza Diavola', time: 15 },
-      { name: 'Pizza Prosciutto', time: 15 },
-    ]
-  },
-  { 
-    id: 3, 
-    name: 'Grill & Mâncare Gătită', 
-    icon: '🔥', 
-    products: [
-      { name: 'Mici (10 buc)', time: 12 },
-      { name: 'Cotlet de porc', time: 18 },
-      { name: 'Ceafă de porc', time: 20 },
-      { name: 'Sarmale (5 buc)', time: 8 },
-      { name: 'Tocăniță de pui', time: 10 },
-      { name: 'Cartofi prăjiți', time: 8 },
-      { name: 'Salată mixtă', time: 3 },
-      { name: 'Cola 330ml', time: 0 },
-      { name: 'Apă plată 500ml', time: 0 },
-      { name: 'Bere Ursus 500ml', time: 0 },
-    ]
-  },
-  { 
-    id: 4, 
-    name: 'Giros & Doner', 
-    icon: '🥙', 
-    products: [
-      { name: 'Kebab pui', time: 8 },
-      { name: 'Kebab vită', time: 8 },
-      { name: 'Doner la farfurie', time: 10 },
-      { name: 'Shaorma mare', time: 8 },
-    ]
-  },
+const KDS_STATION_TYPES: { value: KdsStationType; label: string }[] = [
+  { value: 'soups', label: 'Supe & Ciorbe' },
+  { value: 'pizza', label: 'Pizza' },
+  { value: 'grill', label: 'Grill & Mâncare Gătită' },
+  { value: 'giros', label: 'Giros & Doner' },
 ];
+const KDS_ICONS = ['🍲', '🍕', '🔥', '🥙', '🥗', '🍰', '🍹'];
 
 // Mock data pentru ingrediente extra
 const mockExtraIngredients = [
@@ -172,18 +119,39 @@ const mockExtraIngredients = [
 ];
 
 export const AdminConfigModule: React.FC = () => {
+  const [configTab, setConfigTab] = useState('general');
   const [locations, setLocations] = useState(mockLocations);
   const [users, setUsers] = useState(mockUsers);
-  const [tables, setTables] = useState(mockTables);
+  /** Mese din API (GET /tables) – tab Hartă Mese */
+  const [dbTables, setDbTables] = useState<TableApi[]>([]);
+  const [dbTablesLoading, setDbTablesLoading] = useState(false);
   const [menuAvailability, setMenuAvailability] = useState(mockMenuAvailability);
-  const [kdsStations, setKdsStations] = useState(mockKdsStations);
+  const [kdsStations, setKdsStations] = useState<KdsStationApi[]>([]);
+  const [kdsLoading, setKdsLoading] = useState(false);
+  const [showAddKds, setShowAddKds] = useState(false);
+  const [editingKds, setEditingKds] = useState<KdsStationApi | null>(null);
+  const [kdsForm, setKdsForm] = useState({ name: '', type: 'soups' as KdsStationType, icon: '🍲', color: 'bg-amber-500' });
   const [extraIngredients, setExtraIngredients] = useState(mockExtraIngredients);
   const [searchUser, setSearchUser] = useState('');
   const [showAddLocation, setShowAddLocation] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [showAddTable, setShowAddTable] = useState(false);
-  const [showAddKds, setShowAddKds] = useState(false);
+  const [editingTableId, setEditingTableId] = useState<number | null>(null);
+  const [tableForm, setTableForm] = useState({
+    number: '',
+    seats: '4',
+    zone: 'Interior',
+    shape: 'square' as 'round' | 'square' | 'rectangle',
+    status: 'free' as 'free' | 'occupied' | 'reserved',
+    posX: '50',
+    posY: '50',
+  });
   const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [storageZones, setStorageZones] = useState<StorageZoneApi[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(false);
+  const [showAddZone, setShowAddZone] = useState(false);
+  const [editingZone, setEditingZone] = useState<StorageZoneApi | null>(null);
+  const [zoneForm, setZoneForm] = useState({ name: '', code: '' });
   const [selectedLocation, setSelectedLocation] = useState<typeof mockLocations[0] | null>(null);
   const [kioskTab, setKioskTab] = useState<'availability' | 'steps' | 'appearance'>('availability');
 
@@ -207,6 +175,254 @@ export const AdminConfigModule: React.FC = () => {
     soundNotifications: true,
     darkMode: false,
   });
+
+  const fetchKdsStations = useCallback(async () => {
+    setKdsLoading(true);
+    try {
+      const list = await menuApi.getKdsStations();
+      setKdsStations(list);
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu s-au putut încărca stațiile KDS.', variant: 'destructive' });
+    } finally {
+      setKdsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchKdsStations();
+  }, [fetchKdsStations]);
+
+  const fetchZones = useCallback(async () => {
+    setZonesLoading(true);
+    try {
+      const list = await storageApi.getZones();
+      setStorageZones(list);
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu s-au putut încărca zonele.', variant: 'destructive' });
+    } finally {
+      setZonesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchZones();
+  }, [fetchZones]);
+
+  const fetchDbTables = useCallback(async () => {
+    setDbTablesLoading(true);
+    try {
+      const list = await tablesApi.getTables();
+      setDbTables(list);
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu s-au putut încărca mesele.', variant: 'destructive' });
+    } finally {
+      setDbTablesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (configTab === 'tables') {
+      fetchDbTables();
+    }
+  }, [configTab, fetchDbTables]);
+
+  const tableDisplayName = (t: TableApi) => `M${t.number}`;
+
+  const tableZoneLabel = (t: TableApi) => (t.zone?.trim() ? t.zone.trim() : 'Fără zonă');
+
+  const zonesForMap = useMemo(() => {
+    const fromData = dbTables.map((t) => (t.zone?.trim() ? t.zone.trim() : 'Fără zonă'));
+    const presets = [...TABLE_ZONE_PRESETS] as string[];
+    const extra = [...new Set(fromData)].filter((z) => !presets.includes(z)).sort();
+    return [...presets, ...extra];
+  }, [dbTables]);
+
+  const openAddTableDialog = () => {
+    setEditingTableId(null);
+    const maxNum = dbTables.length ? Math.max(...dbTables.map((t) => t.number), 0) : 0;
+    setTableForm({
+      number: String(maxNum + 1),
+      seats: '4',
+      zone: 'Interior',
+      shape: 'square',
+      status: 'free',
+      posX: '50',
+      posY: '50',
+    });
+    setShowAddTable(true);
+  };
+
+  const openEditTableDialog = (t: TableApi) => {
+    setEditingTableId(t.id);
+    const pos = t.position ?? { x: 50, y: 50 };
+    setTableForm({
+      number: String(t.number),
+      seats: String(t.seats),
+      zone: t.zone?.trim() || 'Fără zonă',
+      shape: t.shape,
+      status: t.status,
+      posX: String(pos.x),
+      posY: String(pos.y),
+    });
+    setShowAddTable(true);
+  };
+
+  const handleSaveTable = async () => {
+    const num = parseInt(tableForm.number, 10);
+    const seats = parseInt(tableForm.seats, 10);
+    if (Number.isNaN(num) || num < 1) {
+      toast({ title: 'Eroare', description: 'Numărul mesei trebuie să fie un număr valid ≥ 1.', variant: 'destructive' });
+      return;
+    }
+    if (Number.isNaN(seats) || seats < 1) {
+      toast({ title: 'Eroare', description: 'Numărul de locuri trebuie să fie valid.', variant: 'destructive' });
+      return;
+    }
+    const px = parseFloat(tableForm.posX);
+    const py = parseFloat(tableForm.posY);
+    const position =
+      !Number.isNaN(px) && !Number.isNaN(py) ? { x: Math.max(0, Math.min(100, px)), y: Math.max(0, Math.min(100, py)) } : undefined;
+    try {
+      if (editingTableId) {
+        await tablesApi.updateTable(editingTableId, {
+          number: num,
+          seats,
+          zone: tableForm.zone.trim() === 'Fără zonă' ? '' : tableForm.zone.trim(),
+          shape: tableForm.shape,
+          status: tableForm.status,
+          position,
+        });
+        toast({ title: 'Masă actualizată', description: 'Modificările au fost salvate.' });
+      } else {
+        await tablesApi.createTable({
+          number: num,
+          seats,
+          zone: tableForm.zone.trim() === 'Fără zonă' ? undefined : tableForm.zone.trim() || undefined,
+          shape: tableForm.shape,
+          status: tableForm.status,
+          position,
+        });
+        toast({ title: 'Masă adăugată', description: 'Masa a fost creată.' });
+      }
+      setShowAddTable(false);
+      setEditingTableId(null);
+      fetchDbTables();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteTable = async (t: TableApi) => {
+    if (!confirm(`Ștergi masa ${tableDisplayName(t)}?`)) return;
+    try {
+      await tablesApi.deleteTable(t.id);
+      toast({ title: 'Masă ștearsă', description: 'Masa a fost eliminată.' });
+      fetchDbTables();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const openAddZone = () => {
+    setEditingZone(null);
+    setZoneForm({ name: '', code: '' });
+    setShowAddZone(true);
+  };
+
+  const openEditZone = (zone: StorageZoneApi) => {
+    setEditingZone(zone);
+    setZoneForm({ name: zone.name, code: zone.code ?? '' });
+    setShowAddZone(true);
+  };
+
+  const handleSaveZone = async () => {
+    if (!zoneForm.name.trim()) {
+      toast({ title: 'Eroare', description: 'Numele zonei este obligatoriu.', variant: 'destructive' });
+      return;
+    }
+    try {
+      if (editingZone) {
+        await storageApi.updateZone(editingZone.id, { name: zoneForm.name.trim(), code: zoneForm.code.trim() || undefined });
+        toast({ title: 'Zonă actualizată', description: 'Zona a fost modificată.' });
+      } else {
+        await storageApi.createZone({ name: zoneForm.name.trim(), code: zoneForm.code.trim() || undefined });
+        toast({ title: 'Zonă adăugată', description: 'Noua zonă a fost creată.' });
+      }
+      setShowAddZone(false);
+      fetchZones();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteZone = async (zone: StorageZoneApi) => {
+    if (!confirm(`Ștergi zona „${zone.name}"? Stocurile și transferurile asociate vor fi afectate.`)) return;
+    try {
+      await storageApi.deleteZone(zone.id);
+      toast({ title: 'Zonă ștearsă', description: 'Zona a fost eliminată.' });
+      fetchZones();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const openAddKds = () => {
+    setEditingKds(null);
+    setKdsForm({ name: '', type: 'soups', icon: '🍲', color: 'bg-amber-500' });
+    setShowAddKds(true);
+  };
+
+  const openEditKds = (station: KdsStationApi) => {
+    setEditingKds(station);
+    setKdsForm({
+      name: station.name,
+      type: station.type,
+      icon: station.icon ?? '🍲',
+      color: station.color ?? 'bg-amber-500',
+    });
+    setShowAddKds(true);
+  };
+
+  const handleSaveKds = async () => {
+    if (!kdsForm.name.trim()) {
+      toast({ title: 'Eroare', description: 'Numele stației este obligatoriu.', variant: 'destructive' });
+      return;
+    }
+    try {
+      if (editingKds) {
+        await menuApi.updateKdsStation(editingKds.id, {
+          name: kdsForm.name.trim(),
+          type: kdsForm.type,
+          icon: kdsForm.icon || undefined,
+          color: kdsForm.color || undefined,
+        });
+        toast({ title: 'Stație actualizată', description: 'Stația KDS a fost modificată.' });
+      } else {
+        await menuApi.createKdsStation({
+          name: kdsForm.name.trim(),
+          type: kdsForm.type,
+          icon: kdsForm.icon || undefined,
+          color: kdsForm.color || undefined,
+        });
+        toast({ title: 'Stație adăugată', description: 'Noua stație KDS a fost creată.' });
+      }
+      setShowAddKds(false);
+      fetchKdsStations();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteKds = async (station: KdsStationApi) => {
+    if (!confirm(`Ștergi stația „${station.name}"? Produsele asociate nu vor mai avea stație validă.`)) return;
+    try {
+      await menuApi.deleteKdsStation(station.id);
+      toast({ title: 'Stație ștearsă', description: 'Stația KDS a fost eliminată.' });
+      fetchKdsStations();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
 
   const filteredUsers = users.filter(user => 
     user.name.toLowerCase().includes(searchUser.toLowerCase()) ||
@@ -257,7 +473,7 @@ export const AdminConfigModule: React.FC = () => {
 
       <ScrollArea className="flex-1">
         <div className="p-6 space-y-6">
-          <Tabs defaultValue="general" className="w-full">
+          <Tabs value={configTab} onValueChange={setConfigTab} className="w-full">
             <TabsList className="flex flex-wrap gap-1 h-auto p-1">
               <TabsTrigger value="general" className="gap-2">
                 <Settings className="h-4 w-4" />
@@ -286,6 +502,10 @@ export const AdminConfigModule: React.FC = () => {
               <TabsTrigger value="users" className="gap-2">
                 <Users className="h-4 w-4" />
                 Utilizatori
+              </TabsTrigger>
+              <TabsTrigger value="zones" className="gap-2">
+                <Warehouse className="h-4 w-4" />
+                Zone depozit
               </TabsTrigger>
             </TabsList>
 
@@ -777,62 +997,204 @@ export const AdminConfigModule: React.FC = () => {
               </Card>
             </TabsContent>
 
+            {/* Zone depozit */}
+            <TabsContent value="zones" className="mt-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">Zone depozit</h3>
+                  <p className="text-sm text-muted-foreground">Zone pentru stocuri: Depozit, Bucătărie, Bar etc. Se folosesc la Stocuri pentru inventar și transferuri.</p>
+                </div>
+                <Button onClick={openAddZone}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adaugă zonă
+                </Button>
+              </div>
+              <Dialog open={showAddZone} onOpenChange={(open) => { if (!open) setShowAddZone(false); setEditingZone(null); }}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{editingZone ? 'Modifică zonă' : 'Adaugă zonă depozit'}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Nume zonă</Label>
+                      <Input
+                        placeholder="Ex: Depozit, Bucătărie, Bar"
+                        value={zoneForm.name}
+                        onChange={(e) => setZoneForm((p) => ({ ...p, name: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Cod (opțional)</Label>
+                      <Input
+                        placeholder="Ex: DEP, KIT, BAR"
+                        value={zoneForm.code}
+                        onChange={(e) => setZoneForm((p) => ({ ...p, code: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowAddZone(false)}>Anulează</Button>
+                    <Button onClick={handleSaveZone}>
+                      <Check className="h-4 w-4 mr-2" />
+                      Salvează
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              {zonesLoading ? (
+                <p className="text-sm text-muted-foreground">Se încarcă zonele...</p>
+              ) : storageZones.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    <Warehouse className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>Nu există zone. Adaugă Depozit, Bucătărie, Bar etc.</p>
+                    <Button variant="outline" className="mt-4" onClick={openAddZone}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Adaugă zonă
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {storageZones.map((zone) => (
+                    <Card key={zone.id}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <Warehouse className="h-5 w-5" />
+                            {zone.name}
+                          </CardTitle>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditZone(zone)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteZone(zone)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        {zone.code && <CardDescription>Cod: {zone.code}</CardDescription>}
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
             {/* Hartă Mese */}
             <TabsContent value="tables" className="mt-6 space-y-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold text-foreground">Configurare Mese</h3>
                   <p className="text-sm text-muted-foreground">Organizați mesele pe zone și setați capacitatea</p>
                 </div>
-                <Dialog open={showAddTable} onOpenChange={setShowAddTable}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Adaugă Masă
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
+                <div className="flex shrink-0 items-center">
+                  <Button type="button" onClick={openAddTableDialog}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adaugă Masă
+                  </Button>
+                  <Dialog
+                    open={showAddTable}
+                    onOpenChange={(open) => {
+                      setShowAddTable(open);
+                      if (!open) setEditingTableId(null);
+                    }}
+                  >
+                    <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Adaugă Masă Nouă</DialogTitle>
+                      <DialogTitle>{editingTableId ? 'Editează masă' : 'Adaugă Masă Nouă'}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Nume/Număr Masă</Label>
-                          <Input placeholder="Ex: M5" />
+                          <Input
+                            inputMode="numeric"
+                            placeholder="Ex: 5"
+                            value={tableForm.number}
+                            onChange={(e) => setTableForm((f) => ({ ...f, number: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Nr. Locuri</Label>
-                          <Input type="number" placeholder="4" />
+                          <Input
+                            type="number"
+                            min={1}
+                            placeholder="4"
+                            value={tableForm.seats}
+                            onChange={(e) => setTableForm((f) => ({ ...f, seats: e.target.value }))}
+                          />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Zonă</Label>
-                        <Select>
+                        <Select
+                          value={tableForm.zone}
+                          onValueChange={(v) => setTableForm((f) => ({ ...f, zone: v }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Selectează zona" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="interior">Interior</SelectItem>
-                            <SelectItem value="terasa">Terasă</SelectItem>
-                            <SelectItem value="bar">Bar</SelectItem>
-                            <SelectItem value="vip">VIP</SelectItem>
+                            <SelectItem value="Interior">Interior</SelectItem>
+                            <SelectItem value="Terasă">Terasă</SelectItem>
+                            <SelectItem value="Bar">Bar</SelectItem>
+                            <SelectItem value="VIP">VIP</SelectItem>
+                            <SelectItem value="Fără zonă">Fără zonă</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Formă</Label>
+                          <Select
+                            value={tableForm.shape}
+                            onValueChange={(v) =>
+                              setTableForm((f) => ({ ...f, shape: v as typeof f.shape }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="square">Pătrat</SelectItem>
+                              <SelectItem value="round">Rotund</SelectItem>
+                              <SelectItem value="rectangle">Dreptunghi</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Status</Label>
+                          <Select
+                            value={tableForm.status}
+                            onValueChange={(v) =>
+                              setTableForm((f) => ({ ...f, status: v as typeof f.status }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="free">Liberă</SelectItem>
+                              <SelectItem value="occupied">Ocupată</SelectItem>
+                              <SelectItem value="reserved">Rezervată</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowAddTable(false)}>Anulează</Button>
-                      <Button onClick={() => {
-                        setShowAddTable(false);
-                        toast({ title: "Masă adăugată", description: "Noua masă a fost creată." });
-                      }}>
+                      <Button variant="outline" onClick={() => setShowAddTable(false)}>
+                        Anulează
+                      </Button>
+                      <Button type="button" onClick={handleSaveTable}>
                         <Check className="h-4 w-4 mr-2" />
                         Salvează
                       </Button>
                     </DialogFooter>
                   </DialogContent>
-                </Dialog>
+                  </Dialog>
+                </div>
               </div>
 
               {/* Table Map Visual */}
@@ -846,14 +1208,19 @@ export const AdminConfigModule: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="bg-muted/30 rounded-xl p-6 min-h-[300px] relative">
+                    {dbTablesLoading && (
+                      <p className="text-sm text-muted-foreground mb-4">Se încarcă mesele…</p>
+                    )}
                     {/* Zones */}
-                    {['Interior', 'Terasă', 'Bar'].map((zone) => (
+                    {zonesForMap.map((zone) => (
                       <div key={zone} className="mb-6">
                         <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
                           <Badge variant="outline">{zone}</Badge>
                         </h4>
                         <div className="flex flex-wrap gap-3">
-                          {tables.filter(t => t.zone === zone).map((table) => (
+                          {dbTables
+                            .filter((t) => tableZoneLabel(t) === zone)
+                            .map((table) => (
                             <div
                               key={table.id}
                               className={`
@@ -865,7 +1232,7 @@ export const AdminConfigModule: React.FC = () => {
                               `}
                             >
                               <Move className="h-3 w-3 absolute top-1 right-1 text-muted-foreground" />
-                              <p className="font-bold text-lg text-foreground">{table.name}</p>
+                              <p className="font-bold text-lg text-foreground">{tableDisplayName(table)}</p>
                               <p className="text-xs text-muted-foreground">{table.seats} locuri</p>
                               <Badge 
                                 variant="secondary" 
@@ -900,26 +1267,52 @@ export const AdminConfigModule: React.FC = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {tables.map((table) => (
-                        <TableRow key={table.id}>
-                          <TableCell className="font-bold">{table.name}</TableCell>
-                          <TableCell>{table.zone}</TableCell>
-                          <TableCell>{table.seats}</TableCell>
-                          <TableCell>
-                            <Badge variant={table.status === 'free' ? 'default' : 'secondary'}>
-                              {table.status === 'free' ? 'Liberă' : table.status === 'occupied' ? 'Ocupată' : 'Rezervată'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                      {dbTablesLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                            Se încarcă mesele…
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : dbTables.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                            Nicio masă în baza de date. Folosește „Adaugă Masă”.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        dbTables.map((table) => (
+                          <TableRow key={table.id}>
+                            <TableCell className="font-bold">{tableDisplayName(table)}</TableCell>
+                            <TableCell>{tableZoneLabel(table)}</TableCell>
+                            <TableCell>{table.seats}</TableCell>
+                            <TableCell>
+                              <Badge variant={table.status === 'free' ? 'default' : 'secondary'}>
+                                {table.status === 'free' ? 'Liberă' : table.status === 'occupied' ? 'Ocupată' : 'Rezervată'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEditTableDialog(table)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive"
+                                onClick={() => handleDeleteTable(table)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -1119,89 +1512,120 @@ export const AdminConfigModule: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-foreground">Configurare KDS</h3>
-                  <p className="text-sm text-muted-foreground">Stațiile KDS sunt ecranele din bucătărie unde se afișează comenzile pentru fiecare secție de preparare.</p>
+                  <p className="text-sm text-muted-foreground">Stațiile KDS sunt ecranele din bucătărie unde se afișează comenzile. Lista de aici apare la „Adaugă produs” (Stație KDS).</p>
                 </div>
-                <Dialog open={showAddKds} onOpenChange={setShowAddKds}>
-                  <DialogTrigger asChild>
-                    <Button>
+                <Button onClick={openAddKds}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adaugă stație KDS
+                </Button>
+              </div>
+
+              <Dialog open={showAddKds} onOpenChange={(open) => { if (!open) setShowAddKds(false); setEditingKds(null); }}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{editingKds ? 'Modifică Stație KDS' : 'Adaugă Stație KDS'}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Nume stație</Label>
+                      <Input
+                        placeholder="Ex: Grill, Supe, Pizza"
+                        value={kdsForm.name}
+                        onChange={(e) => setKdsForm((p) => ({ ...p, name: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tip</Label>
+                      <Select
+                        value={kdsForm.type}
+                        onValueChange={(v) => setKdsForm((p) => ({ ...p, type: v as KdsStationType }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {KDS_STATION_TYPES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Icon</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {KDS_ICONS.map((icon) => (
+                          <Button
+                            key={icon}
+                            type="button"
+                            variant={kdsForm.icon === icon ? 'default' : 'outline'}
+                            size="icon"
+                            className="text-2xl"
+                            onClick={() => setKdsForm((p) => ({ ...p, icon }))}
+                          >
+                            {icon}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Culoare (ex: bg-amber-500)</Label>
+                      <Input
+                        placeholder="bg-amber-500"
+                        value={kdsForm.color}
+                        onChange={(e) => setKdsForm((p) => ({ ...p, color: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowAddKds(false)}>Anulează</Button>
+                    <Button onClick={handleSaveKds}>
+                      <Check className="h-4 w-4 mr-2" />
+                      Salvează
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {kdsLoading ? (
+                <p className="text-sm text-muted-foreground">Se încarcă stațiile KDS...</p>
+              ) : kdsStations.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    <UtensilsCrossed className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>Nu există stații KDS. Adaugă prima stație sau rulează „Încarcă date inițiale” din Stocuri → Meniu.</p>
+                    <Button variant="outline" className="mt-4" onClick={openAddKds}>
                       <Plus className="h-4 w-4 mr-2" />
                       Adaugă stație KDS
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Adaugă Stație KDS</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label>Nume Stație</Label>
-                        <Input placeholder="Ex: Grill" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Icon</Label>
-                        <div className="flex gap-2">
-                          {['🍕', '🔥', '🥗', '🥙', '🍰', '🍹'].map((icon) => (
-                            <Button key={icon} variant="outline" size="icon" className="text-2xl">
-                              {icon}
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {kdsStations.map((station) => (
+                    <Card key={station.id}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <span className="text-2xl">{station.icon ?? '🍲'}</span>
+                            {station.name}
+                          </CardTitle>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditKds(station)}>
+                              <Edit className="h-4 w-4" />
                             </Button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowAddKds(false)}>Anulează</Button>
-                      <Button onClick={() => {
-                        setShowAddKds(false);
-                        toast({ title: "Stație KDS adăugată", description: "Noua stație a fost creată." });
-                      }}>
-                        <Check className="h-4 w-4 mr-2" />
-                        Salvează
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {kdsStations.map((station) => (
-                  <Card key={station.id}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <span className="text-2xl">{station.icon}</span>
-                          {station.name}
-                        </CardTitle>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      <CardDescription>{station.products.length} produse</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2 max-h-48 overflow-auto">
-                        {station.products.map((product, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg text-sm">
-                            <span className="text-foreground">{product.name}</span>
-                            <Badge variant="outline" className="text-xs">
-                              <Clock className="h-3 w-3 mr-1" />
-                              {product.time} min
-                            </Badge>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteKds(station)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
-                        ))}
-                      </div>
-                      <Button variant="outline" size="sm" className="w-full mt-3">
-                        <Plus className="h-3 w-3 mr-1" />
-                        Adaugă Produs
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                        </div>
+                        <CardDescription>
+                          Tip: {KDS_STATION_TYPES.find((t) => t.value === station.type)?.label ?? station.type}
+                        </CardDescription>
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </TabsContent>
 
             {/* Extra Ingredients */}

@@ -37,7 +37,7 @@ interface CartItem {
 }
 
 interface TableOrder {
-  tableId: string;
+  tableId: number;
   tableNumber: number;
   items: CartItem[];
   history: CartItem[];
@@ -131,7 +131,11 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
   const [customerCashAmount, setCustomerCashAmount] = useState<string>('');
   
   // Table ordering
-  const [scannedTableId, setScannedTableId] = useState<string | null>(initialTableId || null);
+  const [scannedTableId, setScannedTableId] = useState<number | null>(() => {
+    if (!initialTableId) return null;
+    const n = parseInt(initialTableId, 10);
+    return Number.isNaN(n) ? null : n;
+  });
   const [qrInput, setQrInput] = useState('');
   const [tableOrder, setTableOrder] = useState<TableOrder | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -216,7 +220,10 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
   }, [cart, menu]);
 
   const handleScanQR = () => {
-    const table = tables.find(t => t.qrCode === qrInput || t.id.includes(qrInput.toLowerCase()) || t.number.toString() === qrInput);
+    const q = qrInput.trim();
+    const table = tables.find(
+      (t) => t.qrCode === q || String(t.id) === q || t.number.toString() === q
+    );
     if (table) {
       setScannedTableId(table.id);
       setOrderMode('dine-in');

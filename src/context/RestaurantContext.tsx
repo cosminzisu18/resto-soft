@@ -3,6 +3,7 @@ import {
   User, Table, MenuItem, Order, OrderItem, KDSStation, Reservation, Notification, OrderSource,
   users, initialTables, menuItems, kdsStations, sampleOrders, sampleReservations, sampleNotifications, deliveryPlatforms
 } from '@/data/mockData';
+import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
 
 interface RestaurantContextType {
   // Auth
@@ -14,7 +15,7 @@ interface RestaurantContextType {
   tables: Table[];
   updateTable: (table: Table) => void;
   addTable: (table: Omit<Table, 'id'>) => void;
-  deleteTable: (tableId: string) => void;
+  deleteTable: (tableId: number) => void;
   
   // Menu
   menu: MenuItem[];
@@ -24,12 +25,12 @@ interface RestaurantContextType {
   
   // Orders
   orders: Order[];
-  createOrder: (tableId?: string, source?: OrderSource) => Order;
+  createOrder: (tableId?: number, source?: OrderSource) => Order;
   updateOrder: (order: Order) => void;
   addItemToOrder: (orderId: string, menuItem: MenuItem, quantity: number, modifications?: OrderItem['modifications']) => void;
   updateOrderItemStatus: (orderId: string, itemId: string, status: OrderItem['status']) => void;
   completeOrder: (orderId: string, tip?: number, cui?: string) => void;
-  getActiveOrderForTable: (tableId: string) => Order | undefined;
+  getActiveOrderForTable: (tableId: number) => Order | undefined;
   createDeliveryOrder: (source: OrderSource, customerInfo: { name: string; phone: string; address?: string; platformOrderId?: string }) => Order;
   
   // Reservations
@@ -49,7 +50,7 @@ interface RestaurantContextType {
   addKdsStation: (station: Omit<KDSStation, 'id'>) => void;
   updateKdsStation: (station: KDSStation) => void;
   deleteKdsStation: (stationId: string) => void;
-  getOrdersForStation: (stationId: string) => { order: Order; items: OrderItem[] }[];
+  getOrdersForStation: (station: KDSStation) => { order: Order; items: OrderItem[] }[];
   
   // Delivery
   getDeliveryOrders: () => Order[];
@@ -87,11 +88,14 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const addTable = useCallback((table: Omit<Table, 'id'>) => {
-    const newTable: Table = { ...table, id: `t${Date.now()}` };
-    setTables(prev => [...prev, newTable]);
+    setTables((prev) => {
+      const nextId = Math.max(0, ...prev.map((t) => t.id)) + 1;
+      const newTable: Table = { ...table, id: nextId };
+      return [...prev, newTable];
+    });
   }, []);
 
-  const deleteTable = useCallback((tableId: string) => {
+  const deleteTable = useCallback((tableId: number) => {
     setTables(prev => prev.filter(t => t.id !== tableId));
   }, []);
 
@@ -110,8 +114,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   // Orders
-  const createOrder = useCallback((tableId?: string, source: OrderSource = 'restaurant'): Order => {
-    const table = tableId ? tables.find(t => t.id === tableId) : undefined;
+  const createOrder = useCallback((tableId?: number, source: OrderSource = 'restaurant'): Order => {
+    const table = tableId !== undefined ? tables.find(t => t.id === tableId) : undefined;
     const newOrder: Order = {
       id: `o${Date.now()}`,
       tableId,
@@ -246,7 +250,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [orders]);
 
-  const getActiveOrderForTable = useCallback((tableId: string): Order | undefined => {
+  const getActiveOrderForTable = useCallback((tableId: number): Order | undefined => {
     return orders.find(o => o.tableId === tableId && o.status === 'active');
   }, [orders]);
 
@@ -323,35 +327,37 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setKdsStationsList(prev => prev.filter(s => s.id !== stationId));
   }, []);
 
-  const getOrdersForStation = useCallback((stationId: string): { order: Order; items: OrderItem[] }[] => {
-    const result: { order: Order; items: OrderItem[] }[] = [];
-    
-    // Get all active orders, alternating between restaurant and delivery
-    const activeOrders = orders.filter(o => o.status === 'active');
-    const restaurantOrders = activeOrders.filter(o => o.source === 'restaurant');
-    const deliveryOrders = activeOrders.filter(o => o.source !== 'restaurant');
-    
-    // Interleave orders: restaurant, online, restaurant, online...
-    const interleavedOrders: Order[] = [];
-    const maxLen = Math.max(restaurantOrders.length, deliveryOrders.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (i < restaurantOrders.length) interleavedOrders.push(restaurantOrders[i]);
-      if (i < deliveryOrders.length) interleavedOrders.push(deliveryOrders[i]);
-    }
-    
-    interleavedOrders.forEach(order => {
-      const stationItems = order.items.filter(
-        item => item.menuItem.kdsStation === stationId && 
-                (item.status === 'pending' || item.status === 'cooking')
-      );
-      
-      if (stationItems.length > 0) {
-        result.push({ order, items: stationItems });
-      }
-    });
+  const getOrdersForStation = useCallback(
+    (station: KDSStation): { order: Order; items: OrderItem[] }[] => {
+      const result: { order: Order; items: OrderItem[] }[] = [];
 
-    return result;
-  }, [orders]);
+      const activeOrders = orders.filter((o) => o.status === 'active');
+      const restaurantOrders = activeOrders.filter((o) => o.source === 'restaurant');
+      const deliveryOrders = activeOrders.filter((o) => o.source !== 'restaurant');
+
+      const interleavedOrders: Order[] = [];
+      const maxLen = Math.max(restaurantOrders.length, deliveryOrders.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (i < restaurantOrders.length) interleavedOrders.push(restaurantOrders[i]);
+        if (i < deliveryOrders.length) interleavedOrders.push(deliveryOrders[i]);
+      }
+
+      interleavedOrders.forEach((order) => {
+        const stationItems = order.items.filter(
+          (item) =>
+            orderItemMatchesKdsStation(item, station) &&
+            (item.status === 'pending' || item.status === 'cooking'),
+        );
+
+        if (stationItems.length > 0) {
+          result.push({ order, items: stationItems });
+        }
+      });
+
+      return result;
+    },
+    [orders],
+  );
 
   // Delivery
   const getDeliveryOrders = useCallback((): Order[] => {

@@ -42,7 +42,7 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
   });
 
   // Suggest tables based on party size
-  const suggestTables = (partySize: number): string[] => {
+  const suggestTables = (partySize: number): number[] => {
     const sortedTables = [...tables]
       .filter(t => t.status === 'free')
       .sort((a, b) => a.seats - b.seats);
@@ -55,7 +55,7 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
 
     // If no single table fits, combine tables
     let remainingSeats = partySize;
-    const selectedTables: string[] = [];
+    const selectedTables: number[] = [];
     
     // Start with largest tables
     const largestFirst = [...sortedTables].reverse();
@@ -73,7 +73,7 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
     return selectedTables;
   };
 
-  const [suggestedTableIds, setSuggestedTableIds] = useState<string[]>([]);
+  const [suggestedTableIds, setSuggestedTableIds] = useState<number[]>([]);
 
   const handlePartySizeChange = (size: string) => {
     setForm({ ...form, partySize: size });

@@ -10,6 +10,7 @@ import { RecipesManager } from '@/components/stocks/RecipesManager';
 import { InventoryManager } from '@/components/stocks/InventoryManager';
 import { PrimaryManagement } from '@/components/stocks/PrimaryManagement';
 import { MenuManager } from '@/components/stocks/MenuManager';
+import { IngredientsManager } from '@/components/stocks/IngredientsManager';
 
 export const StocksModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -22,13 +23,14 @@ export const StocksModule: React.FC = () => {
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
       <PageHeader 
         title="Stocuri & Gestiune" 
-        description="Dashboard, gestiune stocuri, meniu, rețete și inventar"
+        description="Dashboard, ingrediente, meniu, stocuri, rețete și inventar"
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6">
         <ScrollArea className="w-full">
           <TabsList className="inline-flex h-auto gap-1 w-max">
             <TabsTrigger value="dashboard" className="text-xs sm:text-sm">Dashboard</TabsTrigger>
+            <TabsTrigger value="ingredients" className="text-xs sm:text-sm">Ingrediente</TabsTrigger>
             <TabsTrigger value="menu" className="text-xs sm:text-sm">Meniu</TabsTrigger>
             <TabsTrigger value="stocks" className="text-xs sm:text-sm">Stocuri</TabsTrigger>
             <TabsTrigger value="alerts" className="gap-1 sm:gap-2 text-xs sm:text-sm">
@@ -44,6 +46,10 @@ export const StocksModule: React.FC = () => {
 
         <TabsContent value="dashboard">
           <StocksDashboard onNavigateToAlerts={handleNavigateToAlerts} />
+        </TabsContent>
+
+        <TabsContent value="ingredients">
+          <IngredientsManager />
         </TabsContent>
 
         <TabsContent value="menu">

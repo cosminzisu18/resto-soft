@@ -8,13 +8,19 @@ import { useToast } from '@/hooks/use-toast';
 
 interface TableMapProps {
   onTableSelect: (table: Table) => void;
+  /** Când sunt furnizate, se folosesc aceste mese în locul celor din context (ex. din API). */
+  tables?: Table[];
+  /** Când e furnizat, se folosește pentru badge-ul de articole pe masă (ex. comanda din API). */
+  getActiveOrderForTable?: (tableId: number) => { items: unknown[] } | undefined;
 }
 
-const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
-  const { tables, getActiveOrderForTable, updateTable } = useRestaurant();
+const TableMap: React.FC<TableMapProps> = ({ onTableSelect, tables: tablesProp, getActiveOrderForTable: getOrderProp }) => {
+  const { tables: contextTables, getActiveOrderForTable: contextGetOrder, updateTable } = useRestaurant();
+  const tables = tablesProp ?? contextTables;
+  const getActiveOrderForTable = getOrderProp ?? contextGetOrder;
   const { toast } = useToast();
   const [mergeMode, setMergeMode] = useState(false);
-  const [selectedForMerge, setSelectedForMerge] = useState<string[]>([]);
+  const [selectedForMerge, setSelectedForMerge] = useState<number[]>([]);
 
   const getTableShape = (shape: Table['shape']) => {
     switch (shape) {
@@ -69,15 +75,25 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
           <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-blue-500" />Ocupată</span>
           <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-amber-500" />Rezervată</span>
         </div>
-        <Button variant={mergeMode ? 'default' : 'outline'} size="sm" onClick={() => { setMergeMode(!mergeMode); setSelectedForMerge([]); }}>
-          <Link2 className="w-4 h-4 mr-1" />{mergeMode ? 'Anulează' : 'Unește mese'}
-        </Button>
-        {mergeMode && selectedForMerge.length >= 2 && (
-          <Button size="sm" onClick={handleMergeTables}>Confirmă ({selectedForMerge.length})</Button>
+        {!tablesProp && (
+          <>
+            <Button variant={mergeMode ? 'default' : 'outline'} size="sm" onClick={() => { setMergeMode(!mergeMode); setSelectedForMerge([]); }}>
+              <Link2 className="w-4 h-4 mr-1" />{mergeMode ? 'Anulează' : 'Unește mese'}
+            </Button>
+            {mergeMode && selectedForMerge.length >= 2 && (
+              <Button size="sm" onClick={handleMergeTables}>Confirmă ({selectedForMerge.length})</Button>
+            )}
+          </>
         )}
       </div>
 
       <div className="flex-1 relative bg-secondary/30 overflow-auto p-4">
+        {tablesProp !== undefined && tables.length === 0 ? (
+          <div className="flex flex-col items-center justify-center min-h-[400px] text-center text-muted-foreground px-4">
+            <p className="font-medium text-foreground mb-1">Nu există mese în baza de date</p>
+            <p className="text-sm max-w-md">Adaugă mese din admin (sau asigură-te că backend-ul returnează rânduri în tabela <code className="text-xs bg-muted px-1 rounded">tables</code>). ID-urile meselor sunt numerice (auto-increment) în baza de date.</p>
+          </div>
+        ) : (
         <div className="relative min-h-[500px] min-w-full" style={{ backgroundImage: 'radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
           {tables.map(table => {
             const order = getActiveOrderForTable(table.id);
@@ -107,6 +123,7 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
             );
           })}
         </div>
+        )}
       </div>
     </div>
   );

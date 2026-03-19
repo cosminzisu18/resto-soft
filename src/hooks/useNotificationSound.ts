@@ -96,8 +96,9 @@ export const useNotificationSound = () => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
+      const ctx = audioContextRef.current;
+      if (ctx && ctx.state !== 'closed') {
+        void ctx.close();
       }
     };
   }, []);

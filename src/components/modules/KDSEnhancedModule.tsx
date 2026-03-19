@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { KDSStation, OrderItem, Order, users, MenuItem, allergens } from '@/data/mockData';
+import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
 import { cn } from '@/lib/utils';
 import { 
   Clock, LogOut, Truck, MessageSquare, ChefHat, CheckCircle2, Timer, 
@@ -126,7 +127,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
   const labelRef = useRef<HTMLDivElement>(null);
   const allergenLabelRef = useRef<HTMLDivElement>(null);
 
-  const stationOrders = getOrdersForStation(station.id);
+  const stationOrders = getOrdersForStation(station);
   const kitchenEmployees = users.filter(u => u.role === 'kitchen');
 
   useEffect(() => {
@@ -280,7 +281,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     const item = order?.items.find(i => i.id === itemId);
     
     if (order && item) {
-      const stationItems = order.items.filter(i => i.menuItem.kdsStation === station.id);
+      const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
       const productIndex = stationItems.findIndex(i => i.id === itemId) + 1;
 
       // Create label data
@@ -305,7 +306,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     updateOrderItemStatus(orderId, itemId, 'ready');
 
     if (order) {
-      const stationItems = order.items.filter(i => i.menuItem.kdsStation === station.id);
+      const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
       const allReady = stationItems.every(i => i.id === itemId || i.status === 'ready');
       
       if (allReady) {
@@ -968,7 +969,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {completedOrders.map(order => {
           const config = platformConfig[order.source] || platformConfig.restaurant;
-          const stationItems = order.items.filter(i => i.menuItem.kdsStation === station.id);
+          const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
           
           return (
             <Card key={order.id} className="bg-green-50 border-green-200 text-slate-900">

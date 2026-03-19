@@ -1,18 +1,32 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
   Package, Warehouse, ChefHat, Wine, TrendingUp, TrendingDown, 
-  AlertTriangle, Clock, ArrowUpRight, ArrowDownRight 
+  AlertTriangle, Clock, ArrowUpRight, ArrowDownRight, Loader2
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Legend
+  BarChart, Bar
 } from 'recharts';
+import { storageApi, type StorageZoneApi, type InventoryApi } from '@/lib/api';
 
 interface StocksDashboardProps {
   onNavigateToAlerts: () => void;
+}
+
+const ZONE_ICON_MAP: Record<string, { icon: typeof Warehouse; color: string }> = {
+  'depozit': { icon: Warehouse, color: 'bg-blue-500' },
+  'depozit principal': { icon: Warehouse, color: 'bg-blue-500' },
+  'bucătărie': { icon: ChefHat, color: 'bg-orange-500' },
+  'bucatarie': { icon: ChefHat, color: 'bg-orange-500' },
+  'bar': { icon: Wine, color: 'bg-purple-500' },
+};
+
+function getZoneIcon(name: string) {
+  const key = name.toLowerCase().trim();
+  return ZONE_ICON_MAP[key] ?? { icon: Package, color: 'bg-slate-500' };
 }
 
 const consumptionData = [
@@ -25,39 +39,6 @@ const consumptionData = [
   { name: 'Dum', stoc: 4800, consum: 2000 },
 ];
 
-const depotData = [
-  { 
-    id: 'warehouse', 
-    name: 'Depozit Principal', 
-    icon: Warehouse, 
-    products: 89, 
-    value: 28500, 
-    capacity: 75,
-    trend: 5.2,
-    color: 'bg-blue-500'
-  },
-  { 
-    id: 'kitchen', 
-    name: 'Bucătărie', 
-    icon: ChefHat, 
-    products: 45, 
-    value: 12300, 
-    capacity: 62,
-    trend: -2.1,
-    color: 'bg-orange-500'
-  },
-  { 
-    id: 'bar', 
-    name: 'Bar', 
-    icon: Wine, 
-    products: 22, 
-    value: 4430, 
-    capacity: 45,
-    trend: 8.4,
-    color: 'bg-purple-500'
-  },
-];
-
 const activeAlerts = [
   { product: 'Carne vită', current: 2.5, min: 5, unit: 'kg', severity: 'critical', prediction: '~3 ore' },
   { product: 'Ulei măsline', current: 3, min: 5, unit: 'L', severity: 'warning', prediction: '~8 ore' },
@@ -66,6 +47,52 @@ const activeAlerts = [
 ];
 
 export const StocksDashboard: React.FC<StocksDashboardProps> = ({ onNavigateToAlerts }) => {
+  const [zones, setZones] = useState<StorageZoneApi[]>([]);
+  const [inventory, setInventory] = useState<InventoryApi[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([storageApi.getZones(), storageApi.getInventory()])
+      .then(([z, inv]) => {
+        if (!cancelled) {
+          setZones(z);
+          setInventory(inv);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setZones([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const depotData = useMemo(() => {
+    return zones.map((zone) => {
+      const rows = inventory.filter((r) => r.zoneId === zone.id);
+      const products = rows.length;
+      const value = rows.reduce((sum, r) => {
+        const qty = Number(r.quantity) || 0;
+        const price = Number(r.menuItem?.price) || 0;
+        return sum + qty * price;
+      }, 0);
+      const { icon, color } = getZoneIcon(zone.name);
+      const capacity = value > 0 ? Math.min(100, Math.round((value / 50000) * 100)) : 0;
+      return {
+        id: String(zone.id),
+        name: zone.name,
+        icon,
+        products,
+        value: Math.round(value * 100) / 100,
+        capacity,
+        color,
+      };
+    });
+  }, [zones, inventory]);
+
   const totalValue = depotData.reduce((acc, d) => acc + d.value, 0);
   const totalProducts = depotData.reduce((acc, d) => acc + d.products, 0);
   const criticalAlerts = activeAlerts.filter(a => a.severity === 'critical').length;
@@ -80,11 +107,10 @@ export const StocksDashboard: React.FC<StocksDashboardProps> = ({ onNavigateToAl
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Valoare Totală Stoc</p>
-                <p className="text-3xl font-bold mt-1">{totalValue.toLocaleString()} RON</p>
-                <div className="flex items-center gap-1 mt-2 text-sm text-green-600">
-                  <TrendingUp className="h-4 w-4" />
-                  <span>+3.2% vs. săpt. trecută</span>
-                </div>
+                <p className="text-3xl font-bold mt-1">{totalValue.toLocaleString('ro-RO')} RON</p>
+                {!loading && depotData.length > 0 && (
+                  <p className="text-sm text-muted-foreground mt-2">din {depotData.length} zone</p>
+                )}
               </div>
               <div className="p-4 rounded-2xl bg-primary/10">
                 <Package className="h-8 w-8 text-primary" />
@@ -97,9 +123,11 @@ export const StocksDashboard: React.FC<StocksDashboardProps> = ({ onNavigateToAl
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Produse</p>
+                <p className="text-sm font-medium text-muted-foreground">Total Produse (linii inventar)</p>
                 <p className="text-3xl font-bold mt-1">{totalProducts}</p>
-                <p className="text-sm text-muted-foreground mt-2">în 7 categorii</p>
+                {!loading && zones.length > 0 && (
+                  <p className="text-sm text-muted-foreground mt-2">în {zones.length} zone</p>
+                )}
               </div>
               <div className="p-4 rounded-2xl bg-blue-500/10">
                 <Package className="h-8 w-8 text-blue-500" />
@@ -148,49 +176,60 @@ export const StocksDashboard: React.FC<StocksDashboardProps> = ({ onNavigateToAl
         </Card>
       </div>
 
-      {/* Depot Cards */}
+      {/* Depot Cards - date din DB (zone depozit + inventar) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {depotData.map((depot) => {
-          const Icon = depot.icon;
-          return (
-            <Card key={depot.id} className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-3 rounded-xl ${depot.color}`}>
-                      <Icon className="h-6 w-6 text-white" />
+        {loading ? (
+          <div className="col-span-full flex items-center justify-center py-12 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin mr-2" />
+            Se încarcă zonele...
+          </div>
+        ) : depotData.length === 0 ? (
+          <Card className="col-span-full border-dashed">
+            <CardContent className="p-8 text-center text-muted-foreground">
+              <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p className="font-medium">Nu există zone de depozit</p>
+              <p className="text-sm mt-1">Adaugă zone (Depozit, Bucătărie, Bar) din <strong>Admin → Zone depozit</strong> sau din tab-ul <strong>Stocuri</strong>.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          depotData.map((depot) => {
+            const Icon = depot.icon;
+            return (
+              <Card key={depot.id} className="hover:shadow-lg transition-shadow cursor-pointer">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-3 rounded-xl ${depot.color}`}>
+                        <Icon className="h-6 w-6 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold">{depot.name}</h3>
+                        <p className="text-sm text-muted-foreground">{depot.products} produse</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold">{depot.name}</h3>
-                      <p className="text-sm text-muted-foreground">{depot.products} produse</p>
-                    </div>
                   </div>
-                  <div className={`flex items-center gap-1 text-sm ${depot.trend >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {depot.trend >= 0 ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-                    <span>{Math.abs(depot.trend)}%</span>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Valoare stoc</span>
-                    <span className="font-semibold">{depot.value.toLocaleString()} RON</span>
-                  </div>
-                  <div className="space-y-1">
+
+                  <div className="space-y-3">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Capacitate utilizată</span>
-                      <span className="font-medium">{depot.capacity}%</span>
+                      <span className="text-muted-foreground">Valoare stoc</span>
+                      <span className="font-semibold">{depot.value.toLocaleString('ro-RO')} RON</span>
                     </div>
-                    <Progress 
-                      value={depot.capacity} 
-                      className="h-2"
-                    />
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Indicativ utilizare</span>
+                        <span className="font-medium">{depot.capacity}%</span>
+                      </div>
+                      <Progress
+                        value={depot.capacity}
+                        className="h-2"
+                      />
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
       </div>
 
       {/* Charts Row */}
@@ -246,33 +285,41 @@ export const StocksDashboard: React.FC<StocksDashboardProps> = ({ onNavigateToAl
           </CardContent>
         </Card>
 
-        {/* Consumption by Depot */}
+        {/* Valoare stoc per zonă (din DB) */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Consum per Depozit</CardTitle>
+            <CardTitle className="text-lg">Valoare stoc per zonă</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[
-                  { name: 'Bucătărie', value: 8500, fill: 'hsl(var(--primary))' },
-                  { name: 'Bar', value: 3200, fill: 'hsl(142.1 76.2% 36.3%)' },
-                  { name: 'Depozit', value: 1800, fill: 'hsl(217.2 91.2% 59.8%)' },
-                ]}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" className="text-xs" />
-                  <YAxis className="text-xs" />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px'
-                    }} 
-                    formatter={(value: number) => [`${value.toLocaleString()} RON`, 'Consum']}
-                  />
-                  <Bar dataKey="value" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {depotData.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  Nu există date. Adaugă zone și inventar.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={depotData.map((d) => ({
+                      name: d.name,
+                      value: d.value,
+                      fill: d.color === 'bg-blue-500' ? 'hsl(217.2 91.2% 59.8%)' : d.color === 'bg-orange-500' ? 'hsl(24.6 95% 53.1%)' : d.color === 'bg-purple-500' ? 'hsl(262.1 83.3% 57.8%)' : 'hsl(var(--primary))',
+                    }))}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="name" className="text-xs" />
+                    <YAxis className="text-xs" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                      }}
+                      formatter={(value: number) => [`${Number(value).toLocaleString('ro-RO')} RON`, 'Valoare stoc']}
+                    />
+                    <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
+import { imageSrc } from '@/lib/api';
 import { ExternalLink, LucideIcon } from 'lucide-react';
 
 interface ProductCardProps {
@@ -34,7 +35,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <div className="flex-1">
           {image ? (
             <div className="w-12 h-12 rounded-xl overflow-hidden mb-3 bg-muted">
-              <img src={image} alt={name} className="w-full h-full object-cover" />
+              <img src={imageSrc(image)} alt={name} className="w-full h-full object-cover" />
             </div>
           ) : Icon ? (
             <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">

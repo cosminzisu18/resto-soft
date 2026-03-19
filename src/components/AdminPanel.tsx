@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRestaurant } from '@/context/RestaurantContext';
@@ -14,6 +14,8 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation, upsellQuestions, UpsellQuestion, expiringProducts, ExpiringProduct, menuItems } from '@/data/mockData';
+import { tablesApi, type TableApi } from '@/lib/api';
+import AdminTableMap from '@/components/AdminTableMap';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -30,7 +32,7 @@ type AdminView = 'dashboard' | 'tables' | 'tableMap' | 'orders' | 'menu' | 'extr
 const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const isMobile = useIsMobile();
   const { 
-    tables, addTable, updateTable, deleteTable,
+    tables,
     menu, addMenuItem, updateMenuItem, deleteMenuItem,
     kdsStations, addKdsStation, updateKdsStation, deleteKdsStation,
     orders, reservations, deleteReservation, updateReservation
@@ -67,6 +69,68 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [showAddExpiringProduct, setShowAddExpiringProduct] = useState(false);
   const [expiringForm, setExpiringForm] = useState({ productId: '', expiresIn: '2', quantity: '1' });
 
+  /** Mese din baza de date (API) – folosite la „Mese”, „Hartă mese” și rezolvare număr masă la rezervări. */
+  const [schemaTables, setSchemaTables] = useState<Table[]>([]);
+  const [schemaTablesLoading, setSchemaTablesLoading] = useState(false);
+
+  /** Mapează răspuns API la tipul Table (mockData) folosit de AdminTableMap. */
+  const mapApiTableToTable = (api: TableApi): Table => ({
+    id: api.id,
+    number: api.number,
+    seats: api.seats,
+    status: api.status,
+    position: api.position ?? { x: 50, y: 50 },
+    shape: api.shape,
+    currentOrderId: api.currentOrderId ?? undefined,
+    reservationId: api.reservationId ?? undefined,
+    currentGuests: api.currentGuests,
+    mergedWith: api.mergedWith ?? undefined,
+    qrCode: api.qrCode ?? undefined,
+  });
+
+  const fetchSchemaTables = useCallback(async () => {
+    setSchemaTablesLoading(true);
+    try {
+      const list = await tablesApi.getTables();
+      setSchemaTables(list.map(mapApiTableToTable));
+    } catch (e) {
+      toast({ title: 'Eroare la încărcarea meselor', description: String(e), variant: 'destructive' });
+      setSchemaTables([]);
+    } finally {
+      setSchemaTablesLoading(false);
+    }
+  }, [toast]);
+
+  React.useEffect(() => {
+    if (['tables', 'tableMap', 'reservations'].includes(activeView)) fetchSchemaTables();
+  }, [activeView, fetchSchemaTables]);
+
+  const handleSaveSchema = useCallback(async () => {
+    try {
+      for (const table of schemaTables) {
+        await tablesApi.updateTable(table.id, { position: table.position });
+      }
+      toast({ title: 'Schema salvată', description: 'Pozițiile meselor au fost actualizate.' });
+    } catch (e) {
+      toast({ title: 'Eroare la salvare', description: String(e), variant: 'destructive' });
+    }
+  }, [schemaTables, toast]);
+
+  const handleConfirmMerge = useCallback(async (selectedIds: number[]) => {
+    if (selectedIds.length < 2) return;
+    const [mainId, ...otherIds] = selectedIds;
+    try {
+      await tablesApi.updateTable(mainId, { mergedWith: otherIds });
+      for (const oid of otherIds) {
+        await tablesApi.updateTable(oid, { mergedWith: [mainId] });
+      }
+      toast({ title: 'Mese unite', description: `${selectedIds.length} mese au fost unite.` });
+      await fetchSchemaTables();
+    } catch (e) {
+      toast({ title: 'Eroare la unire', description: String(e), variant: 'destructive' });
+    }
+  }, [fetchSchemaTables, toast]);
+
   const kdsTypeOptions = [
     { value: 'soups', label: 'Supe', icon: '🍲', color: 'bg-amber-500' },
     { value: 'pizza', label: 'Pizza', icon: '🍕', color: 'bg-red-500' },
@@ -74,13 +138,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     { value: 'giros', label: 'Giros', icon: '🥙', color: 'bg-yellow-500' },
   ];
 
-  // Table form
+  // Table form (listă mese mock + hartă mese API)
   const [tableForm, setTableForm] = useState({
     number: '',
     seats: '4',
     shape: 'square' as Table['shape'],
     x: '50',
-    y: '50'
+    y: '50',
+    zone: '',
   });
 
   // Menu form - extended with all fields
@@ -105,17 +170,61 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     ownPrice: '',
   });
 
-  const handleAddTable = () => {
-    addTable({
-      number: parseInt(tableForm.number),
-      seats: parseInt(tableForm.seats),
-      shape: tableForm.shape,
-      position: { x: parseInt(tableForm.x), y: parseInt(tableForm.y) },
-      status: 'free'
-    });
-    toast({ title: t('app.save') });
+  const resetTableForm = () =>
+    setTableForm({ number: '', seats: '4', shape: 'square', x: '50', y: '50', zone: '' });
+
+  const handleAddTable = async () => {
+    const num = parseInt(tableForm.number, 10);
+    const seats = parseInt(tableForm.seats, 10);
+    const x = parseInt(tableForm.x, 10);
+    const y = parseInt(tableForm.y, 10);
+    if (Number.isNaN(num) || num < 1) {
+      toast({ title: 'Introdu un număr masă valid', variant: 'destructive' });
+      return;
+    }
+    if (Number.isNaN(seats) || seats < 1) {
+      toast({ title: 'Introdu numărul de locuri', variant: 'destructive' });
+      return;
+    }
+    try {
+      await tablesApi.createTable({
+        number: num,
+        seats,
+        shape: tableForm.shape,
+        position: {
+          x: Number.isNaN(x) ? 50 : Math.min(95, Math.max(5, x)),
+          y: Number.isNaN(y) ? 50 : Math.min(95, Math.max(5, y)),
+        },
+        status: 'free',
+        ...(tableForm.zone.trim() ? { zone: tableForm.zone.trim() } : {}),
+      });
+      await fetchSchemaTables();
+      toast({
+        title: 'Masă salvată în baza de date',
+        description: activeView === 'tableMap' ? 'Poți muta poziția pe hartă și apoi Salvează schema.' : undefined,
+      });
+    } catch (e) {
+      toast({ title: 'Eroare la adăugarea mesei', description: String(e), variant: 'destructive' });
+      return;
+    }
     setShowAddTable(false);
-    setTableForm({ number: '', seats: '4', shape: 'square', x: '50', y: '50' });
+    resetTableForm();
+  };
+
+  const openAddTableDialog = () => {
+    const nextNum = schemaTables.length ? Math.max(...schemaTables.map((t) => t.number), 0) + 1 : 1;
+    setTableForm((f) => ({ ...f, number: String(nextNum), seats: '4', shape: 'square', x: '50', y: '50', zone: '' }));
+    setShowAddTable(true);
+  };
+
+  const handleDeleteDbTable = async (id: number) => {
+    try {
+      await tablesApi.deleteTable(id);
+      await fetchSchemaTables();
+      toast({ title: t('app.delete') });
+    } catch (e) {
+      toast({ title: 'Eroare la ștergere', description: String(e), variant: 'destructive' });
+    }
   };
 
   const handleAddMenuItem = () => {
@@ -449,24 +558,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
           <div className="p-4 md:p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold">{t('tables.title')}</h2>
-              <Button onClick={() => setShowAddTable(true)}>
+              <Button onClick={openAddTableDialog}>
                 <Plus className="w-4 h-4 mr-2" />
                 {t('tables.add')}
               </Button>
             </div>
-
+            <p className="text-sm text-muted-foreground mb-4">
+              Mese din baza de date (nu mai folosim lista demo). Adaugă mese aici sau din Hartă mese.
+            </p>
+            {schemaTablesLoading ? (
+              <p className="text-muted-foreground">Se încarcă mesele...</p>
+            ) : schemaTables.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
+                <p className="font-medium text-foreground mb-1">Nu există mese în DB</p>
+                <p className="text-sm mb-4">Apasă „Adaugă masă” pentru a crea prima masă.</p>
+                <Button onClick={openAddTableDialog}>{t('tables.add')}</Button>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {tables.map(table => (
+              {schemaTables.map((table) => (
                 <div key={table.id} className="p-4 rounded-xl bg-card border border-border">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-2xl font-bold">{t('orders.table')} {table.number}</span>
                     <Button 
                       variant="destructive" 
                       size="icon"
-                      onClick={() => {
-                        deleteTable(table.id);
-                        toast({ title: t('app.delete') });
-                      }}
+                      onClick={() => void handleDeleteDbTable(table.id)}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -482,36 +599,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )}
 
-        {/* Table Map */}
+        {/* Table Map - schema mese din DB, drag + Salvează schema + Unire mese */}
         {activeView === 'tableMap' && (
           <div className="p-4 md:p-6">
-            <h2 className="text-2xl font-bold mb-6">{t('nav.tableMap')}</h2>
-            <div className="relative w-full aspect-[16/9] bg-secondary/30 rounded-xl border-2 border-dashed border-border">
-              {tables.map(table => (
-                <div
-                  key={table.id}
-                  className={cn(
-                    "absolute transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center cursor-pointer transition-all",
-                    table.shape === 'round' ? 'rounded-full' : table.shape === 'rectangle' ? 'rounded-lg' : 'rounded-md',
-                    table.status === 'free' && 'bg-table-free',
-                    table.status === 'occupied' && 'bg-table-occupied',
-                    table.status === 'reserved' && 'bg-table-reserved',
-                    table.seats <= 2 ? 'w-12 h-12 md:w-16 md:h-16' :
-                    table.seats <= 4 ? 'w-16 h-16 md:w-20 md:h-20' :
-                    table.shape === 'rectangle' ? 'w-24 h-14 md:w-32 md:h-18' : 'w-20 h-20 md:w-24 md:h-24'
-                  )}
-                  style={{ left: `${table.position.x}%`, top: `${table.position.y}%` }}
-                >
-                  <span className="text-white font-bold text-lg">{table.number}</span>
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+              <h2 className="text-2xl font-bold">{t('nav.tableMap')}</h2>
+              <Button onClick={openAddTableDialog} className="gap-2">
+                <Plus className="w-4 h-4" />
+                {t('tables.add')}
+              </Button>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground text-center">
-              Tip: Use the Tables view to edit table positions (X%, Y%)
-            </p>
+            {schemaTablesLoading ? (
+              <p className="text-muted-foreground">Se încarcă mesele...</p>
+            ) : schemaTables.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
+                <p className="font-medium text-foreground mb-1">Nu există mese pe hartă</p>
+                <p className="text-sm mb-4">Adaugă mese din baza de date, apoi le poți aranja aici.</p>
+                <Button onClick={openAddTableDialog}>{t('tables.add')}</Button>
+              </div>
+            ) : (
+              <AdminTableMap
+                tables={schemaTables}
+                onUpdateTable={(table) => setSchemaTables((prev) => prev.map((t) => (t.id === table.id ? table : t)))}
+                onSaveSchema={handleSaveSchema}
+                onConfirmMerge={handleConfirmMerge}
+              />
+            )}
           </div>
         )}
 
@@ -749,7 +866,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                     <p><Phone className="w-3 h-3 inline mr-1" /> {res.customerPhone}</p>
                     <p>{new Date(res.date).toLocaleDateString()} • {res.time}</p>
                     <p>{res.partySize} {t('reservations.partySize')}</p>
-                    <p>{t('reservations.tables')}: {res.tableIds.map(id => tables.find(t => t.id === id)?.number).join(', ')}</p>
+                    <p>{t('reservations.tables')}: {res.tableIds.map((id) => schemaTables.find((t) => t.id === id)?.number ?? tables.find((t) => t.id === id)?.number ?? '?').join(', ')}</p>
                     {res.notes && <p className="italic">"{res.notes}"</p>}
                   </div>
                   <div className="flex gap-2 mt-3">
@@ -1303,7 +1420,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                 <Input type="number" value={tableForm.y} onChange={e => setTableForm({...tableForm, y: e.target.value})} />
               </div>
             </div>
-            <Button className="w-full" onClick={handleAddTable}>{t('tables.add')}</Button>
+            <div>
+              <Label className="text-sm font-medium">Zonă (opțional)</Label>
+              <Input
+                placeholder="ex: terasă, interior"
+                value={tableForm.zone}
+                onChange={(e) => setTableForm({ ...tableForm, zone: e.target.value })}
+              />
+            </div>
+            <Button className="w-full" onClick={() => void handleAddTable()}>{t('tables.add')}</Button>
           </div>
         </DialogContent>
       </Dialog>

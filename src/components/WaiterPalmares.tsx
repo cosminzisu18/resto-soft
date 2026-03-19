@@ -31,7 +31,7 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
     date: new Date().toISOString().split('T')[0],
     time: '19:00',
     partySize: '2',
-    tableIds: [] as string[],
+    tableIds: [] as number[],
     notes: '',
   });
   const { toast } = useToast();

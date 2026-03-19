@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { RestaurantProvider, useRestaurant } from '@/context/RestaurantContext';
 import { Table, KDSStation, kdsStations } from '@/data/mockData';
+import { tablesApi, ordersApi, menuApi, type TableApi, type OrderApi } from '@/lib/api';
+import { kdsStationApiToKdsStation } from '@/lib/kdsUtils';
 import LoginScreen from '@/components/LoginScreen';
 import TableMap from '@/components/TableMap';
 import OrderPanel from '@/components/OrderPanel';
@@ -37,19 +39,19 @@ import ExternalOrdersNotification from '@/components/ExternalOrdersNotification'
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
-import { 
-  ShoppingCart, 
-  Store, 
-  UtensilsCrossed, 
-  Users, 
-  FileText, 
-  Building2, 
-  UserCircle, 
-  Truck, 
-  Bot, 
-  Settings, 
-  Palette, 
-  CreditCard, 
+import {
+  ShoppingCart,
+  Store,
+  UtensilsCrossed,
+  Users,
+  FileText,
+  Building2,
+  UserCircle,
+  Truck,
+  Bot,
+  Settings,
+  Palette,
+  CreditCard,
   MessageSquare,
   Tablet,
   Monitor as MonitorIcon,
@@ -62,12 +64,13 @@ import {
   Eye,
   History,
   UserCircle as UserCircleIcon,
-  Calculator
+  Calculator,
+  type LucideIcon
 } from 'lucide-react';
 
 type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard' | 'order-monitor';
 
-const moduleConfig: Record<ModuleType, { title: string; description: string; icon: any; features: string[] }> = {
+const moduleConfig: Record<ModuleType, { title: string; description: string; icon: LucideIcon | null; features: string[] }> = {
   dashboard: { title: '', description: '', icon: null, features: [] },
   pos: { title: 'RestoSoft', description: 'Sistem de vânzare complet', icon: ShoppingCart, features: ['Comenzi mese', 'La pachet', 'Telefonic', 'Vizualizare comenzi'] },
   kiosk: { title: 'Kiosk Self-Order', description: 'Comenzi self-service pentru clienți', icon: Store, features: ['Upsell automat', 'Plăți card/cash', 'QR status'] },
@@ -133,11 +136,11 @@ const KDSSelectorInline: React.FC<{ onSelectStation: (station: KDSStation) => vo
 };
 
 const RestaurantApp: React.FC = () => {
-  const { 
-    currentUser, 
-    logout, 
-    notifications, 
-    markNotificationRead, 
+  const {
+    currentUser,
+    logout,
+    notifications,
+    markNotificationRead,
     clearNotifications,
     reservations,
     tables,
@@ -147,7 +150,7 @@ const RestaurantApp: React.FC = () => {
     updateReservation,
     deleteReservation
   } = useRestaurant();
-  
+
   const [view, setView] = useState<AppView>('login');
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [selectedStation, setSelectedStation] = useState<KDSStation | null>(null);
@@ -158,6 +161,60 @@ const RestaurantApp: React.FC = () => {
   const [showGlobalHistory, setShowGlobalHistory] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showCashRegister, setShowCashRegister] = useState(false);
+
+  // Ospătar: mese și comandă din API
+  const [waiterTables, setWaiterTables] = useState<Table[]>([]);
+  const [waiterOrder, setWaiterOrder] = useState<OrderApi | null>(null);
+  const [waiterTablesLoading, setWaiterTablesLoading] = useState(false);
+
+  /** Stații KDS pentru modulul din dashboard (din kds_stations / API). */
+  const [dashboardKdsStations, setDashboardKdsStations] = useState<KDSStation[]>(kdsStations);
+  const [dashboardKdsLoading, setDashboardKdsLoading] = useState(false);
+
+  const mapApiTableToTable = useCallback((api: TableApi): Table => ({
+    id: api.id,
+    number: api.number,
+    seats: api.seats,
+    status: api.status,
+    position: api.position ?? { x: 50, y: 50 },
+    shape: api.shape,
+    currentOrderId: api.currentOrderId ?? undefined,
+    reservationId: api.reservationId ?? undefined,
+    currentGuests: api.currentGuests,
+    mergedWith: api.mergedWith ?? undefined,
+    qrCode: api.qrCode ?? undefined,
+  }), []);
+
+  useEffect(() => {
+    if (view !== 'waiter') return;
+    setWaiterTablesLoading(true);
+    tablesApi.getTables()
+      .then((list) => setWaiterTables(list.map(mapApiTableToTable)))
+      .catch(() => setWaiterTables([]))
+      .finally(() => setWaiterTablesLoading(false));
+  }, [view, mapApiTableToTable]);
+
+  useEffect(() => {
+    if (view !== 'new-dashboard') return;
+    setDashboardKdsLoading(true);
+    menuApi
+      .getKdsStations()
+      .then((list) => {
+        setDashboardKdsStations(
+          list.length > 0 ? list.map(kdsStationApiToKdsStation) : kdsStations,
+        );
+      })
+      .catch(() => setDashboardKdsStations(kdsStations))
+      .finally(() => setDashboardKdsLoading(false));
+  }, [view]);
+
+  const refetchWaiterOrder = useCallback(() => {
+    if (!selectedTable) return;
+    return ordersApi.getByTableId(selectedTable.id).then((list) => {
+      const active = list.find((o) => o.status === 'active');
+      setWaiterOrder(active ?? null);
+    });
+  }, [selectedTable]);
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -172,7 +229,6 @@ const RestaurantApp: React.FC = () => {
       setView('new-dashboard');
       setActiveModule('dashboard');
     } else if (role === 'kitchen') {
-      // Kitchen staff goes to new dashboard with KDS module
       setView('new-dashboard');
       setActiveModule('kds');
     } else {
@@ -188,13 +244,33 @@ const RestaurantApp: React.FC = () => {
     setKdsModuleStation(null);
   };
 
-  const handleTableSelect = (table: Table) => {
+  const handleTableSelect = async (table: Table) => {
     setSelectedTable(table);
-    setView('order');
+    try {
+      const list = await ordersApi.getByTableId(table.id);
+      let active = list.find((o) => o.status === 'active');
+      if (!active) {
+        active = await ordersApi.create({
+          tableId: table.id,
+          tableNumber: table.number,
+          waiterId: currentUser?.id ?? undefined,
+          waiterName: currentUser?.name ?? undefined,
+          source: 'restaurant',
+          items: [],
+        });
+      }
+      setWaiterOrder(active);
+      setView('order');
+    } catch (e) {
+      console.error(e);
+      setWaiterOrder(null);
+      setView('order');
+    }
   };
 
   const handleOrderClose = () => {
     setSelectedTable(null);
+    setWaiterOrder(null);
     setView('waiter');
   };
 
@@ -219,7 +295,7 @@ const RestaurantApp: React.FC = () => {
       case 'kds':
         if (kdsModuleStation) {
           return (
-            <KDSEnhancedModule 
+            <KDSEnhancedModule
               station={kdsModuleStation}
               onLogout={() => setKdsModuleStation(null)}
             />
@@ -228,23 +304,32 @@ const RestaurantApp: React.FC = () => {
         return (
           <div className="p-3 sm:p-6 h-full flex flex-col min-h-0">
             <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 flex-shrink-0">KDS & Producție</h2>
-            
-            {/* KDS Stations */}
-            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-muted-foreground flex-shrink-0">Stații KDS</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-4 sm:mb-8 flex-shrink-0">
-              {kdsStations.map(station => (
-                <button
-                  key={station.id}
-                  onClick={() => setKdsModuleStation(station)}
-                  className="p-3 sm:p-6 rounded-xl border-2 border-border hover:border-primary transition-all bg-card hover:scale-105"
-                >
-                  <span className="text-2xl sm:text-4xl block mb-1 sm:mb-3">{station.icon}</span>
-                  <h3 className="font-bold text-xs sm:text-base">{station.name}</h3>
-                </button>
-              ))}
-            </div>
 
-            {/* Production Module */}
+            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-muted-foreground flex-shrink-0">
+              Stații KDS
+              <span className="block text-xs font-normal text-muted-foreground/80 mt-0.5">
+                Sursă: baza de date (kds_stations)
+              </span>
+            </h3>
+            {dashboardKdsLoading ? (
+              <div className="flex min-h-[120px] items-center justify-center text-sm text-muted-foreground mb-4 sm:mb-8">
+                Se încarcă stațiile…
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-4 sm:mb-8 flex-shrink-0">
+                {dashboardKdsStations.map((station) => (
+                  <button
+                    key={station.id}
+                    onClick={() => setKdsModuleStation(station)}
+                    className="p-3 sm:p-6 rounded-xl border-2 border-border hover:border-primary transition-all bg-card hover:scale-105"
+                  >
+                    <span className="text-2xl sm:text-4xl block mb-1 sm:mb-3">{station.icon}</span>
+                    <h3 className="font-bold text-xs sm:text-base">{station.name}</h3>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-muted-foreground flex-shrink-0">Producție & Rețetar</h3>
             <div className="bg-card rounded-xl border overflow-hidden flex-1 min-h-0">
               <KDSProductionModule />
@@ -271,8 +356,9 @@ const RestaurantApp: React.FC = () => {
         return <CommunicationModule />;
       case 'offline':
         return <OfflineModeModule />;
-      default:
+      default: {
         const config = moduleConfig[activeModule];
+        if (!config.icon) return null;
         return (
           <PlaceholderModule
             title={config.title}
@@ -281,50 +367,29 @@ const RestaurantApp: React.FC = () => {
             features={config.features}
           />
         );
+      }
     }
   };
 
-  // Main view switching
   if (view === 'login') {
     return (
       <div className="min-h-screen flex flex-col">
         <LoginScreen onLoginSuccess={handleLoginSuccess} />
-        
-        {/* Quick access buttons for demo */}
+
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-card/90 backdrop-blur p-3 rounded-2xl border shadow-lg">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setView('kiosk')}
-            className="flex items-center gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={() => setView('kiosk')} className="flex items-center gap-2">
             <Tablet className="w-4 h-4" />
             Kiosk Demo
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setView('self-order')}
-            className="flex items-center gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={() => setView('self-order')} className="flex items-center gap-2">
             <QrCode className="w-4 h-4" />
             Self-Order
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setView('new-dashboard')}
-            className="flex items-center gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={() => setView('new-dashboard')} className="flex items-center gap-2">
             <MonitorIcon className="w-4 h-4" />
             Dashboard Nou
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setView('order-monitor')}
-            className="flex items-center gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={() => setView('order-monitor')} className="flex items-center gap-2">
             <Eye className="w-4 h-4" />
             Monitorizare Comenzi
           </Button>
@@ -337,11 +402,7 @@ const RestaurantApp: React.FC = () => {
     return (
       <div className="relative">
         <KioskOrdering />
-        <Button 
-          variant="outline" 
-          className="fixed top-4 left-4 z-50"
-          onClick={() => setView('login')}
-        >
+        <Button variant="outline" className="fixed top-4 left-4 z-50" onClick={() => setView('login')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Ieși
         </Button>
@@ -353,11 +414,7 @@ const RestaurantApp: React.FC = () => {
     return (
       <div className="relative">
         <CustomerSelfOrder initialTableId="t1" />
-        <Button 
-          variant="outline" 
-          className="fixed top-4 left-4 z-50"
-          onClick={() => setView('login')}
-        >
+        <Button variant="outline" className="fixed top-4 left-4 z-50" onClick={() => setView('login')}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Ieși
         </Button>
@@ -392,32 +449,16 @@ const RestaurantApp: React.FC = () => {
             Rezervări
           </span>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left')}
-              title={sidebarPosition === 'left' ? 'Mută la dreapta' : 'Mută la stânga'}
-            >
-              {sidebarPosition === 'left' ? (
-                <PanelRightClose className="w-4 h-4" />
-              ) : (
-                <PanelLeftClose className="w-4 h-4" />
-              )}
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left')} title={sidebarPosition === 'left' ? 'Mută la dreapta' : 'Mută la stânga'}>
+              {sidebarPosition === 'left' ? <PanelRightClose className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setSidebarOpen(false)}
-              title="Închide"
-            >
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(false)} title="Închide">
               <ArrowLeft className={cn("w-4 h-4", sidebarPosition === 'right' && "rotate-180")} />
             </Button>
           </div>
         </div>
         <div className="flex-1 overflow-auto">
-          <ReservationManager 
+          <ReservationManager
             reservations={reservations}
             tables={tables}
             onCreateReservation={createReservation}
@@ -433,123 +474,58 @@ const RestaurantApp: React.FC = () => {
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
           <h1 className="font-semibold">RestoSoft - Ospătar ({currentUser?.name})</h1>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowProfile(true)}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowProfile(true)} className="flex items-center gap-2">
               <UserCircleIcon className="w-4 h-4" />
               <span className="hidden md:inline">Profilul Meu</span>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowCashRegister(true)}
-              className="flex items-center gap-2"
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowCashRegister(true)} className="flex items-center gap-2">
               <Calculator className="w-4 h-4" />
               <span className="hidden md:inline">Casierie</span>
             </Button>
-            <ExternalOrdersNotification
-              orders={orders}
-              onUpdateOrder={updateOrder}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowGlobalHistory(true)}
-              className="flex items-center gap-2"
-            >
+            <ExternalOrdersNotification orders={orders} onUpdateOrder={updateOrder} />
+            <Button variant="outline" size="sm" onClick={() => setShowGlobalHistory(true)} className="flex items-center gap-2">
               <History className="w-4 h-4" />
               <span className="hidden md:inline">Istoric</span>
             </Button>
             {!sidebarOpen && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSidebarOpen(true)}
-                className="flex items-center gap-2"
-              >
+              <Button variant="outline" size="sm" onClick={() => setSidebarOpen(true)} className="flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
                 Rezervări
               </Button>
             )}
-            <NotificationCenter 
-              notifications={notifications}
-              onMarkRead={markNotificationRead}
-              onClearAll={clearNotifications}
-            />
+            <NotificationCenter notifications={notifications} onMarkRead={markNotificationRead} onClearAll={clearNotifications} />
           </div>
         </div>
         <div className="flex-1 flex overflow-hidden">
-          {/* Left sidebar */}
-          {sidebarOpen && sidebarPosition === 'left' && (
-            <div className="hidden md:flex">
-              {ReservationSidebar}
-            </div>
-          )}
-          
-          {/* Main content */}
+          {sidebarOpen && sidebarPosition === 'left' && <div className="hidden md:flex">{ReservationSidebar}</div>}
           <div className="flex-1 overflow-auto">
-            <TableMap onTableSelect={handleTableSelect} />
+            {waiterTablesLoading ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground">Se încarcă mesele...</div>
+            ) : (
+              <TableMap
+                tables={waiterTables}
+                getActiveOrderForTable={waiterOrder ? (tableId) => (waiterOrder.tableId === tableId ? waiterOrder : undefined) : undefined}
+                onTableSelect={handleTableSelect}
+              />
+            )}
           </div>
-          
-          {/* Right sidebar */}
-          {sidebarOpen && sidebarPosition === 'right' && (
-            <div className="hidden md:flex">
-              {ReservationSidebar}
-            </div>
-          )}
+          {sidebarOpen && sidebarPosition === 'right' && <div className="hidden md:flex">{ReservationSidebar}</div>}
         </div>
-        
-        {/* Mobile reservation toggle */}
         {!sidebarOpen && (
-          <Button
-            variant="outline"
-            size="icon"
-            className="fixed bottom-20 right-4 md:hidden h-12 w-12 rounded-full shadow-lg"
-            onClick={() => setSidebarOpen(true)}
-          >
+          <Button variant="outline" size="icon" className="fixed bottom-20 right-4 md:hidden h-12 w-12 rounded-full shadow-lg" onClick={() => setSidebarOpen(true)}>
             <Calendar className="w-5 h-5" />
           </Button>
         )}
-        
         <div className="fixed bottom-4 right-4 flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setView('new-dashboard')}
-            className="flex items-center gap-2"
-          >
+          <Button variant="outline" onClick={() => setView('new-dashboard')} className="flex items-center gap-2">
             <MonitorIcon className="w-4 h-4" />
             Dashboard
           </Button>
-          <Button variant="destructive" onClick={handleLogout}>
-            Deconectare
-          </Button>
+          <Button variant="destructive" onClick={handleLogout}>Deconectare</Button>
         </div>
-
-        <OrderHistoryDialog
-          open={showGlobalHistory}
-          onClose={() => setShowGlobalHistory(false)}
-          orders={orders}
-          onUpdateOrder={updateOrder}
-        />
-
-        <WaiterProfileDialog
-          open={showProfile}
-          onClose={() => setShowProfile(false)}
-          user={currentUser}
-          orders={orders}
-          onLogout={handleLogout}
-        />
-
-        <CashRegisterDialog
-          open={showCashRegister}
-          onClose={() => setShowCashRegister(false)}
-          orders={orders}
-          operatorName={currentUser?.name || 'Operator'}
-        />
+        <OrderHistoryDialog open={showGlobalHistory} onClose={() => setShowGlobalHistory(false)} orders={orders} onUpdateOrder={updateOrder} />
+        <WaiterProfileDialog open={showProfile} onClose={() => setShowProfile(false)} user={currentUser} orders={orders} onLogout={handleLogout} />
+        <CashRegisterDialog open={showCashRegister} onClose={() => setShowCashRegister(false)} orders={orders} operatorName={currentUser?.name || 'Operator'} />
       </div>
     );
   }
@@ -557,27 +533,23 @@ const RestaurantApp: React.FC = () => {
   if (view === 'order' && selectedTable) {
     return (
       <div className="h-screen">
-        <OrderPanel table={selectedTable} onClose={handleOrderClose} />
+        <OrderPanel
+          table={selectedTable}
+          onClose={handleOrderClose}
+          apiOrder={waiterOrder}
+          refetchOrder={refetchWaiterOrder}
+        />
       </div>
     );
   }
 
   if (view === 'admin') {
     return (
-      <MainLayout
-        activeModule={activeModule}
-        onModuleChange={setActiveModule}
-        isOnline={true}
-        restaurantName="Restaurant Demo"
-        currentLocation="Locația Principală"
-        onLogout={handleLogout}
-      >
+      <MainLayout activeModule={activeModule} onModuleChange={setActiveModule} isOnline={true} restaurantName="Restaurant Demo" currentLocation="Locația Principală" onLogout={handleLogout}>
         {renderModule()}
       </MainLayout>
     );
   }
-
-  // Old KDS views removed - now using new dashboard KDS module
 
   if (view === 'order-monitor') {
     const OrderMonitorDashboard = React.lazy(() => import('@/components/OrderMonitorDashboard'));

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -27,12 +27,18 @@ import OrderPanel from '@/components/OrderPanel';
 import ReservationManager from '@/components/ReservationManager';
 import { useToast } from '@/hooks/use-toast';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
+import { tablesApi, ordersApi, type TableApi, type OrderApi } from '@/lib/api';
+import { orderApiToPosOrder } from '@/lib/posOrderMapper';
 
 type POSView = 'tables' | 'all-orders';
 
 const POSModule: React.FC = () => {
-  const { 
-    tables, orders, reservations, createReservation, updateReservation, deleteReservation, updateOrder
+  const {
+    reservations,
+    createReservation,
+    updateReservation,
+    deleteReservation,
+    currentUser,
   } = useRestaurant();
   const { toast } = useToast();
   
@@ -66,8 +72,78 @@ const POSModule: React.FC = () => {
   const [phoneCustomerPhone, setPhoneCustomerPhone] = useState('');
   const [showCashRegister, setShowCashRegister] = useState(false);
 
+  /** Mese din API (aceleași date ca în admin / ospătar) – harta RestoSoft */
+  const [posTables, setPosTables] = useState<Table[]>([]);
+  const [posTablesLoading, setPosTablesLoading] = useState(false);
+  /** Comandă activă din backend pentru masa deschisă (ca în Index – ospătar) */
+  const [posOrder, setPosOrder] = useState<OrderApi | null>(null);
+  const [posOrderLoading, setPosOrderLoading] = useState(false);
+  /** Masă pentru care se încarcă comanda API (înainte de setSelectedTable) */
+  const [openingTable, setOpeningTable] = useState<Table | null>(null);
+
+  /** Comenzi pentru „Toate comenzile” – GET /orders */
+  const [posOrders, setPosOrders] = useState<Order[]>([]);
+  const [posOrdersLoading, setPosOrdersLoading] = useState(false);
+
+  const fetchPosOrders = useCallback(async () => {
+    setPosOrdersLoading(true);
+    try {
+      const list = await ordersApi.getAll();
+      setPosOrders(list.map(orderApiToPosOrder));
+    } catch {
+      setPosOrders([]);
+      toast({
+        title: 'Comenzile nu s-au putut încărca',
+        description: 'Verifică GET /orders și backend-ul.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPosOrdersLoading(false);
+    }
+    // toast din useToast e stabil; evităm re-fetch în buclă
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- încărcare la mount + manual refresh
+  }, []);
+
+  useEffect(() => {
+    void fetchPosOrders();
+  }, [fetchPosOrders]);
+
+  const mapApiTableToTable = useCallback((api: TableApi): Table => ({
+    id: api.id,
+    number: api.number,
+    seats: api.seats,
+    status: api.status,
+    position: api.position ?? { x: 50, y: 50 },
+    shape: api.shape,
+    currentOrderId: api.currentOrderId ?? undefined,
+    reservationId: api.reservationId ?? undefined,
+    currentGuests: api.currentGuests,
+    mergedWith: api.mergedWith ?? undefined,
+    qrCode: api.qrCode ?? undefined,
+  }), []);
+
+  const fetchPosTables = useCallback(async () => {
+    setPosTablesLoading(true);
+    try {
+      const list = await tablesApi.getTables();
+      setPosTables(list.map(mapApiTableToTable));
+    } catch {
+      setPosTables([]);
+      toast({ title: 'Nu s-au putut încărca mesele', description: 'Verifică backend-ul și conexiunea.', variant: 'destructive' });
+    } finally {
+      setPosTablesLoading(false);
+    }
+  }, [mapApiTableToTable, toast]);
+
+  useEffect(() => {
+    fetchPosTables();
+  }, [fetchPosTables]);
+
   // Unique values for filters
-  const uniqueWaiters = useMemo(() => [...new Set(orders.map(o => o.waiterName).filter(Boolean))], [orders]);
+  const uniqueWaiters = useMemo(
+    () => [...new Set(posOrders.map((o) => o.waiterName).filter(Boolean))],
+    [posOrders],
+  );
 
   // Swipe gesture for sidebar position on mobile
   const swipeHandlers = useSwipeGesture({
@@ -77,12 +153,61 @@ const POSModule: React.FC = () => {
     enabled: sidebarOpen,
   });
 
+  const refetchPosOrder = useCallback(() => {
+    if (!selectedTable) return Promise.resolve();
+    return ordersApi.getByTableId(selectedTable.id).then((list) => {
+      const active = list.find((o) => o.status === 'active');
+      setPosOrder(active ?? null);
+    });
+  }, [selectedTable]);
+
+  /** Deschide masa cu comandă activă din API (creare dacă lipsește) – salvează în `orders`. */
+  const openTableForPos = useCallback(
+    async (table: Table): Promise<boolean> => {
+      setOpeningTable(table);
+      setPosOrderLoading(true);
+      try {
+        const list = await ordersApi.getByTableId(table.id);
+        let active = list.find((o) => o.status === 'active');
+        if (!active) {
+          active = await ordersApi.create({
+            tableId: table.id,
+            tableNumber: table.number,
+            waiterId: currentUser?.id ?? undefined,
+            waiterName: currentUser?.name ?? undefined,
+            source: 'restaurant',
+            items: [],
+          });
+        }
+        setPosOrder(active);
+        setSelectedTable(table);
+        void fetchPosOrders();
+        return true;
+      } catch (e) {
+        console.error(e);
+        toast({
+          title: 'Comanda nu s-a putut deschide',
+          description: 'Verifică API-ul (orders) și baza de date.',
+          variant: 'destructive',
+        });
+        setPosOrder(null);
+        return false;
+      } finally {
+        setPosOrderLoading(false);
+        setOpeningTable(null);
+      }
+    },
+    [currentUser?.id, currentUser?.name, toast, fetchPosOrders],
+  );
+
   const handleTableSelect = (table: Table) => {
-    setSelectedTable(table);
+    void openTableForPos(table);
   };
 
   const handleOrderClose = () => {
     setSelectedTable(null);
+    setPosOrder(null);
+    void fetchPosOrders();
   };
 
   // Source configuration for display
@@ -96,9 +221,9 @@ const POSModule: React.FC = () => {
     kiosk: { icon: <Monitor className="w-4 h-4" />, label: 'Kiosk', color: 'bg-cyan-500' },
   };
 
-  // Filter orders for All Orders view
+  // Filter orders for All Orders view (sursă: GET /orders)
   const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
+    return posOrders.filter((order) => {
       if (ordersFilter !== 'all' && order.status !== ordersFilter) return false;
       if (sourceFilter !== 'all' && order.source !== sourceFilter) return false;
       if (filterPayment !== 'all') {
@@ -113,25 +238,25 @@ const POSModule: React.FC = () => {
       if (ordersSearchQuery) {
         const searchLower = ordersSearchQuery.toLowerCase();
         const matchesTable = order.tableNumber?.toString().includes(searchLower);
-        const matchesId = order.id.toLowerCase().includes(searchLower);
+        const matchesId = String(order.id).toLowerCase().includes(searchLower);
         const matchesWaiter = order.waiterName?.toLowerCase().includes(searchLower);
         const matchesCustomer = order.customerName?.toLowerCase().includes(searchLower);
         if (!matchesTable && !matchesId && !matchesWaiter && !matchesCustomer) return false;
       }
       return true;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [orders, ordersFilter, sourceFilter, filterPayment, filterWaiter, filterDate, ordersSearchQuery]);
+  }, [posOrders, ordersFilter, sourceFilter, filterPayment, filterWaiter, filterDate, ordersSearchQuery]);
 
   // Summary stats for filtered orders
   const filteredRevenue = filteredOrders.reduce((s, o) => s + o.totalAmount, 0);
   const filteredTips = filteredOrders.reduce((s, o) => s + (o.tip || 0), 0);
 
-  // Order stats
+  // Order stats (din API)
   const orderStats = {
-    total: orders.length,
-    active: orders.filter(o => o.status === 'active').length,
-    completed: orders.filter(o => o.status === 'completed').length,
-    cancelled: orders.filter(o => o.status === 'cancelled').length,
+    total: posOrders.length,
+    active: posOrders.filter((o) => o.status === 'active').length,
+    completed: posOrders.filter((o) => o.status === 'completed').length,
+    cancelled: posOrders.filter((o) => o.status === 'cancelled').length,
   };
 
   const getOrderStatusBadge = (status: Order['status']) => {
@@ -160,16 +285,22 @@ const POSModule: React.FC = () => {
     return new Date(date).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short' });
   };
 
-  const handleStartPhoneOrder = () => {
+  const handleStartPhoneOrder = async () => {
     if (!phoneCustomerName.trim()) {
       toast({ title: 'Introduceți numele clientului', variant: 'destructive' });
       return;
     }
-    const freeTable = tables.find(t => t.status === 'free');
+    const freeTable = posTables.find((t) => t.status === 'free');
     if (freeTable) {
       setShowPhoneOrderDialog(false);
-      setSelectedTable(freeTable);
-      toast({ title: `Comandă telefonică pentru ${phoneCustomerName}`, description: 'Adaugă produsele în comandă' });
+      const name = phoneCustomerName;
+      const ok = await openTableForPos(freeTable);
+      if (ok) {
+        toast({
+          title: `Comandă telefonică pentru ${name}`,
+          description: 'Adaugă produsele în comandă',
+        });
+      }
     } else {
       toast({ title: 'Nu există mese disponibile', variant: 'destructive' });
     }
@@ -196,13 +327,17 @@ const POSModule: React.FC = () => {
   };
 
   const handleChangePaymentMethod = (orderId: string, newMethod: PaymentMethod) => {
-    const order = orders.find(o => o.id === orderId);
-    if (order && updateOrder) {
-      updateOrder({ ...order, paymentMethod: newMethod });
+    const order = posOrders.find((o) => o.id === orderId);
+    if (order) {
+      const next = { ...order, paymentMethod: newMethod };
+      setPosOrders((prev) => prev.map((o) => (o.id === orderId ? next : o)));
       if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails({ ...order, paymentMethod: newMethod });
+        setSelectedOrderDetails(next);
       }
-      toast({ title: 'Metodă de plată actualizată', description: `Schimbată la ${getPaymentLabel(newMethod)}` });
+      toast({
+        title: 'Metodă de plată (local)',
+        description: `${getPaymentLabel(newMethod)} – reîncarcă lista după ce există PATCH /orders în API.`,
+      });
     }
     setEditingPaymentOrderId(null);
   };
@@ -220,7 +355,10 @@ const POSModule: React.FC = () => {
       toast({ title: 'CUI obligatoriu', description: 'Introduceți CUI-ul pentru factură', variant: 'destructive' });
       return;
     }
-    toast({ title: 'Factură generată', description: `Factura pentru comanda #${invoiceOrder.id.slice(0, 8)} a fost generată` });
+    toast({
+      title: 'Factură generată',
+      description: `Factura pentru comanda #${String(invoiceOrder.id).slice(0, 8)} a fost generată`,
+    });
     setInvoiceOrder(null);
   };
 
@@ -231,7 +369,7 @@ const POSModule: React.FC = () => {
       const totalItems = order.items.reduce((s, i) => s + i.quantity, 0);
       const source = sourceConfig[order.source]?.label || order.source;
       return [
-        order.id.slice(0, 8),
+        String(order.id).slice(0, 8),
         new Date(order.createdAt).toLocaleString('ro-RO'),
         order.tableNumber || 'N/A',
         source,
@@ -261,22 +399,38 @@ const POSModule: React.FC = () => {
     toast({ title: 'Export realizat', description: `${filteredOrders.length} comenzi exportate` });
   };
 
-  const handleStartTakeawayOrder = () => {
-    const freeTable = tables.find(t => t.status === 'free');
+  const handleStartTakeawayOrder = async () => {
+    const freeTable = posTables.find((t) => t.status === 'free');
     if (freeTable) {
       setShowTakeawayDialog(false);
-      setSelectedTable(freeTable);
-      toast({ title: 'Comandă la pachet', description: 'Adaugă produsele în comandă' });
+      const ok = await openTableForPos(freeTable);
+      if (ok) {
+        toast({ title: 'Comandă la pachet', description: 'Adaugă produsele în comandă' });
+      }
     } else {
       toast({ title: 'Nu există mese disponibile', variant: 'destructive' });
     }
   };
 
-  // If a table is selected, show OrderPanel (same as waiter view)
+  // Încărcare comandă API înainte de OrderPanel (altfel useApi=false și nu se salvează în DB)
+  if (openingTable && posOrderLoading) {
+    return (
+      <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+        Se deschide comanda pentru masa {openingTable.number}…
+      </div>
+    );
+  }
+
+  // If a table is selected, show OrderPanel (același flux API ca ospătarul din Index)
   if (selectedTable) {
     return (
       <div className="h-full">
-        <OrderPanel table={selectedTable} onClose={handleOrderClose} />
+        <OrderPanel
+          table={selectedTable}
+          onClose={handleOrderClose}
+          apiOrder={posOrder}
+          refetchOrder={refetchPosOrder}
+        />
       </div>
     );
   }
@@ -320,7 +474,7 @@ const POSModule: React.FC = () => {
       <div className="flex-1 overflow-auto">
         <ReservationManager 
           reservations={reservations}
-          tables={tables}
+          tables={posTables}
           onCreateReservation={createReservation}
           onUpdateReservation={updateReservation}
           onDeleteReservation={deleteReservation}
@@ -346,8 +500,10 @@ const POSModule: React.FC = () => {
             <span className="hidden md:inline">Casierie</span>
           </Button>
           <ExternalOrdersNotification
-            orders={orders}
-            onUpdateOrder={updateOrder}
+            orders={posOrders}
+            onUpdateOrder={(o) =>
+              setPosOrders((prev) => prev.map((x) => (x.id === o.id ? o : x)))
+            }
           />
           <Button
             variant="outline"
@@ -435,16 +591,58 @@ const POSModule: React.FC = () => {
                 </Button>
               </div>
               
-              {/* Table Map - same as waiter view */}
-              <div className="flex-1 overflow-auto">
-                <TableMap onTableSelect={handleTableSelect} />
+              {/* Harta: mese din GET /tables (baza de date) */}
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground shrink-0">
+                  <span>
+                    Sursă: <strong className="text-foreground">baza de date</strong>
+                    {posTablesLoading ? ' · se încarcă…' : ` · ${posTables.length} ${posTables.length === 1 ? 'masă' : 'mese'}`}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1"
+                    disabled={posTablesLoading}
+                    onClick={() => void fetchPosTables()}
+                  >
+                    <RefreshCw className={cn('h-3.5 w-3.5', posTablesLoading && 'animate-spin')} />
+                    Reîmprospătează
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-auto min-h-0">
+                  {posTablesLoading && posTables.length === 0 ? (
+                    <div className="flex h-full min-h-[240px] items-center justify-center text-muted-foreground text-sm">
+                      Se încarcă mesele din baza de date…
+                    </div>
+                  ) : (
+                    <TableMap tables={posTables} onTableSelect={handleTableSelect} />
+                  )}
+                </div>
               </div>
             </div>
           ) : (
             /* All Orders View */
-            <div className="h-full flex flex-col p-4">
+            <div className="h-full flex flex-col p-4 min-h-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1 py-2 rounded-lg bg-muted/40 text-xs text-muted-foreground shrink-0">
+                <span>
+                  Sursă comenzi: <strong className="text-foreground">GET /orders</strong>
+                  {posOrdersLoading ? ' · se încarcă…' : ` · ${posOrders.length} în listă`}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1"
+                  disabled={posOrdersLoading}
+                  onClick={() => void fetchPosOrders()}
+                >
+                  <RefreshCw className={cn('h-3.5 w-3.5', posOrdersLoading && 'animate-spin')} />
+                  Reîmprospătează
+                </Button>
+              </div>
               {/* Stats Row */}
-              <div className="grid grid-cols-4 gap-3 mb-4">
+              <div className="grid grid-cols-4 gap-3 mb-4 shrink-0">
                 <Card className={cn(
                   "p-3 cursor-pointer transition-all",
                   ordersFilter === 'all' && "ring-2 ring-primary"
@@ -491,8 +689,15 @@ const POSModule: React.FC = () => {
                     <Download className="w-4 h-4 mr-2" />
                     Export
                   </Button>
-                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => toast({ title: 'Se actualizează...' })}>
-                    <RefreshCw className="w-4 h-4" />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={posOrdersLoading}
+                    onClick={() => void fetchPosOrders()}
+                    title="Reîncarcă din API"
+                  >
+                    <RefreshCw className={cn('w-4 h-4', posOrdersLoading && 'animate-spin')} />
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -572,9 +777,13 @@ const POSModule: React.FC = () => {
               </div>
 
               {/* Orders List */}
-              <ScrollArea className="flex-1">
+              <ScrollArea className="flex-1 min-h-0">
                 <div className="space-y-2 pr-4">
-                  {filteredOrders.length === 0 ? (
+                  {posOrdersLoading && posOrders.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground text-sm">
+                      Se încarcă comenzile din baza de date…
+                    </div>
+                  ) : filteredOrders.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                       <List className="w-12 h-12 mx-auto mb-3 opacity-50" />
                       <p>Nu sunt comenzi care să corespundă filtrelor</p>
@@ -593,7 +802,7 @@ const POSModule: React.FC = () => {
                             <div className="flex items-center gap-3">
                               <div className="text-center">
                                 <p className="text-2xl font-black text-primary">
-                                  #{order.tableNumber || order.id.slice(-4)}
+                                  #{order.tableNumber || String(order.id).slice(-4)}
                                 </p>
                                 <Badge className={cn("text-xs", source.color, "text-white")}>
                                   {source.icon}
@@ -733,7 +942,8 @@ const POSModule: React.FC = () => {
         <DialogContent className="max-w-lg max-h-[80vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              Comandă #{selectedOrderDetails?.tableNumber || selectedOrderDetails?.id.slice(-4)}
+              Comandă #
+              {selectedOrderDetails?.tableNumber || String(selectedOrderDetails?.id ?? '').slice(-4)}
               {selectedOrderDetails && getOrderStatusBadge(selectedOrderDetails.status)}
             </DialogTitle>
           </DialogHeader>
@@ -804,8 +1014,8 @@ const POSModule: React.FC = () => {
                         </div>
                         {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
                           <p className="text-xs text-muted-foreground">
-                            {item.modifications.added.map(a => `+${a}`).join(', ')}
-                            {item.modifications.removed.map(r => `-${r}`).join(', ')}
+                            {item.modifications.added.map((a) => `+${a}`).join(', ')}
+                            {item.modifications.removed.map((r) => `-${r}`).join(', ')}
                           </p>
                         )}
                       </div>
@@ -854,7 +1064,10 @@ const POSModule: React.FC = () => {
           {invoiceOrder && (
             <div className="space-y-4">
               <div className="p-3 bg-muted rounded-lg text-sm">
-                <p>Comandă: <span className="font-mono font-medium">#{invoiceOrder.id.slice(0, 8)}</span></p>
+                <p>
+                  Comandă:{' '}
+                  <span className="font-mono font-medium">#{String(invoiceOrder.id).slice(0, 8)}</span>
+                </p>
                 <p>Total: <span className="font-bold">{invoiceOrder.totalAmount.toFixed(2)} RON</span></p>
                 <p>Data: {new Date(invoiceOrder.createdAt).toLocaleString('ro-RO')}</p>
               </div>
@@ -901,8 +1114,8 @@ const POSModule: React.FC = () => {
       <CashRegisterDialog
         open={showCashRegister}
         onClose={() => setShowCashRegister(false)}
-        orders={orders}
-        operatorName="Admin"
+        orders={posOrders}
+        operatorName={currentUser?.name ?? 'Operator'}
       />
     </div>
   );

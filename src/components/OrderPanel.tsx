@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, MenuItem, Order, OrderItem, menuCategories, UnitType } from '@/data/mockData';
+import { Table, MenuItem, Order, OrderItem, UnitType } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
+import { menuApi, ordersApi, imageSrc, type MenuItemApi, type OrderApi, type OrderItemApi } from '@/lib/api';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
@@ -19,25 +20,84 @@ import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import UpsellQuestionsDialog from './UpsellQuestionsDialog';
 import OrderHistoryDialog from './OrderHistoryDialog';
 
+type MenuItemForModifier = MenuItem | MenuItemApi;
+
+/** Mapare pentru comenzile din context (mock Order) – id-uri string ca în mockData. */
+function menuItemApiToMenuItem(api: MenuItemApi): MenuItem {
+  return {
+    id: String(api.id),
+    name: api.name,
+    description: api.description ?? '',
+    price: typeof api.price === 'number' ? api.price : Number(api.price),
+    category: api.category,
+    kdsStation: api.kdsStation?.name ?? String(api.kdsStationId),
+    prepTime: api.prepTime,
+    ingredients:
+      api.menuItemIngredients?.map((mi) => mi.ingredient?.name ?? `Ingredient ${mi.ingredientId}`) ?? [],
+    allergenIds: api.allergens?.map((a) => String(a.id)),
+    availableExtras: api.availableExtras?.map((e) => String(e.id)),
+    image: api.image,
+    unitType: api.unitType,
+    availability: api.availability as MenuItem['availability'],
+    platformPricing: api.platformPricing as MenuItem['platformPricing'],
+  };
+}
+
 interface OrderPanelProps {
   table: Table;
   onClose: () => void;
+  /** Comandă din API (ospătar); când e setat, meniul și adăugarea se fac prin API. */
+  apiOrder?: OrderApi | null;
+  /** Reîncarcă comanda din API după adăugare articole. */
+  refetchOrder?: () => Promise<void>;
 }
 
-const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
+const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refetchOrder }) => {
   const { 
-    menu, createOrder, getActiveOrderForTable, addItemToOrder, 
+    createOrder, addItemToOrder, 
     updateOrder, completeOrder, updateOrderItemStatus, orders
   } = useRestaurant();
   const { toast } = useToast();
-  
-  const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
+
+  const useApi = Boolean(apiOrder && refetchOrder);
+  const [apiMenuItems, setApiMenuItems] = useState<MenuItemApi[]>([]);
+  const [menuFromApiLoading, setMenuFromApiLoading] = useState(true);
+
+  /** Doar produse din DB (menu_items) – pentru orice masă (POS sau ospătar). */
+  useEffect(() => {
+    setMenuFromApiLoading(true);
+    menuApi
+      .getItems()
+      .then((items) => {
+        setApiMenuItems(items);
+        if (items.length) {
+          setActiveCategory((c) =>
+            c && items.some((i) => i.category === c) ? c : items[0].category,
+          );
+        } else {
+          setActiveCategory('');
+        }
+      })
+      .catch(() => {
+        setApiMenuItems([]);
+        setActiveCategory('');
+        toast({
+          title: 'Meniu indisponibil',
+          description: 'Nu s-au putut încărca produsele din baza de date.',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => setMenuFromApiLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reîncărcare la schimbare masă; toast stabil din useToast
+  }, [table.id]);
+
+  const [activeCategory, setActiveCategory] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [orderCollapsed, setOrderCollapsed] = useState(false);
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [showPayment, setShowPayment] = useState(false);
-  const [showModifier, setShowModifier] = useState<MenuItem | null>(null);
-  const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
+  const [showModifier, setShowModifier] = useState<MenuItemForModifier | null>(null);
+  const [editingItem, setEditingItem] = useState<OrderItem | OrderItemApi | null>(null);
   const [modAdditions, setModAdditions] = useState<string[]>([]);
   const [modRemovals, setModRemovals] = useState<string[]>([]);
   const [modNotes, setModNotes] = useState('');
@@ -177,111 +237,227 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     }
   };
 
-  const getItemPrice = (item: MenuItem | OrderItem['menuItem'], quantity: number, weightGrams?: number) => {
-    if (item.unitType === 'gram' && weightGrams) {
-      return item.price * weightGrams / 100;
-    }
-    return item.price * quantity;
+  const getItemPrice = (item: MenuItem | OrderItem['menuItem'] | Record<string, unknown> | null, quantity: number, weightGrams?: number): number => {
+    if (!item || typeof item !== 'object') return 0;
+    const p = (item as { price?: number }).price ?? 0;
+    const ut = (item as { unitType?: string }).unitType;
+    if (ut === 'gram' && weightGrams) return p * weightGrams / 100;
+    return p * quantity;
   };
 
-  let order = getActiveOrderForTable(table.id);
-  if (!order) {
-    order = createOrder(table.id);
-  }
+  /** Fără createOrder în render — evită „Cannot update RestaurantProvider while rendering OrderPanel”. */
+  const contextOrder = useMemo(
+    () => orders.find((o) => o.tableId === table.id && o.status === 'active') ?? null,
+    [orders, table.id],
+  );
 
-  const handleAddItem = (item: MenuItem) => {
-    if (item.ingredients.length > 0 || item.unitType === 'gram') {
+  useLayoutEffect(() => {
+    if (useApi) return;
+    if (orders.some((o) => o.tableId === table.id && o.status === 'active')) return;
+    createOrder(table.id);
+  }, [useApi, table.id, orders, createOrder]);
+
+  const order = (useApi ? apiOrder ?? null : contextOrder) as (Order | OrderApi) | null;
+
+  const menuCategoriesList = useMemo(
+    () => [...new Set(apiMenuItems.map((i) => i.category))].sort(),
+    [apiMenuItems],
+  );
+  const menuToShow: MenuItemForModifier[] = apiMenuItems;
+
+  /** Rânduri pentru dialogul „Fără/Extra” – chei stabile (nu obiecte ca key). */
+  const modifierIngredientRows = useMemo(() => {
+    const m = showModifier;
+    if (!m) return [] as { key: string; label: string }[];
+    if (
+      'menuItemIngredients' in m &&
+      Array.isArray(m.menuItemIngredients) &&
+      m.menuItemIngredients.length > 0
+    ) {
+      return m.menuItemIngredients.map((mi, idx) => ({
+        key: `mi-${mi.ingredientId ?? idx}`,
+        label: (mi.ingredient?.name?.trim() || `Ingredient #${mi.ingredientId}`).trim(),
+      }));
+    }
+    const raw = (m as MenuItem & Partial<MenuItemApi>).ingredients;
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    return raw.map((ing, idx) => {
+      if (typeof ing === 'string') return { key: `s-${idx}-${ing}`, label: ing };
+      const o = ing as { id?: number; name?: string };
+      const label = (o.name?.trim() || `Ingredient #${o.id ?? idx}`).trim();
+      return { key: `api-${o.id ?? idx}-${idx}`, label };
+    });
+  }, [showModifier]);
+
+  const orderTotalForDisplay = useApi && order
+    ? (order as OrderApi).items.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0)
+    : (order as Order)?.totalAmount ?? 0;
+
+  const handleAddItem = (item: MenuItemForModifier) => {
+    const hasExtras = 'availableExtras' in item && (item.availableExtras?.length ?? 0) > 0;
+    const hasIngredients = ('ingredients' in item && (item as MenuItem).ingredients?.length) || ('menuItemIngredients' in item && (item as MenuItemApi).menuItemIngredients?.length);
+    const isGram = (item as { unitType?: string }).unitType === 'gram';
+    if (hasExtras || hasIngredients || isGram) {
       setShowModifier(item);
       setEditingItem(null);
       setModAdditions([]);
       setModRemovals([]);
       setModNotes('');
       setModQuantity(1);
-      setModWeightGrams(item.unitType === 'gram' ? '200' : '');
+      setModWeightGrams(isGram ? '200' : '');
+    } else if (useApi && apiOrder) {
+      const menuItemId = typeof item.id === 'number' ? item.id : Number((item as MenuItem).id);
+      if (Number.isNaN(menuItemId)) return;
+      const apiItem = item as MenuItemApi;
+      const menuItemPayload: Record<string, unknown> = {
+        name: item.name,
+        price: (item as { price: number }).price,
+        prepTime: (item as { prepTime?: number }).prepTime,
+      };
+      if (typeof apiItem.kdsStationId === 'number') {
+        menuItemPayload.kdsStationId = apiItem.kdsStationId;
+        if (apiItem.kdsStation?.type) menuItemPayload.kdsStation = apiItem.kdsStation.type;
+      }
+      ordersApi.addItems(apiOrder.id, [{ menuItemId, quantity: 1, menuItem: menuItemPayload }])
+        .then(() => { refetchOrder?.(); toast({ title: `${item.name} adăugat` }); })
+        .catch((e) => toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' }));
     } else {
-      addItemToOrder(order!.id, item, 1);
+      const asMenu =
+        typeof (item as MenuItemApi).id === 'number'
+          ? menuItemApiToMenuItem(item as MenuItemApi)
+          : (item as MenuItem);
+      addItemToOrder((order as Order).id, asMenu, 1);
       toast({ title: `${item.name} adăugat` });
     }
   };
 
-  const handleEditItem = (item: OrderItem) => {
+  const handleEditItem = (item: OrderItem | OrderItemApi) => {
     if (item.status !== 'pending') {
       toast({ title: 'Nu se poate modifica - deja în preparare', variant: 'destructive' });
       return;
     }
     setEditingItem(item);
-    setShowModifier(item.menuItem);
-    setModAdditions(item.modifications.added);
-    setModRemovals(item.modifications.removed);
-    setModNotes(item.modifications.notes);
+    const mods = item.modifications ?? { added: [], removed: [], notes: '' };
+    setShowModifier((item.menuItem as MenuItemForModifier) ?? null);
+    setModAdditions(mods.added ?? []);
+    setModRemovals(mods.removed ?? []);
+    setModNotes(mods.notes ?? '');
     setModQuantity(item.quantity);
     setModWeightGrams(item.weightGrams ? String(item.weightGrams) : '');
   };
 
   const handleRemoveItem = (itemId: string) => {
     if (!order) return;
-    const item = order.items.find(i => i.id === itemId);
+    if (useApi) {
+      toast({ title: 'Ștergerea articolului nu este disponibilă în acest mod', variant: 'destructive' });
+      return;
+    }
+    const item = order.items.find((i) => i.id === itemId);
     if (item && item.status !== 'pending') {
       toast({ title: 'Nu se poate șterge - deja în preparare', variant: 'destructive' });
       return;
     }
-    const updatedItems = order.items.filter(i => i.id !== itemId);
+    const updatedItems = (order as Order).items.filter((i) => i.id !== itemId);
     const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
-    updateOrder({ ...order, items: updatedItems, totalAmount });
+    updateOrder({ ...order, items: updatedItems, totalAmount } as Order);
     toast({ title: 'Produs eliminat' });
   };
 
   const handleClearAll = () => {
     if (!order) return;
-    const nonPendingItems = order.items.filter(i => i.status !== 'pending');
-    const totalAmount = nonPendingItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
-    updateOrder({ ...order, items: nonPendingItems, totalAmount });
+    if (useApi) {
+      toast({
+        title: 'Indisponibil',
+        description: 'Pentru comanda din server folosește fluxul din aplicația ospătar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const ctxOrder = order as Order;
+    const nonPendingItems = ctxOrder.items.filter((i) => i.status !== 'pending');
+    const totalAmount = nonPendingItems.reduce(
+      (sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams),
+      0,
+    );
+    updateOrder({ ...ctxOrder, items: nonPendingItems, totalAmount });
     setShowClearConfirm(false);
     toast({ title: 'Toate produsele noi au fost șterse' });
   };
 
-  const handleConfirmModifier = () => {
+  const handleConfirmModifier = async () => {
     if (!showModifier || !order) return;
-    
-    if (editingItem) {
-      const wg = showModifier.unitType === 'gram' ? parseInt(modWeightGrams) || 0 : undefined;
-      const updatedItems = order.items.map(item => {
+    const modifications = { added: modAdditions, removed: modRemovals, notes: modNotes };
+    const wg = (showModifier as { unitType?: string }).unitType === 'gram' ? parseInt(modWeightGrams, 10) || 0 : undefined;
+
+    if (editingItem && !useApi) {
+      const updatedItems = (order as Order).items.map((item) => {
         if (item.id !== editingItem.id) return item;
         return {
           ...item,
           quantity: modQuantity,
           weightGrams: wg,
-          modifications: {
-            added: modAdditions,
-            removed: modRemovals,
-            notes: modNotes,
-          }
+          modifications: { added: modAdditions, removed: modRemovals, notes: modNotes },
         };
       });
       const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
-      updateOrder({ ...order, items: updatedItems, totalAmount });
+      updateOrder({ ...order, items: updatedItems, totalAmount } as Order);
       toast({ title: 'Produs actualizat' });
-    } else {
-      const wg = showModifier.unitType === 'gram' ? parseInt(modWeightGrams) || 0 : undefined;
+      setShowModifier(null);
+      setEditingItem(null);
+      return;
+    }
+
+    if (!editingItem && useApi && apiOrder) {
+      const menuItemId = typeof showModifier.id === 'number' ? showModifier.id : Number((showModifier as MenuItem).id);
+      if (Number.isNaN(menuItemId)) return;
+      const apiMod = showModifier as MenuItemApi;
+      const snapshot: Record<string, unknown> = {
+        name: showModifier.name,
+        price: (showModifier as { price: number }).price,
+        prepTime: (showModifier as { prepTime?: number }).prepTime,
+        unitType: (showModifier as { unitType?: string }).unitType,
+      };
+      if (typeof apiMod.kdsStationId === 'number') {
+        snapshot.kdsStationId = apiMod.kdsStationId;
+        if (apiMod.kdsStation?.type) snapshot.kdsStation = apiMod.kdsStation.type;
+      }
+      try {
+        await ordersApi.addItems(apiOrder.id, [{
+          menuItemId,
+          quantity: modQuantity,
+          weightGrams: wg ?? undefined,
+          menuItem: snapshot,
+          modifications: Object.keys(modifications).some((k) => (modifications as Record<string, unknown>)[k]) ? modifications : undefined,
+        }]);
+        await refetchOrder?.();
+        toast({ title: `${showModifier.name} adăugat` });
+      } catch (e) {
+        toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' });
+      }
+      setShowModifier(null);
+      setEditingItem(null);
+      return;
+    }
+
+    if (!editingItem && !useApi) {
+      const menuItem =
+        typeof showModifier.id === 'number'
+          ? menuItemApiToMenuItem(showModifier as MenuItemApi)
+          : (showModifier as MenuItem);
       const newItem: OrderItem = {
-        id: Date.now().toString(),
-        menuItemId: showModifier.id,
-        menuItem: showModifier,
+        id: `oi${Date.now()}`,
+        menuItemId: menuItem.id,
+        menuItem,
         quantity: modQuantity,
         weightGrams: wg,
-        modifications: {
-          added: modAdditions,
-          removed: modRemovals,
-          notes: modNotes,
-        },
+        modifications: { added: modAdditions, removed: modRemovals, notes: modNotes },
         status: 'pending',
       };
-      const updatedItems = [...order.items, newItem];
+      const updatedItems = [...(order as Order).items, newItem];
       const totalAmount = updatedItems.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0);
-      updateOrder({ ...order, items: updatedItems, totalAmount });
+      updateOrder({ ...order, items: updatedItems, totalAmount } as Order);
       toast({ title: `${showModifier.name} adăugat` });
     }
-    
     setShowModifier(null);
     setEditingItem(null);
   };
@@ -296,7 +472,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     }
 
     // Only show upsell dialog if not already answered for this order
-    if (upsellAnsweredForOrder !== order.id) {
+    if (upsellAnsweredForOrder !== String(order.id)) {
       setShowUpsellDialog(true);
     } else {
       // Already answered, send directly to kitchen
@@ -309,13 +485,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     
     // Mark this order as having answered upsell questions
     if (order) {
-      setUpsellAnsweredForOrder(order.id);
+      setUpsellAnsweredForOrder(String(order.id));
     }
-    
-    // Add selected products to order
-    if (selectedProducts.length > 0 && order) {
-      selectedProducts.forEach(product => {
-        addItemToOrder(order.id, product, 1);
+
+    // Add selected products to order (doar context mock; API = articole deja în sistem)
+    if (selectedProducts.length > 0 && order && !useApi) {
+      selectedProducts.forEach((product) => {
+        addItemToOrder((order as Order).id, product, 1);
       });
       toast({ 
         title: `${selectedProducts.length} produse adăugate`,
@@ -329,43 +505,35 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
 
   const handleSendToKitchen = () => {
     if (!order) return;
-    
-    const pendingItems = order.items.filter(i => i.status === 'pending');
-    if (pendingItems.length === 0) {
+    if (useApi) {
+      toast({ title: 'Comanda este salvată', description: 'Articolele sunt în sistem și vor fi preparate.' });
       return;
     }
-
-    if (order.syncTiming) {
-      const maxPrepTime = Math.max(...pendingItems.map(i => i.menuItem.prepTime));
-      
-      pendingItems.forEach(item => {
-        const delay = maxPrepTime - item.menuItem.prepTime;
-        setTimeout(() => {
-          updateOrderItemStatus(order!.id, item.id, 'cooking');
-        }, delay * 1000);
+    const pendingItems = order.items.filter((i) => i.status === 'pending');
+    if (pendingItems.length === 0) return;
+    if ((order as Order).syncTiming) {
+      const maxPrepTime = Math.max(...pendingItems.map((i) => ((i.menuItem as { prepTime?: number })?.prepTime ?? 0)));
+      pendingItems.forEach((item) => {
+        const delay = maxPrepTime - ((item.menuItem as { prepTime?: number })?.prepTime ?? 0);
+        setTimeout(() => updateOrderItemStatus((order as Order).id, item.id, 'cooking'), delay * 1000);
       });
     } else {
-      pendingItems.forEach(item => {
-        updateOrderItemStatus(order!.id, item.id, 'cooking');
-      });
+      pendingItems.forEach((item) => updateOrderItemStatus((order as Order).id, item.id, 'cooking'));
     }
-
-    toast({ 
-      title: 'Comandă trimisă la bucătărie',
-      description: `${pendingItems.length} articole trimise`,
-    });
+    toast({ title: 'Comandă trimisă la bucătărie', description: `${pendingItems.length} articole trimise` });
   };
 
   const getPayableAmount = (): number => {
     if (!order) return 0;
-    const remaining = order.totalAmount - paidAmounts.reduce((s, a) => s + a, 0);
+    const remaining = orderTotalForDisplay - paidAmounts.reduce((s, a) => s + a, 0);
     switch (splitMode) {
       case 'full': return remaining;
       case 'custom': return Math.min(parseFloat(customAmount) || 0, remaining);
       case 'items': return Object.entries(selectedPayItems).reduce((sum, [itemId, qty]) => {
-        const item = order.items.find(i => i.id === itemId);
+        const item = order.items.find((i) => i.id === itemId);
         if (!item) return sum;
-        return sum + (item.complimentary ? 0 : item.menuItem.price * qty);
+        const price = (item.menuItem as { price?: number })?.price ?? 0;
+        return sum + (item.complimentary ? 0 : price * qty);
       }, 0);
       case 'persons': return remaining / splitPersons;
       default: return remaining;
@@ -382,9 +550,17 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
 
   const handleCompletePayment = () => {
     if (!order) return;
+    if (useApi) {
+      toast({
+        title: 'Plată',
+        description: 'Pentru comanda din server folosește casieria / finalizarea din modulul POS (context).',
+        variant: 'destructive',
+      });
+      return;
+    }
     const amount = getPayableAmount();
     const tip = calculateTip();
-    const remaining = order.totalAmount - paidAmounts.reduce((s, a) => s + a, 0);
+    const remaining = orderTotalForDisplay - paidAmounts.reduce((s, a) => s + a, 0);
     
     if (splitMode !== 'full' && amount < remaining) {
       // Partial payment
@@ -401,7 +577,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     }
     
     // Full/final payment
-    completeOrder(order.id, tip, cui || undefined);
+    completeOrder(String(order.id), tip, cui || undefined);
     toast({ 
       title: 'Plată procesată',
       description: `Total: ${(amount + tip).toFixed(2)} RON`,
@@ -428,11 +604,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
     }
   };
 
-  const filteredMenu = menu.filter(item => {
+  const filteredMenu = menuToShow.filter((item) => {
     const matchesCategory = item.category === activeCategory;
-    const matchesSearch = searchQuery 
-      ? item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.description.toLowerCase().includes(searchQuery.toLowerCase())
+    const desc = (item as { description?: string }).description ?? '';
+    const matchesSearch = searchQuery
+      ? item.name.toLowerCase().includes(searchQuery.toLowerCase()) || desc.toLowerCase().includes(searchQuery.toLowerCase())
       : true;
     return searchQuery ? matchesSearch : matchesCategory;
   });
@@ -463,7 +639,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             variant="outline" 
             size="sm"
             onClick={() => setShowPayment(true)}
-            disabled={!order || order.items.length === 0}
+            disabled={!order || order.items.length === 0 || useApi}
           >
             <CreditCard className="w-4 h-4 md:mr-2" />
             <span className="hidden md:inline">Plată</span>
@@ -507,45 +683,67 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           {/* Categories */}
           {!searchQuery && (
             <div className="flex gap-2 p-2 md:p-3 overflow-x-auto border-b border-border">
-              {menuCategories.map(cat => (
+              {menuCategoriesList.map((cat, idx) => (
                 <Button
-                  key={cat}
+                  key={typeof cat === 'string' ? cat : `category-${idx}`}
                   variant={activeCategory === cat ? 'default' : 'secondary'}
                   size="sm"
                   onClick={() => setActiveCategory(cat)}
                   className="whitespace-nowrap text-xs md:text-sm"
                 >
-                  {cat}
+                  {typeof cat === 'string' ? cat : String(cat)}
                 </Button>
               ))}
             </div>
           )}
 
-          {/* Menu Items */}
+          {/* Menu Items – doar din menu_items (API) */}
           <div className="flex-1 overflow-auto p-2 md:p-3">
+            {menuFromApiLoading ? (
+              <div className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">
+                Se încarcă meniul din baza de date…
+              </div>
+            ) : apiMenuItems.length === 0 ? (
+              <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground px-4">
+                <p>Nu există produse în baza de date.</p>
+                <p className="text-xs">Adaugă articole în tabela <code className="rounded bg-muted px-1">menu_items</code> (sau din modulul de meniu).</p>
+              </div>
+            ) : filteredMenu.length === 0 ? (
+              <div className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">
+                Niciun produs nu se potrivește cu căutarea sau categoria selectată.
+              </div>
+            ) : (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
-              {filteredMenu.map(item => (
-                <button
-                  key={item.id}
+              {filteredMenu.map((item) => (
+                <div
+                  key={String(item.id)}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => handleAddItem(item)}
-                  className="rounded-xl bg-card border border-border hover:border-primary hover:shadow-md transition-all text-left overflow-hidden min-h-[120px] md:min-h-[140px]"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleAddItem(item);
+                    }
+                  }}
+                  className="rounded-xl bg-card border border-border hover:border-primary hover:shadow-md transition-all text-left overflow-hidden min-h-[120px] md:min-h-[140px] cursor-pointer"
                 >
                   {/* Product Image with overlay info */}
                   <div className="relative aspect-[4/3] w-full bg-secondary">
-                    {item.image && (
-                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    {(item as { image?: string }).image && (
+                      <img src={imageSrc((item as { image?: string }).image)} alt={item.name} className="w-full h-full object-cover" />
                     )}
                     {/* Title & Price overlay top */}
                     <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/50 to-transparent p-2.5 md:p-3 pb-6 md:pb-8">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="font-semibold text-white text-sm md:text-base line-clamp-2 leading-tight">{item.name}</h3>
-                        <span className="font-bold text-white text-sm md:text-base whitespace-nowrap">{item.price} RON/{getUnitLabel(item.unitType)}</span>
+                        <span className="font-bold text-white text-sm md:text-base whitespace-nowrap">{item.price} RON/{getUnitLabel((item as { unitType?: UnitType }).unitType)}</span>
                       </div>
                     </div>
                     {/* Clock badge */}
                     <span className="absolute bottom-1.5 left-1.5 text-xs md:text-sm text-white bg-black/60 rounded-full px-2 py-1 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
-                      {item.prepTime}'
+                      {(item as { prepTime?: number }).prepTime ?? 0}'
                     </span>
                     {/* Info button */}
                     <Popover>
@@ -558,23 +756,42 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                         {item.description && (
                           <p className="text-muted-foreground mb-2">{item.description}</p>
                         )}
-                        {item.ingredients && item.ingredients.length > 0 && (
+                        {'menuItemIngredients' in item && item.menuItemIngredients && item.menuItemIngredients.length > 0 ? (
                           <p className="text-xs text-muted-foreground mb-2">
-                            <span className="font-medium text-foreground">Conține:</span> {item.ingredients.join(', ')}
+                            <span className="font-medium text-foreground">Conține:</span>{' '}
+                            {item.menuItemIngredients
+                              .map((mi) => mi.ingredient?.name || '')
+                              .filter(Boolean)
+                              .join(', ')}
                           </p>
-                        )}
-                        {item.allergenIds && item.allergenIds.length > 0 && (
+                        ) : 'ingredients' in item && (item as MenuItem).ingredients?.length ? (
+                          <p className="text-xs text-muted-foreground mb-2">
+                            <span className="font-medium text-foreground">Conține:</span>{' '}
+                            {(item as MenuItem).ingredients.join(', ')}
+                          </p>
+                        ) : null}
+                        {'allergens' in item && item.allergens && item.allergens.length > 0 ? (
                           <div>
                             <span className="text-xs font-medium text-foreground">Alergeni:</span>
-                            <AllergenBadges allergenIds={item.allergenIds} size="sm" className="mt-1" />
+                            <AllergenBadges
+                              allergenIds={item.allergens.map((a) => String(a.id))}
+                              size="sm"
+                              className="mt-1"
+                            />
                           </div>
-                        )}
+                        ) : (item as MenuItem).allergenIds && (item as MenuItem).allergenIds!.length > 0 ? (
+                          <div>
+                            <span className="text-xs font-medium text-foreground">Alergeni:</span>
+                            <AllergenBadges allergenIds={(item as MenuItem).allergenIds!} size="sm" className="mt-1" />
+                          </div>
+                        ) : null}
                       </PopoverContent>
                     </Popover>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 
@@ -667,24 +884,33 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1 md:gap-2">
                           <span className="font-medium text-xs md:text-sm">
-                            {item.menuItem.unitType === 'gram' && item.weightGrams 
+                            {(item.menuItem as Record<string, unknown>)?.unitType === 'gram' && item.weightGrams
                               ? `${item.weightGrams}g` 
                               : `${item.quantity}x`
                             }
                           </span>
-                          <span className="font-medium text-xs md:text-sm truncate">{item.menuItem.name}</span>
-                          {item.menuItem.unitType && item.menuItem.unitType !== 'buc' && (
+                          <span className="font-medium text-xs md:text-sm truncate">
+                            {String((item.menuItem as Record<string, unknown>)?.name ?? 'Produs')}
+                          </span>
+                          {(item.menuItem as Record<string, unknown>)?.unitType &&
+                            (item.menuItem as Record<string, unknown>).unitType !== 'buc' && (
                             <span className="text-[10px] text-muted-foreground bg-muted px-1 rounded">
-                              {getUnitLabel(item.menuItem.unitType)}
+                              {getUnitLabel(
+                                ['buc', 'portie', 'gram'].includes(
+                                  String((item.menuItem as Record<string, unknown>).unitType),
+                                )
+                                  ? ((item.menuItem as Record<string, unknown>).unitType as UnitType)
+                                  : 'buc',
+                              )}
                             </span>
                           )}
                         </div>
-                        {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
+                        {((item.modifications?.added?.length ?? 0) > 0 || (item.modifications?.removed?.length ?? 0) > 0) && (
                           <div className="text-xs text-muted-foreground mt-1">
-                            {item.modifications.added.map(a => (
+                            {(item.modifications?.added ?? []).map((a) => (
                               <span key={a} className="text-success">+{a} </span>
                             ))}
-                            {item.modifications.removed.map(r => (
+                            {(item.modifications?.removed ?? []).map((r) => (
                               <span key={r} className="text-destructive">-{r} </span>
                             ))}
                           </div>
@@ -719,13 +945,21 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                               size="icon"
                               className="h-8 w-8 md:h-7 md:w-7"
                               onClick={() => {
-                                const updatedItems = order!.items.map(i => {
+                                if (useApi) return;
+                                const o = order as Order;
+                                const updatedItems = o.items.map((i) => {
                                   if (i.id !== item.id) return i;
                                   return { ...i, complimentary: !i.complimentary };
                                 });
-                                const totalAmount = updatedItems.reduce((sum, i) => sum + (i.complimentary ? 0 : getItemPrice(i.menuItem, i.quantity, i.weightGrams)), 0);
-                                updateOrder({ ...order!, items: updatedItems, totalAmount });
-                                toast({ title: item.complimentary ? 'Produs taxat normal' : 'Produs oferit din partea casei' });
+                                const totalAmount = updatedItems.reduce(
+                                  (sum, i) =>
+                                    sum + (i.complimentary ? 0 : getItemPrice(i.menuItem, i.quantity, i.weightGrams)),
+                                  0,
+                                );
+                                updateOrder({ ...o, items: updatedItems, totalAmount });
+                                toast({
+                                  title: item.complimentary ? 'Produs taxat normal' : 'Produs oferit din partea casei',
+                                });
                               }}
                               title="Din partea casei"
                             >
@@ -762,7 +996,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             <div className="p-2 md:p-3 border-t border-border space-y-2 md:space-y-3">
               <div className="flex items-center justify-between font-bold text-base md:text-lg">
                 <span>Total</span>
-                <span>{order.totalAmount.toFixed(2)} RON</span>
+                <span>{orderTotalForDisplay.toFixed(2)} RON</span>
               </div>
               
               {showClearConfirm ? (
@@ -812,10 +1046,17 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
           
           <div className="space-y-4">
             {/* Unit type indicator */}
-            {showModifier?.unitType && showModifier.unitType !== 'buc' && (
+            {showModifier && (showModifier as { unitType?: string }).unitType && (showModifier as { unitType?: string }).unitType !== 'buc' && (
               <div className="p-2 rounded-lg bg-primary/10 text-center">
                 <span className="text-sm font-medium text-primary">
-                  Preț: {showModifier.price} RON / {getUnitLabel(showModifier.unitType)}
+                  Preț: {(showModifier as { price: number }).price} RON /{' '}
+                  {getUnitLabel(
+                    (['buc', 'portie', 'gram'] as const).includes(
+                      (showModifier as { unitType?: string }).unitType as UnitType,
+                    )
+                      ? ((showModifier as { unitType?: UnitType }).unitType as UnitType)
+                      : 'buc',
+                  )}
                 </span>
               </div>
             )}
@@ -870,9 +1111,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
                 <span className="font-medium">
-                  Cantitate {showModifier?.unitType === 'portie' ? '(porții)' : '(buc)'}
+                  Cantitate {(showModifier as { unitType?: string })?.unitType === 'portie' ? '(porții)' : '(buc)'}
                 </span>
                 <div className="flex items-center gap-3">
                   <Button
@@ -894,24 +1135,62 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               </div>
             )}
 
-            {/* Ingredients */}
-            {showModifier && showModifier.ingredients.length > 0 && (
+            {/* Extra ingrediente (API: availableExtras) */}
+            {showModifier && 'availableExtras' in showModifier && (showModifier.availableExtras?.length ?? 0) > 0 && (
+              <div>
+                <p className="font-medium mb-2">Extra ingrediente</p>
+                <div className="flex flex-wrap gap-2">
+                  {showModifier.availableExtras!.map((ex) => (
+                    <Button
+                      key={ex.id}
+                      size="sm"
+                      variant={modAdditions.includes(ex.name) ? 'default' : 'outline'}
+                      onClick={() => {
+                        if (modAdditions.includes(ex.name)) {
+                          setModAdditions(modAdditions.filter((a) => a !== ex.name));
+                        } else {
+                          setModAdditions([...modAdditions, ex.name]);
+                        }
+                      }}
+                    >
+                      {ex.name} (+{ex.price} RON)
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Fără (ingrediente) - text liber */}
+            {showModifier && (
+              <div>
+                <p className="font-medium mb-2">Fără (ingrediente, separate prin virgulă)</p>
+                <Input
+                  placeholder="ex: ceapă, maioneză"
+                  value={modRemovals.join(', ')}
+                  onChange={(e) => setModRemovals(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+                  className="w-full"
+                />
+              </div>
+            )}
+
+            {/* Ingrediente: mock (string[]) sau API (menuItemIngredients / ingredients ca obiecte) */}
+            {showModifier && modifierIngredientRows.length > 0 && (
               <div>
                 <p className="font-medium mb-2">Ingrediente</p>
                 <div className="space-y-2 max-h-40 overflow-auto">
-                  {showModifier.ingredients.map(ing => (
-                    <div key={ing} className="flex items-center justify-between p-2 rounded-lg bg-secondary">
-                      <span className="text-sm">{ing}</span>
+                  {modifierIngredientRows.map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between p-2 rounded-lg bg-secondary">
+                      <span className="text-sm">{label}</span>
                       <div className="flex gap-2">
                         <Button
                           size="sm"
-                          variant={modRemovals.includes(ing) ? 'destructive' : 'ghost'}
+                          variant={modRemovals.includes(label) ? 'destructive' : 'ghost'}
                           onClick={() => {
-                            if (modRemovals.includes(ing)) {
-                              setModRemovals(modRemovals.filter(r => r !== ing));
+                            if (modRemovals.includes(label)) {
+                              setModRemovals(modRemovals.filter((r) => r !== label));
                             } else {
-                              setModRemovals([...modRemovals, ing]);
-                              setModAdditions(modAdditions.filter(a => a !== ing));
+                              setModRemovals([...modRemovals, label]);
+                              setModAdditions(modAdditions.filter((a) => a !== label));
                             }
                           }}
                         >
@@ -919,13 +1198,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                         </Button>
                         <Button
                           size="sm"
-                          variant={modAdditions.includes(ing) ? 'default' : 'ghost'}
+                          variant={modAdditions.includes(label) ? 'default' : 'ghost'}
                           onClick={() => {
-                            if (modAdditions.includes(ing)) {
-                              setModAdditions(modAdditions.filter(a => a !== ing));
+                            if (modAdditions.includes(label)) {
+                              setModAdditions(modAdditions.filter((a) => a !== label));
                             } else {
-                              setModAdditions([...modAdditions, ing]);
-                              setModRemovals(modRemovals.filter(r => r !== ing));
+                              setModAdditions([...modAdditions, label]);
+                              setModRemovals(modRemovals.filter((r) => r !== label));
                             }
                           }}
                         >
@@ -943,8 +1222,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
               <p className="font-medium mb-2">Note speciale</p>
               <Input
                 value={modNotes}
-                onChange={(e) => setModNotes(e.target.value)}
                 placeholder="Ex: bine prăjit, fără sare..."
+                onChange={(e) => setModNotes(e.target.value)}
               />
             </div>
 
@@ -979,7 +1258,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 ))}
                 <div className="flex justify-between text-sm font-bold mt-1 pt-1 border-t border-success/20">
                   <span>Rămas de plată</span>
-                  <span>{((order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0)).toFixed(2)} RON</span>
+                  <span>{(orderTotalForDisplay - paidAmounts.reduce((s, a) => s + a, 0)).toFixed(2)} RON</span>
                 </div>
               </div>
             )}
@@ -988,7 +1267,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
             <div className="p-4 rounded-lg bg-secondary">
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>Total comandă</span>
-                <span>{order?.totalAmount.toFixed(2)} RON</span>
+                <span>{orderTotalForDisplay.toFixed(2)} RON</span>
               </div>
               {splitMode !== 'full' && (
                 <div className="flex justify-between text-lg font-bold mt-1">
@@ -1076,10 +1355,10 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                   onChange={(e) => setCustomAmount(e.target.value)}
                   placeholder="Introduceți suma (RON)"
                   className="text-lg font-mono"
-                  max={(order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0)}
+                  max={orderTotalForDisplay - paidAmounts.reduce((s, a) => s + a, 0)}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Maxim: {((order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0)).toFixed(2)} RON
+                  Maxim: {(orderTotalForDisplay - paidAmounts.reduce((s, a) => s + a, 0)).toFixed(2)} RON
                 </p>
               </div>
             )}
@@ -1094,9 +1373,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                     return (
                       <div key={item.id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-card">
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium truncate block">{item.menuItem.name}</span>
+                          <span className="text-sm font-medium truncate block">
+                            {String((item.menuItem as Record<string, unknown>)?.name ?? 'Produs')}
+                          </span>
                           <span className="text-xs text-muted-foreground">
-                            {item.menuItem.price} RON × {item.quantity}
+                            {Number((item.menuItem as Record<string, unknown>)?.price ?? 0)} RON × {item.quantity}
                             {item.complimentary && ' (gratis)'}
                           </span>
                         </div>
@@ -1453,7 +1734,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
                 {paymentMethod === 'card' && <CardIcon className="w-4 h-4 mr-2" />}
                 {paymentMethod === 'usage_card' && <Barcode className="w-4 h-4 mr-2" />}
                 {paymentMethod === 'mixed' && <><Banknote className="w-3 h-3 mr-1" /><CardIcon className="w-3 h-3 mr-1" /></>}
-                {splitMode !== 'full' && getPayableAmount() < ((order?.totalAmount || 0) - paidAmounts.reduce((s, a) => s + a, 0))
+                {splitMode !== 'full' && getPayableAmount() < (orderTotalForDisplay - paidAmounts.reduce((s, a) => s + a, 0))
                   ? `Plătește ${getPayableAmount().toFixed(2)} RON`
                   : 'Finalizează'
                 }
@@ -1463,12 +1744,15 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Receipt */}
-      {order && (
-        <Receipt 
-          order={order} 
-          isOpen={showReceipt} 
-          onClose={() => { setShowReceipt(false); onClose(); }} 
+      {/* Receipt – doar comenzi din context (Order); OrderApi are altă formă */}
+      {order && !useApi && (
+        <Receipt
+          order={order as Order}
+          isOpen={showReceipt}
+          onClose={() => {
+            setShowReceipt(false);
+            onClose();
+          }}
         />
       )}
 
@@ -1477,7 +1761,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose }) => {
         open={showUpsellDialog}
         onClose={() => setShowUpsellDialog(false)}
         onConfirm={handleUpsellConfirm}
-        currentOrderItems={order?.items.map(i => i.menuItem.id) || []}
+        currentOrderItems={order?.items.map((i) => (i.menuItem as Record<string, unknown>)?.id ?? i.menuItemId) ?? []}
       />
 
       {/* Order History Dialog */}

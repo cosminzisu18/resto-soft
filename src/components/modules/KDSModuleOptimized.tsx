@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { KDSStation, OrderItem, Order, users, MenuItem } from '@/data/mockData';
+import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
 import { cn } from '@/lib/utils';
 import { Clock, LogOut, Truck, MessageSquare, MapPin, Monitor, ShoppingBag, ChefHat, CheckCircle2, Timer, Utensils, Book, Play, User, Printer, Plus, Minus, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -107,7 +108,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
   const [labelPreview, setLabelPreview] = useState<LabelData | null>(null);
   const labelRef = useRef<HTMLDivElement>(null);
 
-  const stationOrders = getOrdersForStation(station.id);
+  const stationOrders = getOrdersForStation(station);
   const kitchenEmployees = users.filter(u => u.role === 'kitchen');
 
   useEffect(() => {
@@ -227,7 +228,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
     const item = order?.items.find(i => i.id === itemId);
     
     if (order && item) {
-      const stationItems = order.items.filter(i => i.menuItem.kdsStation === station.id);
+      const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
       const productIndex = stationItems.findIndex(i => i.id === itemId) + 1;
 
       // Create label data
@@ -251,7 +252,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
     updateOrderItemStatus(orderId, itemId, 'ready');
 
     if (order) {
-      const stationItems = order.items.filter(i => i.menuItem.kdsStation === station.id);
+      const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
       const allReady = stationItems.every(i => i.id === itemId || i.status === 'ready');
       
       if (allReady) {
@@ -616,7 +617,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {completedOrders.map(order => {
                 const orderTypeInfo = getOrderTypeInfo(order);
-                const stationItems = order.items.filter(i => i.menuItem.kdsStation === station.id);
+                const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
                 
                 return (
                   <Card key={order.id} className="bg-green-50 border-green-200 text-slate-900">
