@@ -102,6 +102,11 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
       setEditPosX(selectedTable.position.x);
       setEditPosY(selectedTable.position.y);
     }
+    // Always sync position from map drag
+    if (selectedTable && loadedTableIdRef.current === selectedTable.id) {
+      setEditPosX(selectedTable.position.x);
+      setEditPosY(selectedTable.position.y);
+    }
     if (!selectedTable) {
       loadedTableIdRef.current = null;
     }
