@@ -34,9 +34,9 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
 
   const pxToPercent = useCallback((clientX: number, clientY: number) => {
-    const container = containerRef.current;
-    if (!container) return { x: 0, y: 0 };
-    const rect = container.getBoundingClientRect();
+    const map = mapRef.current;
+    if (!map) return { x: 0, y: 0 };
+    const rect = map.getBoundingClientRect();
     const x = Math.max(2, Math.min(98, ((clientX - rect.left) / rect.width) * 100));
     const y = Math.max(2, Math.min(98, ((clientY - rect.top) / rect.height) * 100));
     return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
