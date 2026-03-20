@@ -81,6 +81,8 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
   const [editShape, setEditShape] = useState<Table['shape']>('square');
   const [editColor, setEditColor] = useState('default');
   const [editQrCode, setEditQrCode] = useState('');
+  const [editPosX, setEditPosX] = useState(50);
+  const [editPosY, setEditPosY] = useState(50);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
@@ -97,6 +99,13 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
       setEditShape(selectedTable.shape);
       setEditColor(selectedTable.color || 'default');
       setEditQrCode(selectedTable.qrCode || generateQrId());
+      setEditPosX(selectedTable.position.x);
+      setEditPosY(selectedTable.position.y);
+    }
+    // Always sync position from map drag
+    if (selectedTable && loadedTableIdRef.current === selectedTable.id) {
+      setEditPosX(selectedTable.position.x);
+      setEditPosY(selectedTable.position.y);
     }
     if (!selectedTable) {
       loadedTableIdRef.current = null;
@@ -116,6 +125,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
       shape: editShape,
       color: editColor,
       qrCode: editQrCode,
+      position: { x: editPosX, y: editPosY },
     });
     toast({ title: `Masa ${editNumber} actualizată` });
     setShowSaveConfirm(false);
@@ -223,6 +233,39 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
                 onChange={e => setEditSeats(parseInt(e.target.value) || 1)}
                 className="h-9"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Poziție pe hartă (%)</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label htmlFor="table-pos-x" className="text-[10px] text-muted-foreground">X</Label>
+                  <Input
+                    id="table-pos-x"
+                    type="number"
+                    min={2}
+                    max={98}
+                    step={0.5}
+                    value={editPosX}
+                    onChange={e => setEditPosX(parseFloat(e.target.value) || 2)}
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="table-pos-y" className="text-[10px] text-muted-foreground">Y</Label>
+                  <Input
+                    id="table-pos-y"
+                    type="number"
+                    min={2}
+                    max={98}
+                    step={0.5}
+                    value={editPosY}
+                    onChange={e => setEditPosY(parseFloat(e.target.value) || 2)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground">Se actualizează și la drag pe hartă.</p>
             </div>
 
             <div className="space-y-2">
