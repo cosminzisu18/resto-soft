@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, 
@@ -154,9 +155,10 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                 const Icon = item.icon;
                 const isActive = activeModule === item.id;
 
-                const button = (
-                  <button
+                const link = (
+                  <Link
                     key={item.id}
+                    to={`/admin/${item.id}`}
                     className={cn(
                       "w-full flex items-center h-12 rounded-lg transition-colors",
                       collapsed ? "justify-center px-0" : "gap-4 px-4",
@@ -178,13 +180,13 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                         {item.badge}
                       </span>
                     )}
-                  </button>
+                  </Link>
                 );
 
                 if (collapsed) {
                   return (
                     <Tooltip key={item.id}>
-                      <TooltipTrigger asChild>{button}</TooltipTrigger>
+                      <TooltipTrigger asChild>{link}</TooltipTrigger>
                       <TooltipContent side="right" className="text-base font-bold">
                         {item.label}
                       </TooltipContent>
@@ -192,7 +194,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                   );
                 }
 
-                return <div key={item.id}>{button}</div>;
+                return <div key={item.id}>{link}</div>;
               })}
             </nav>
           </ScrollArea>

@@ -149,7 +149,7 @@ const KDSProductionModule: React.FC = () => {
   const [showLabelPreview, setShowLabelPreview] = useState(false);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isProducing) {
       interval = setInterval(() => {
         setProductionTime(prev => prev + 1);
