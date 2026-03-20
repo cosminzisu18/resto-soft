@@ -21,6 +21,7 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
 
   // Drag state
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     tableId: string;
     startMouseX: number;
@@ -33,9 +34,9 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
 
   const pxToPercent = useCallback((clientX: number, clientY: number) => {
-    const container = containerRef.current;
-    if (!container) return { x: 0, y: 0 };
-    const rect = container.getBoundingClientRect();
+    const map = mapRef.current;
+    if (!map) return { x: 0, y: 0 };
+    const rect = map.getBoundingClientRect();
     const x = Math.max(2, Math.min(98, ((clientX - rect.left) / rect.width) * 100));
     const y = Math.max(2, Math.min(98, ((clientY - rect.top) / rect.height) * 100));
     return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
@@ -171,7 +172,7 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
 
       <div
         ref={containerRef}
-        className={cn("flex-1 relative bg-secondary/30 overflow-auto p-4", editMode && "cursor-grab")}
+        className={cn("flex-1 relative bg-secondary/30 overflow-hidden", editMode && "cursor-grab")}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
@@ -182,7 +183,8 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
           </div>
         )}
         <div
-          className="relative min-h-[500px] min-w-full"
+          ref={mapRef}
+          className="relative h-full w-full min-h-[500px]"
           style={{ backgroundImage: 'radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: '20px 20px' }}
         >
           {tables.map(table => {
