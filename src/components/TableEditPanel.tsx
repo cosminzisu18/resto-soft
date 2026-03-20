@@ -325,27 +325,6 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-xs">Culoare</Label>
-              <div className="grid grid-cols-4 gap-2">
-                {TABLE_COLORS.map(color => (
-                  <button
-                    key={color.value}
-                    type="button"
-                    onClick={() => setEditColor(color.value)}
-                    className={cn(
-                      "w-full aspect-square rounded-lg border-2 transition-all",
-                      color.class,
-                      editColor === color.value
-                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background scale-110"
-                        : "hover:scale-105"
-                    )}
-                    title={color.label}
-                  />
-                ))}
-              </div>
-            </div>
-
             {/* QR Code ID */}
             <div className="space-y-2">
               <div className="flex items-center gap-1">
