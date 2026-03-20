@@ -183,7 +183,8 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
           </div>
         )}
         <div
-          className="relative min-h-[500px] min-w-full"
+          ref={mapRef}
+          className="relative h-full w-full min-h-[500px]"
           style={{ backgroundImage: 'radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: '20px 20px' }}
         >
           {tables.map(table => {
