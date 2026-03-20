@@ -14,6 +14,7 @@ export interface Table {
   status: 'free' | 'occupied' | 'reserved';
   position: { x: number; y: number };
   shape: 'round' | 'square' | 'rectangle';
+  color?: string;
   currentOrderId?: string;
   reservationId?: string;
   currentGuests?: number;
