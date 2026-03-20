@@ -4,9 +4,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { menuCategories, MenuItem, extraIngredients as extraIngredientsData } from '@/data/mockData';
+import { imageSrc, menuApi, ordersApi, type MenuItemApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
@@ -21,44 +20,33 @@ type OrderMode = 'dine-in' | 'takeaway';
 
 interface CartItem {
   id: string;
-  menuItem: MenuItem;
+  menuItem: KioskMenuItem;
   quantity: number;
   modifications: {
     added: string[];
     removed: string[];
   };
-  extras: { name: string; quantity: number; price: number }[];
+  extras: { id: number; name: string; quantity: number; price: number }[];
 }
 
-// Ingredient images mapping
-const ingredientImages: Record<string, string> = {
-  'Mozzarella': 'https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?w=100',
-  'Gorgonzola': 'https://images.unsplash.com/photo-1452195100486-9cc805987862?w=100',
-  'Parmezan': 'https://images.unsplash.com/photo-1552767059-ce182ead6c1b?w=100',
-  'Brie': 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=100',
-  'Sos roșii': 'https://images.unsplash.com/photo-1472476443507-c7a5948772fc?w=100',
-  'Busuioc': 'https://images.unsplash.com/photo-1600692851888-3f6a8f3f8c82?w=100',
-  'Salam picant': 'https://images.unsplash.com/photo-1599921841143-819065a55cc6?w=100',
-  'Prosciutto': 'https://images.unsplash.com/photo-1626200419199-391ae4be7a41?w=100',
-  'Carne': 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=100',
-  'Bacon': 'https://images.unsplash.com/photo-1606851094291-6efae152bb87?w=100',
-  'Pui': 'https://images.unsplash.com/photo-1587593810167-a84920ea0781?w=100',
-  'Vită': 'https://images.unsplash.com/photo-1588168333986-5078d3ae3976?w=100',
-  'Ceapă': 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=100',
-  'Roșii': 'https://images.unsplash.com/photo-1546094096-0df4bcaaa337?w=100',
-  'Salată': 'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?w=100',
-  'Ardei iute': 'https://images.unsplash.com/photo-1583119022894-919a68a3d0e3?w=100',
-  'Ciuperci': 'https://images.unsplash.com/photo-1518977676601-b53f82ber48f?w=100',
-  'Măsline': 'https://images.unsplash.com/photo-1563288204-f0e9c6d2e6b0?w=100',
-  'Smântână': 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=100',
-  'Usturoi': 'https://images.unsplash.com/photo-1501420193726-1a34f3a80713?w=100',
-  'Cartofi': 'https://images.unsplash.com/photo-1518977676601-b53f82bece48?w=100',
-  'Orez': 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=100',
-};
-
-const getIngredientImage = (name: string) => {
-  return ingredientImages[name] || `https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100`;
-};
+interface KioskMenuItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  prepTime: number;
+  ingredients: string[];
+  availableExtras: { id: number; name: string; price: number; image?: string | null }[];
+  allergenIds?: string[];
+  image?: string;
+  availability?: {
+    restaurant?: boolean;
+    kiosk?: boolean;
+    app?: boolean;
+    delivery?: boolean;
+  };
+}
 
 // Category icons
 const categoryIcons: Record<string, string> = {
@@ -88,30 +76,73 @@ const languages = [
 ];
 
 const KioskModule: React.FC = () => {
-  const { menu } = useRestaurant();
   const { language, setLanguage } = useLanguage();
+  const [menu, setMenu] = useState<KioskMenuItem[]>([]);
+  const [menuCategories, setMenuCategories] = useState<string[]>([]);
+  const [savedOrderNumber, setSavedOrderNumber] = useState<number | null>(null);
   
   const [step, setStep] = useState<KioskStep>('idle');
   const [orderMode, setOrderMode] = useState<OrderMode | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [activeCategory, setActiveCategory] = useState(menuCategories[0]);
+  const [activeCategory, setActiveCategory] = useState<string>('');
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
   const [idleTimer, setIdleTimer] = useState<number>(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   
   // Customization
-  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
+  const [customizingItem, setCustomizingItem] = useState<KioskMenuItem | null>(null);
   const [customizeStep, setCustomizeStep] = useState<'extras' | 'remove'>('extras');
-  const [tempExtras, setTempExtras] = useState<{ name: string; quantity: number; price: number }[]>([]);
+  const [tempExtras, setTempExtras] = useState<{ id: number; name: string; quantity: number; price: number }[]>([]);
   const [tempRemovals, setTempRemovals] = useState<string[]>([]);
   
   // Upsell dialog
   const [showUpsell, setShowUpsell] = useState(false);
-  const [upsellItem, setUpsellItem] = useState<MenuItem | null>(null);
+  const [upsellItem, setUpsellItem] = useState<KioskMenuItem | null>(null);
 
   const IDLE_TIMEOUT = 120;
 
   const resetIdleTimer = () => setIdleTimer(0);
+
+  useEffect(() => {
+    const mapApiItem = (item: MenuItemApi): KioskMenuItem => ({
+      id: String(item.id),
+      name: item.name,
+      description: item.description ?? '',
+      price: Number(item.price ?? 0),
+      category: item.category,
+      prepTime: Number(item.prepTime ?? 0),
+      ingredients:
+        item.menuItemIngredients?.map((r) => r.ingredient?.name ?? `Ingredient #${r.ingredientId}`) ??
+        item.ingredients?.map((i) => i.name) ??
+        [],
+      availableExtras:
+        item.availableExtras?.map((e) => ({
+          id: e.id,
+          name: e.name,
+          price: Number(e.price ?? 0),
+          image: e.image ?? null,
+        })) ?? [],
+      allergenIds: item.allergens?.map((a) => String(a.id)),
+      image: item.image,
+      availability: item.availability,
+    });
+
+    const fetchKioskMenu = async () => {
+      try {
+        const [cats, items] = await Promise.all([menuApi.getCategories(), menuApi.getItems()]);
+        const categoryNames = cats.map((c) => c.name);
+        const mapped = items.map(mapApiItem);
+        setMenuCategories(categoryNames);
+        setMenu(mapped);
+        if (categoryNames.length > 0) setActiveCategory((prev) => prev || categoryNames[0]);
+      } catch {
+        setMenu([]);
+        setMenuCategories([]);
+      }
+    };
+
+    void fetchKioskMenu();
+  }, []);
 
   // Auto-rotate promotions
   useEffect(() => {
@@ -143,7 +174,7 @@ const KioskModule: React.FC = () => {
   const upsellSuggestions = useMemo(() => {
     if (cart.length === 0) return [];
     const cartCategories = new Set(cart.map(c => c.menuItem.category));
-    const suggestions: MenuItem[] = [];
+    const suggestions: KioskMenuItem[] = [];
     
     if (!cartCategories.has('Băuturi')) {
       suggestions.push(...menu.filter(m => m.category === 'Băuturi').slice(0, 2));
@@ -156,7 +187,7 @@ const KioskModule: React.FC = () => {
     return suggestions.slice(0, 4);
   }, [cart, menu]);
 
-  const openCustomization = (item: MenuItem) => {
+  const openCustomization = (item: KioskMenuItem) => {
     resetIdleTimer();
     setCustomizingItem(item);
     setTempExtras([]);
@@ -165,7 +196,7 @@ const KioskModule: React.FC = () => {
     setStep('customize');
   };
 
-  const addToCart = (item: MenuItem) => {
+  const addToCart = (item: KioskMenuItem) => {
     resetIdleTimer();
     if (item.ingredients && item.ingredients.length > 0) {
       openCustomization(item);
@@ -218,8 +249,9 @@ const KioskModule: React.FC = () => {
     setStep('idle');
     setOrderMode(null);
     setCart([]);
-    setActiveCategory(menuCategories[0]);
+    setActiveCategory(menuCategories[0] ?? '');
     setIdleTimer(0);
+    setSavedOrderNumber(null);
   };
 
   const calculateItemTotal = (item: CartItem) => {
@@ -230,19 +262,56 @@ const KioskModule: React.FC = () => {
   const totalAmount = cart.reduce((sum, item) => sum + calculateItemTotal(item), 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const filteredMenu = menu.filter(m => m.category === activeCategory && m.availability?.kiosk !== false);
+  const filteredMenu = menu.filter((m) => m.category === activeCategory && m.availability?.kiosk !== false);
 
-  const handleExtraQuantity = (ingredientName: string, delta: number, price: number) => {
-    setTempExtras(prev => {
-      const existing = prev.find(e => e.name === ingredientName);
+  const handlePaymentSuccess = async () => {
+    if (!orderMode || cart.length === 0) return;
+    setStep('processing');
+    try {
+      const created = await ordersApi.create({
+        source: 'kiosk',
+        fulfillmentType: orderMode === 'dine-in' ? 'dine_in' : 'takeaway',
+        tableNumber: orderMode === 'dine-in' ? 0 : undefined,
+        customerName: 'Kiosk Self-Order',
+        deliveryAddress: orderMode === 'takeaway' ? 'La pachet (Kiosk)' : null,
+        items: cart.map((c) => ({
+          menuItemId: Number(c.menuItem.id),
+          quantity: c.quantity,
+          menuItem: {
+            id: Number(c.menuItem.id),
+            name: c.menuItem.name,
+            category: c.menuItem.category,
+            prepTime: c.menuItem.prepTime,
+            image: c.menuItem.image ?? null,
+          },
+          modifications: {
+            added: c.modifications.added,
+            removed: c.modifications.removed,
+            notes: c.extras.length
+              ? c.extras.map((e) => `${e.name} x${e.quantity}`).join(', ')
+              : '',
+          },
+        })),
+      });
+      setSavedOrderNumber(created.id);
+      setStep('confirm');
+    } catch {
+      setStep('payment');
+    }
+  };
+
+  const handleExtraQuantity = (extraId: number, ingredientName: string, delta: number, price: number) => {
+    setTempExtras((prev) => {
+      const existing = prev.find((e) => e.id === extraId);
       if (existing) {
         const newQty = existing.quantity + delta;
         if (newQty <= 0) {
-          return prev.filter(e => e.name !== ingredientName);
+          return prev.filter((e) => e.id !== extraId);
         }
-        return prev.map(e => e.name === ingredientName ? { ...e, quantity: newQty } : e);
-      } else if (delta > 0) {
-        return [...prev, { name: ingredientName, quantity: 1, price }];
+        return prev.map((e) => (e.id === extraId ? { ...e, quantity: newQty } : e));
+      }
+      if (delta > 0) {
+        return [...prev, { id: extraId, name: ingredientName, quantity: 1, price }];
       }
       return prev;
     });
@@ -572,7 +641,7 @@ const KioskModule: React.FC = () => {
                   >
                     {item.image && (
                       <div className="aspect-square bg-slate-50 relative">
-                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                        <img src={imageSrc(item.image)} alt={item.name} className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                       </div>
                     )}
@@ -605,14 +674,7 @@ const KioskModule: React.FC = () => {
 
   // ============ CUSTOMIZATION ============
   if (step === 'customize' && customizingItem) {
-    // Available extras for this item
-    const availableExtras = [
-      { name: 'Extra carne de vită porție mare', price: 8.00 },
-      { name: 'Extra plant-based porție mare', price: 8.00 },
-      { name: 'Extra bacon', price: 5.00 },
-      { name: 'Extra brânză', price: 4.00 },
-      { name: 'Extra sos', price: 2.00 },
-    ];
+    const availableExtras = customizingItem.availableExtras;
 
     return (
       <div className="h-full flex bg-slate-100" onClick={resetIdleTimer}>
@@ -669,7 +731,7 @@ const KioskModule: React.FC = () => {
           <div className="p-6 bg-white border-b border-slate-200">
             <div className="flex items-start gap-6">
               {customizingItem.image && (
-                <img src={customizingItem.image} alt={customizingItem.name} className="w-32 h-24 object-cover rounded-xl" />
+                <img src={imageSrc(customizingItem.image)} alt={customizingItem.name} className="w-32 h-24 object-cover rounded-xl" />
               )}
               <div className="flex-1">
                 <div className="flex items-start justify-between">
@@ -692,38 +754,59 @@ const KioskModule: React.FC = () => {
               {customizeStep === 'extras' && (
                 <>
                   <h2 className="text-xl font-bold text-slate-800 mb-4">Alege extras</h2>
+                  {availableExtras.length === 0 && (
+                    <div className="p-4 bg-white rounded-xl border border-slate-200 text-slate-500">
+                      Nu există ingrediente extra configurate în DB pentru acest produs.
+                    </div>
+                  )}
                   <div className="space-y-3">
                     {availableExtras.map((extra) => {
-                      const currentQty = tempExtras.find(e => e.name === extra.name)?.quantity || 0;
+                      const currentQty = tempExtras.find((e) => e.id === extra.id)?.quantity || 0;
                       return (
-                        <div key={extra.name} className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-full bg-slate-100 overflow-hidden">
-                              <img src={getIngredientImage(extra.name.split(' ')[1] || 'Carne')} alt={extra.name} className="w-full h-full object-cover" />
-                            </div>
-                            <span className="font-medium text-slate-800">{extra.name}</span>
+                        <div key={extra.id} className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200">
+                          <div className="flex items-center gap-4 min-w-0">
+                            {extra.image ? (
+                              <div className="w-12 h-12 rounded-full bg-slate-100 overflow-hidden shrink-0">
+                                <img
+                                  src={imageSrc(extra.image)}
+                                  alt={extra.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <div
+                                className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-400"
+                                aria-hidden
+                              >
+                                <Package className="w-6 h-6" />
+                              </div>
+                            )}
+                            <span className="font-medium text-slate-800 truncate">{extra.name}</span>
                           </div>
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-4 shrink-0">
                             <span className="text-primary font-bold">+{extra.price.toFixed(2)} RON</span>
                             {currentQty > 0 ? (
                               <div className="flex items-center gap-2 bg-green-100 rounded-full p-1">
-                                <button 
-                                  onClick={() => handleExtraQuantity(extra.name, -1, extra.price)}
+                                <button
+                                  type="button"
+                                  onClick={() => handleExtraQuantity(extra.id, extra.name, -1, extra.price)}
                                   className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow"
                                 >
                                   <Minus className="w-4 h-4" />
                                 </button>
                                 <span className="w-8 text-center font-bold">{currentQty}</span>
-                                <button 
-                                  onClick={() => handleExtraQuantity(extra.name, 1, extra.price)}
+                                <button
+                                  type="button"
+                                  onClick={() => handleExtraQuantity(extra.id, extra.name, 1, extra.price)}
                                   className="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center"
                                 >
                                   <Plus className="w-4 h-4" />
                                 </button>
                               </div>
                             ) : (
-                              <button 
-                                onClick={() => handleExtraQuantity(extra.name, 1, extra.price)}
+                              <button
+                                type="button"
+                                onClick={() => handleExtraQuantity(extra.id, extra.name, 1, extra.price)}
                                 className="w-10 h-10 rounded-full bg-slate-100 hover:bg-green-100 flex items-center justify-center transition-colors"
                               >
                                 <Plus className="w-5 h-5" />
@@ -765,8 +848,11 @@ const KioskModule: React.FC = () => {
                               : "bg-white border-slate-200 hover:border-slate-300"
                           )}
                         >
-                          <div className="w-12 h-12 rounded-full bg-slate-100 overflow-hidden">
-                            <img src={getIngredientImage(ing)} alt={ing} className="w-full h-full object-cover" />
+                          <div
+                            className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-400"
+                            aria-hidden
+                          >
+                            <UtensilsCrossed className="w-6 h-6" />
                           </div>
                           <span className={cn(
                             "font-medium flex-1 text-left",
@@ -828,7 +914,7 @@ const KioskModule: React.FC = () => {
                   className="rounded-2xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all text-left overflow-hidden p-4 flex items-center gap-4"
                 >
                   {item.image && (
-                    <img src={item.image} alt={item.name} className="w-20 h-20 object-cover rounded-xl" />
+                    <img src={imageSrc(item.image)} alt={item.name} className="w-20 h-20 object-cover rounded-xl" />
                   )}
                   <div>
                     <h3 className="font-bold text-slate-800">{item.name}</h3>
@@ -884,7 +970,7 @@ const KioskModule: React.FC = () => {
               <Card key={item.id} className="p-4">
                 <div className="flex gap-4">
                   {item.menuItem.image && (
-                    <img src={item.menuItem.image} alt={item.menuItem.name} className="w-24 h-24 object-cover rounded-xl" />
+                    <img src={imageSrc(item.menuItem.image)} alt={item.menuItem.name} className="w-24 h-24 object-cover rounded-xl" />
                   )}
                   <div className="flex-1">
                     <div className="flex items-start justify-between mb-2">
@@ -974,13 +1060,10 @@ const KioskModule: React.FC = () => {
           <Button 
             size="lg" 
             className="w-full h-14 mb-4 bg-green-600 hover:bg-green-700"
-            onClick={() => {
-              setStep('processing');
-              setTimeout(() => setStep('confirm'), 3000);
-            }}
+            onClick={handlePaymentSuccess}
           >
             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            Simulează plată reușită
+            Confirmă plata și trimite comanda
           </Button>
           
           <Button variant="outline" size="lg" className="w-full h-14" onClick={() => setStep('cart')}>
@@ -1015,7 +1098,7 @@ const KioskModule: React.FC = () => {
             <CheckCircle className="w-20 h-20 text-white" />
           </div>
           <h1 className="text-4xl font-bold text-green-800 mb-4">Comandă confirmată!</h1>
-          <p className="text-2xl font-bold text-green-700 mb-2">Număr comandă: #KSK{Date.now().toString().slice(-4)}</p>
+          <p className="text-2xl font-bold text-green-700 mb-2">Număr comandă: #{savedOrderNumber ?? `KSK${Date.now().toString().slice(-4)}`}</p>
           <p className="text-green-600 mb-8">Mulțumim pentru comandă!</p>
           <p className="text-slate-500">Atingeți ecranul pentru o nouă comandă</p>
         </div>

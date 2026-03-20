@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Table, MenuItem, Order, OrderItem, UnitType } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
-import { menuApi, ordersApi, imageSrc, type MenuItemApi, type OrderApi, type OrderItemApi } from '@/lib/api';
+import { menuApi, ordersApi, imageSrc, type CreateOrderItemBody, type MenuItemApi, type OrderApi, type OrderItemApi } from '@/lib/api';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
@@ -59,7 +59,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
   } = useRestaurant();
   const { toast } = useToast();
 
-  const useApi = Boolean(apiOrder && refetchOrder);
+  /** Mod API activ când vine callback-ul de refetch (ospătar/POS). */
+  const useApi = Boolean(refetchOrder);
+  /** Draft local până la Trimite (nu persistă în DB). */
+  const [apiDraftItems, setApiDraftItems] = useState<OrderItemApi[]>([]);
+  const [nextDraftItemId, setNextDraftItemId] = useState(-1);
   const [apiMenuItems, setApiMenuItems] = useState<MenuItemApi[]>([]);
   const [menuFromApiLoading, setMenuFromApiLoading] = useState(true);
 
@@ -257,7 +261,42 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
     createOrder(table.id);
   }, [useApi, table.id, orders, createOrder]);
 
-  const order = (useApi ? apiOrder ?? null : contextOrder) as (Order | OrderApi) | null;
+  useEffect(() => {
+    if (!useApi) return;
+    setApiDraftItems([]);
+    setNextDraftItemId(-1);
+  }, [useApi, table.id]);
+
+  useEffect(() => {
+    if (!useApi) return;
+    if (apiOrder) {
+      // Când apare comanda reală din API, curățăm draft-ul local.
+      setApiDraftItems([]);
+      setNextDraftItemId(-1);
+    }
+  }, [useApi, apiOrder?.id]);
+
+  const apiDraftOrder = useMemo<OrderApi | null>(() => {
+    if (!useApi || apiOrder) return null;
+    return {
+      id: 0,
+      tableId: table.id,
+      tableNumber: table.number,
+      waiterId: null,
+      waiterName: null,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      totalAmount: apiDraftItems.reduce(
+        (sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams ?? undefined),
+        0,
+      ),
+      tip: 0,
+      source: 'restaurant',
+      items: apiDraftItems,
+    };
+  }, [useApi, apiOrder, table.id, table.number, apiDraftItems]);
+
+  const order = (useApi ? apiOrder ?? apiDraftOrder : contextOrder) as (Order | OrderApi) | null;
 
   const menuCategoriesList = useMemo(
     () => [...new Set(apiMenuItems.map((i) => i.category))].sort(),
@@ -305,7 +344,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
       setModNotes('');
       setModQuantity(1);
       setModWeightGrams(isGram ? '200' : '');
-    } else if (useApi && apiOrder) {
+    } else if (useApi) {
       const menuItemId = typeof item.id === 'number' ? item.id : Number((item as MenuItem).id);
       if (Number.isNaN(menuItemId)) return;
       const apiItem = item as MenuItemApi;
@@ -318,9 +357,26 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
         menuItemPayload.kdsStationId = apiItem.kdsStationId;
         if (apiItem.kdsStation?.type) menuItemPayload.kdsStation = apiItem.kdsStation.type;
       }
-      ordersApi.addItems(apiOrder.id, [{ menuItemId, quantity: 1, menuItem: menuItemPayload }])
-        .then(() => { refetchOrder?.(); toast({ title: `${item.name} adăugat` }); })
-        .catch((e) => toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' }));
+      if (apiOrder) {
+        ordersApi.addItems(apiOrder.id, [{ menuItemId, quantity: 1, menuItem: menuItemPayload }])
+          .then(() => { refetchOrder?.(); toast({ title: `${item.name} adăugat` }); })
+          .catch((e) => toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' }));
+      } else {
+        const draft: OrderItemApi = {
+          id: nextDraftItemId,
+          orderId: 0,
+          menuItemId,
+          menuItem: menuItemPayload,
+          quantity: 1,
+          weightGrams: undefined,
+          modifications: null,
+          status: 'pending',
+          complimentary: false,
+        };
+        setApiDraftItems((prev) => [...prev, draft]);
+        setNextDraftItemId((v) => v - 1);
+        toast({ title: `${item.name} adăugat (draft)` });
+      }
     } else {
       const asMenu =
         typeof (item as MenuItemApi).id === 'number'
@@ -349,7 +405,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
   const handleRemoveItem = (itemId: string) => {
     if (!order) return;
     if (useApi) {
-      toast({ title: 'Ștergerea articolului nu este disponibilă în acest mod', variant: 'destructive' });
+      if (apiOrder) {
+        toast({ title: 'Ștergerea articolului nu este disponibilă după salvare', variant: 'destructive' });
+        return;
+      }
+      const idNum = Number(itemId);
+      setApiDraftItems((prev) => prev.filter((i) => i.id !== idNum));
+      toast({ title: 'Produs eliminat din draft' });
       return;
     }
     const item = order.items.find((i) => i.id === itemId);
@@ -366,11 +428,16 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
   const handleClearAll = () => {
     if (!order) return;
     if (useApi) {
-      toast({
-        title: 'Indisponibil',
-        description: 'Pentru comanda din server folosește fluxul din aplicația ospătar.',
-        variant: 'destructive',
-      });
+      if (apiOrder) {
+        toast({
+          title: 'Indisponibil',
+          description: 'Comanda e deja salvată în server.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setApiDraftItems((prev) => prev.filter((i) => i.status !== 'pending'));
+      toast({ title: 'Draft golit (pending)' });
       return;
     }
     const ctxOrder = order as Order;
@@ -407,7 +474,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
       return;
     }
 
-    if (!editingItem && useApi && apiOrder) {
+    if (!editingItem && useApi) {
       const menuItemId = typeof showModifier.id === 'number' ? showModifier.id : Number((showModifier as MenuItem).id);
       if (Number.isNaN(menuItemId)) return;
       const apiMod = showModifier as MenuItemApi;
@@ -421,18 +488,37 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
         snapshot.kdsStationId = apiMod.kdsStationId;
         if (apiMod.kdsStation?.type) snapshot.kdsStation = apiMod.kdsStation.type;
       }
-      try {
-        await ordersApi.addItems(apiOrder.id, [{
+      if (apiOrder) {
+        try {
+          await ordersApi.addItems(apiOrder.id, [{
+            menuItemId,
+            quantity: modQuantity,
+            weightGrams: wg ?? undefined,
+            menuItem: snapshot,
+            modifications: Object.keys(modifications).some((k) => (modifications as Record<string, unknown>)[k]) ? modifications : undefined,
+          }]);
+          await refetchOrder?.();
+          toast({ title: `${showModifier.name} adăugat` });
+        } catch (e) {
+          toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' });
+        }
+      } else {
+        const draft: OrderItemApi = {
+          id: nextDraftItemId,
+          orderId: 0,
           menuItemId,
+          menuItem: snapshot,
           quantity: modQuantity,
           weightGrams: wg ?? undefined,
-          menuItem: snapshot,
-          modifications: Object.keys(modifications).some((k) => (modifications as Record<string, unknown>)[k]) ? modifications : undefined,
-        }]);
-        await refetchOrder?.();
-        toast({ title: `${showModifier.name} adăugat` });
-      } catch (e) {
-        toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' });
+          modifications: Object.keys(modifications).some((k) => (modifications as Record<string, unknown>)[k])
+            ? modifications
+            : null,
+          status: 'pending',
+          complimentary: false,
+        };
+        setApiDraftItems((prev) => [...prev, draft]);
+        setNextDraftItemId((v) => v - 1);
+        toast({ title: `${showModifier.name} adăugat (draft)` });
       }
       setShowModifier(null);
       setEditingItem(null);
@@ -503,24 +589,94 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
     handleSendToKitchen();
   };
 
-  const handleSendToKitchen = () => {
+  const handleSendToKitchen = async () => {
     if (!order) return;
-    if (useApi) {
-      toast({ title: 'Comanda este salvată', description: 'Articolele sunt în sistem și vor fi preparate.' });
-      return;
-    }
     const pendingItems = order.items.filter((i) => i.status === 'pending');
     if (pendingItems.length === 0) return;
-    if ((order as Order).syncTiming) {
-      const maxPrepTime = Math.max(...pendingItems.map((i) => ((i.menuItem as { prepTime?: number })?.prepTime ?? 0)));
-      pendingItems.forEach((item) => {
-        const delay = maxPrepTime - ((item.menuItem as { prepTime?: number })?.prepTime ?? 0);
-        setTimeout(() => updateOrderItemStatus((order as Order).id, item.id, 'cooking'), delay * 1000);
-      });
-    } else {
-      pendingItems.forEach((item) => updateOrderItemStatus((order as Order).id, item.id, 'cooking'));
+    if (useApi) {
+      if (!apiOrder) {
+        try {
+          // Consolidăm liniile identice (ex: 2x ciorbă) într-o singură linie cu quantity cumulată.
+          const grouped = new Map<string, CreateOrderItemBody>();
+          for (const i of pendingItems as OrderItemApi[]) {
+            const key = JSON.stringify({
+              menuItemId: i.menuItemId,
+              weightGrams: i.weightGrams ?? null,
+              modifications: i.modifications ?? null,
+              complimentary: Boolean(i.complimentary),
+            });
+            const existing = grouped.get(key);
+            if (existing) {
+              existing.quantity = (existing.quantity ?? 0) + i.quantity;
+            } else {
+              grouped.set(key, {
+                menuItemId: i.menuItemId,
+                quantity: i.quantity,
+                weightGrams: i.weightGrams ?? undefined,
+                menuItem: i.menuItem ?? undefined,
+                modifications: i.modifications ?? undefined,
+                complimentary: i.complimentary,
+              });
+            }
+          }
+          const createItems = Array.from(grouped.values());
+          const created = await ordersApi.create({
+            tableId: table.id,
+            tableNumber: table.number,
+            source: 'restaurant',
+            items: createItems,
+          });
+          await refetchOrder?.();
+          setApiDraftItems([]);
+          toast({
+            title: 'Comandă trimisă la bucătărie',
+            description: `${pendingItems.length} articole salvate în orders`,
+          });
+        } catch (e) {
+          toast({
+            title: 'Eroare la trimitere',
+            description: String(e),
+            variant: 'destructive',
+          });
+        }
+        return;
+      }
+      try {
+        const unsavedDraftItems = (pendingItems as OrderItemApi[]).filter((i) => Number(i.id) < 0);
+        if (unsavedDraftItems.length > 0) {
+          await ordersApi.addItems(
+            (order as OrderApi).id,
+            unsavedDraftItems.map((i) => ({
+              menuItemId: i.menuItemId,
+              quantity: i.quantity,
+              weightGrams: i.weightGrams ?? undefined,
+              menuItem: i.menuItem ?? undefined,
+              modifications: i.modifications ?? undefined,
+              complimentary: i.complimentary,
+            })),
+          );
+        }
+        await refetchOrder?.();
+        if (unsavedDraftItems.length > 0) setApiDraftItems([]);
+        toast({
+          title: 'Comandă trimisă la bucătărie',
+          description:
+            unsavedDraftItems.length > 0
+              ? `${unsavedDraftItems.length} articole noi salvate în orders`
+              : `${pendingItems.length} articole deja în DB (status pending)`,
+        });
+      } catch (e) {
+        toast({
+          title: 'Eroare la trimitere',
+          description: String(e),
+          variant: 'destructive',
+        });
+      }
+      return;
     }
-    toast({ title: 'Comandă trimisă la bucătărie', description: `${pendingItems.length} articole trimise` });
+    const ctxPendingItems = pendingItems as OrderItem[];
+    void ctxPendingItems;
+    toast({ title: 'Comandă trimisă la bucătărie', description: `${pendingItems.length} articole trimise (pending)` });
   };
 
   const getPayableAmount = (): number => {
@@ -915,9 +1071,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
                             ))}
                           </div>
                         )}
-                        {item.modifications.notes && (
+                        {item.modifications?.notes && (
                           <p className="text-xs text-muted-foreground italic mt-1 truncate">
-                            "{item.modifications.notes}"
+                            "{item.modifications?.notes}"
                           </p>
                         )}
                         <div className="flex items-center gap-1 mt-1">

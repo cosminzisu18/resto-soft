@@ -397,7 +397,8 @@ export const MenuManager: React.FC = () => {
       availability: formData.availability,
       platformPricing: formData.platformPricing,
       allergenIds: formData.allergenIds.length ? formData.allergenIds : undefined,
-      availableExtrasIds: formData.availableExtras.length ? formData.availableExtras : undefined,
+      // Important: trimitem mereu array-ul ca să putem șterge relațiile când se deselectează toate.
+      availableExtrasIds: formData.availableExtras,
     };
   };
 

@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
-import { menuApi, storageApi, tablesApi, type KdsStationApi, type KdsStationType, type StorageZoneApi, type TableApi } from '@/lib/api';
+import { imageSrc, menuApi, storageApi, tablesApi, type KdsStationApi, type KdsStationType, type StorageZoneApi, type TableApi } from '@/lib/api';
+import { ImageUploadButton } from '@/components/ui/image-upload-button';
 import {
   Settings,
   MapPin,
@@ -108,16 +109,6 @@ const KDS_STATION_TYPES: { value: KdsStationType; label: string }[] = [
 ];
 const KDS_ICONS = ['🍲', '🍕', '🔥', '🥙', '🥗', '🍰', '🍹'];
 
-// Mock data pentru ingrediente extra
-const mockExtraIngredients = [
-  { id: 1, name: 'Brânză extra', price: 5, category: 'Lactate' },
-  { id: 2, name: 'Bacon', price: 8, category: 'Carne' },
-  { id: 3, name: 'Ciuperci', price: 4, category: 'Legume' },
-  { id: 4, name: 'Ou', price: 3, category: 'Lactate' },
-  { id: 5, name: 'Ardei iute', price: 2, category: 'Legume' },
-  { id: 6, name: 'Sos extra', price: 3, category: 'Sosuri' },
-];
-
 export const AdminConfigModule: React.FC = () => {
   const [configTab, setConfigTab] = useState('general');
   const [locations, setLocations] = useState(mockLocations);
@@ -131,7 +122,8 @@ export const AdminConfigModule: React.FC = () => {
   const [showAddKds, setShowAddKds] = useState(false);
   const [editingKds, setEditingKds] = useState<KdsStationApi | null>(null);
   const [kdsForm, setKdsForm] = useState({ name: '', type: 'soups' as KdsStationType, icon: '🍲', color: 'bg-amber-500' });
-  const [extraIngredients, setExtraIngredients] = useState(mockExtraIngredients);
+  const [extraIngredients, setExtraIngredients] = useState<{ id: number; name: string; price: number; category?: string; image?: string | null }[]>([]);
+  const [extraIngredientsLoading, setExtraIngredientsLoading] = useState(false);
   const [searchUser, setSearchUser] = useState('');
   const [showAddLocation, setShowAddLocation] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
@@ -147,6 +139,8 @@ export const AdminConfigModule: React.FC = () => {
     posY: '50',
   });
   const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [editingExtraIngredient, setEditingExtraIngredient] = useState<{ id: number; name: string; price: number; category?: string; image?: string | null } | null>(null);
+  const [extraForm, setExtraForm] = useState({ name: '', price: '', category: 'Altele', image: '' });
   const [storageZones, setStorageZones] = useState<StorageZoneApi[]>([]);
   const [zonesLoading, setZonesLoading] = useState(false);
   const [showAddZone, setShowAddZone] = useState(false);
@@ -191,6 +185,23 @@ export const AdminConfigModule: React.FC = () => {
   useEffect(() => {
     fetchKdsStations();
   }, [fetchKdsStations]);
+
+  const fetchExtraIngredients = useCallback(async () => {
+    setExtraIngredientsLoading(true);
+    try {
+      const list = await menuApi.getExtraIngredients();
+      setExtraIngredients(list);
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu s-au putut încărca ingredientele extra.', variant: 'destructive' });
+      setExtraIngredients([]);
+    } finally {
+      setExtraIngredientsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (configTab === 'extras') void fetchExtraIngredients();
+  }, [configTab, fetchExtraIngredients]);
 
   const fetchZones = useCallback(async () => {
     setZonesLoading(true);
@@ -419,6 +430,66 @@ export const AdminConfigModule: React.FC = () => {
       await menuApi.deleteKdsStation(station.id);
       toast({ title: 'Stație ștearsă', description: 'Stația KDS a fost eliminată.' });
       fetchKdsStations();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const openAddExtraDialog = () => {
+    setEditingExtraIngredient(null);
+    setExtraForm({ name: '', price: '', category: 'Altele', image: '' });
+    setShowAddIngredient(true);
+  };
+
+  const openEditExtraDialog = (ingredient: { id: number; name: string; price: number; category?: string; image?: string | null }) => {
+    setEditingExtraIngredient(ingredient);
+    setExtraForm({ name: ingredient.name, price: String(ingredient.price), category: ingredient.category || 'Altele', image: ingredient.image || '' });
+    setShowAddIngredient(true);
+  };
+
+  const handleSaveExtraIngredient = async () => {
+    const name = extraForm.name.trim();
+    const price = parseFloat(extraForm.price);
+    if (!name) {
+      toast({ title: 'Eroare', description: 'Numele ingredientului este obligatoriu.', variant: 'destructive' });
+      return;
+    }
+    if (Number.isNaN(price) || price < 0) {
+      toast({ title: 'Eroare', description: 'Prețul trebuie să fie un număr valid.', variant: 'destructive' });
+      return;
+    }
+    try {
+      if (editingExtraIngredient) {
+        await menuApi.updateExtraIngredient(editingExtraIngredient.id, {
+          name,
+          price,
+          category: extraForm.category,
+          image: extraForm.image,
+        });
+        toast({ title: 'Ingredient actualizat', description: 'Ingredientul extra a fost modificat.' });
+      } else {
+        await menuApi.createExtraIngredient({
+          name,
+          price,
+          category: extraForm.category,
+          image: extraForm.image,
+        });
+        toast({ title: 'Ingredient adăugat', description: 'Ingredientul extra a fost creat.' });
+      }
+      setShowAddIngredient(false);
+      setEditingExtraIngredient(null);
+      await fetchExtraIngredients();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteExtraIngredient = async (ingredient: { id: number; name: string }) => {
+    if (!confirm(`Ștergi ingredientul „${ingredient.name}"?`)) return;
+    try {
+      await menuApi.deleteExtraIngredient(ingredient.id);
+      toast({ title: 'Ingredient șters', description: 'Ingredientul extra a fost eliminat.' });
+      await fetchExtraIngredients();
     } catch (e) {
       toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
     }
@@ -1635,49 +1706,71 @@ export const AdminConfigModule: React.FC = () => {
                   <h3 className="text-lg font-semibold text-foreground">Ingrediente Extra</h3>
                   <p className="text-sm text-muted-foreground">Ingredientele extra pot fi adăugate de clienți la produse contra cost. Acestea apar în kiosk, aplicație și comenzi telefonice.</p>
                 </div>
-                <Dialog open={showAddIngredient} onOpenChange={setShowAddIngredient}>
+                <Dialog
+                  open={showAddIngredient}
+                  onOpenChange={(open) => {
+                    setShowAddIngredient(open);
+                    if (!open) {
+                      setEditingExtraIngredient(null);
+                      setExtraForm({ name: '', price: '', category: 'Altele', image: '' });
+                    }
+                  }}
+                >
                   <DialogTrigger asChild>
-                    <Button>
+                    <Button onClick={openAddExtraDialog}>
                       <Plus className="h-4 w-4 mr-2" />
                       Adaugă ingredient
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Adaugă Ingredient Extra</DialogTitle>
+                      <DialogTitle>{editingExtraIngredient ? 'Editează Ingredient Extra' : 'Adaugă Ingredient Extra'}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
                         <Label>Nume Ingredient</Label>
-                        <Input placeholder="Ex: Brânză extra" />
+                        <Input
+                          placeholder="Ex: Brânză extra"
+                          value={extraForm.name}
+                          onChange={(e) => setExtraForm((p) => ({ ...p, name: e.target.value }))}
+                        />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Preț (RON)</Label>
-                          <Input type="number" placeholder="5" />
+                          <Input
+                            type="number"
+                            placeholder="5"
+                            value={extraForm.price}
+                            onChange={(e) => setExtraForm((p) => ({ ...p, price: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Categorie</Label>
-                          <Select>
+                          <Select value={extraForm.category} onValueChange={(v) => setExtraForm((p) => ({ ...p, category: v }))}>
                             <SelectTrigger>
                               <SelectValue placeholder="Selectează" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="lactate">Lactate</SelectItem>
-                              <SelectItem value="carne">Carne</SelectItem>
-                              <SelectItem value="legume">Legume</SelectItem>
-                              <SelectItem value="sosuri">Sosuri</SelectItem>
+                              <SelectItem value="Lactate">Lactate</SelectItem>
+                              <SelectItem value="Carne">Carne</SelectItem>
+                              <SelectItem value="Legume">Legume</SelectItem>
+                              <SelectItem value="Sosuri">Sosuri</SelectItem>
+                              <SelectItem value="Altele">Altele</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                       </div>
+                      <ImageUploadButton
+                        label=""
+                        value={extraForm.image || undefined}
+                        onChange={(value) => setExtraForm((p) => ({ ...p, image: value || '' }))}
+                        onError={(msg) => msg && toast({ title: 'Eroare imagine', description: msg, variant: 'destructive' })}
+                      />
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowAddIngredient(false)}>Anulează</Button>
-                      <Button onClick={() => {
-                        setShowAddIngredient(false);
-                        toast({ title: "Ingredient adăugat", description: "Noul ingredient a fost creat." });
-                      }}>
+                      <Button onClick={handleSaveExtraIngredient}>
                         <Check className="h-4 w-4 mr-2" />
                         Salvează
                       </Button>
@@ -1691,6 +1784,7 @@ export const AdminConfigModule: React.FC = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Imagine</TableHead>
                         <TableHead>Ingredient</TableHead>
                         <TableHead>Categorie</TableHead>
                         <TableHead>Preț</TableHead>
@@ -1698,18 +1792,39 @@ export const AdminConfigModule: React.FC = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {extraIngredients.map((ingredient) => (
+                      {extraIngredientsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                            Se încarcă ingredientele extra...
+                          </TableCell>
+                        </TableRow>
+                      ) : extraIngredients.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                            Nu există ingrediente extra în baza de date.
+                          </TableCell>
+                        </TableRow>
+                      ) : extraIngredients.map((ingredient) => (
                         <TableRow key={ingredient.id}>
+                          <TableCell>
+                            {ingredient.image ? (
+                              <img src={imageSrc(ingredient.image)} alt={ingredient.name} className="w-10 h-10 rounded object-cover" />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-muted flex items-center justify-center text-muted-foreground">
+                                <Image className="h-4 w-4" />
+                              </div>
+                            )}
+                          </TableCell>
                           <TableCell className="font-medium">{ingredient.name}</TableCell>
                           <TableCell>
-                            <Badge variant="outline">{ingredient.category}</Badge>
+                            <Badge variant="outline">{ingredient.category || 'Altele'}</Badge>
                           </TableCell>
-                          <TableCell className="font-medium text-primary">{ingredient.price} RON</TableCell>
+                          <TableCell className="font-medium text-primary">{Number(ingredient.price).toFixed(2)} RON</TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditExtraDialog(ingredient)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteExtraIngredient(ingredient)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TableCell>

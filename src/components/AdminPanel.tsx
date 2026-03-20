@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, User, mockCustomers, extraIngredients, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation, upsellQuestions, UpsellQuestion, expiringProducts, ExpiringProduct, menuItems } from '@/data/mockData';
-import { tablesApi, type TableApi } from '@/lib/api';
+import { Table, MenuItem, menuCategories, users, deliveryPlatforms, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation, upsellQuestions, UpsellQuestion, expiringProducts, ExpiringProduct, menuItems } from '@/data/mockData';
+import { menuApi, tablesApi, type TableApi } from '@/lib/api';
 import AdminTableMap from '@/components/AdminTableMap';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -47,10 +47,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(isMobile);
   
   // Extra ingredients state
-  const [localExtraIngredients, setLocalExtraIngredients] = useState<ExtraIngredient[]>(extraIngredients);
+  const [localExtraIngredients, setLocalExtraIngredients] = useState<ExtraIngredient[]>([]);
   const [showAddIngredient, setShowAddIngredient] = useState(false);
   const [editingIngredient, setEditingIngredient] = useState<ExtraIngredient | null>(null);
   const [ingredientForm, setIngredientForm] = useState({ name: '', price: '', category: extraIngredientCategories[0] });
+  const [extraIngredientsLoading, setExtraIngredientsLoading] = useState(false);
   
   // Kiosk config state
   const [localKioskSteps, setLocalKioskSteps] = useState(kioskSteps);
@@ -104,6 +105,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   React.useEffect(() => {
     if (['tables', 'tableMap', 'reservations'].includes(activeView)) fetchSchemaTables();
   }, [activeView, fetchSchemaTables]);
+
+  const fetchExtraIngredients = useCallback(async () => {
+    setExtraIngredientsLoading(true);
+    try {
+      const list = await menuApi.getExtraIngredients();
+      setLocalExtraIngredients(
+        list.map((i) => ({
+          id: String(i.id),
+          name: i.name,
+          price: Number(i.price),
+          category: i.category ?? 'Altele',
+        })),
+      );
+    } catch (e) {
+      toast({ title: 'Eroare la încărcarea ingredientelor extra', description: String(e), variant: 'destructive' });
+      setLocalExtraIngredients([]);
+    } finally {
+      setExtraIngredientsLoading(false);
+    }
+  }, [toast]);
+
+  React.useEffect(() => {
+    if (activeView === 'extraIngredients') void fetchExtraIngredients();
+  }, [activeView, fetchExtraIngredients]);
 
   const handleSaveSchema = useCallback(async () => {
     try {
@@ -340,34 +365,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   });
 
   // Extra ingredient handlers
-  const handleAddIngredient = () => {
-    const newIngredient: ExtraIngredient = {
-      id: `ei${Date.now()}`,
-      name: ingredientForm.name,
-      price: parseFloat(ingredientForm.price),
-      category: ingredientForm.category
-    };
-    setLocalExtraIngredients([...localExtraIngredients, newIngredient]);
-    toast({ title: 'Ingredient adăugat' });
-    setShowAddIngredient(false);
-    setIngredientForm({ name: '', price: '', category: extraIngredientCategories[0] });
+  const handleAddIngredient = async () => {
+    try {
+      await menuApi.createExtraIngredient({
+        name: ingredientForm.name,
+        price: parseFloat(ingredientForm.price),
+        category: ingredientForm.category,
+      });
+      await fetchExtraIngredients();
+      toast({ title: 'Ingredient adăugat' });
+      setShowAddIngredient(false);
+      setIngredientForm({ name: '', price: '', category: extraIngredientCategories[0] });
+    } catch (e) {
+      toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' });
+    }
   };
 
-  const handleUpdateIngredient = () => {
+  const handleUpdateIngredient = async () => {
     if (!editingIngredient) return;
-    setLocalExtraIngredients(localExtraIngredients.map(ing => 
-      ing.id === editingIngredient.id 
-        ? { ...ing, name: ingredientForm.name, price: parseFloat(ingredientForm.price), category: ingredientForm.category }
-        : ing
-    ));
-    toast({ title: 'Ingredient actualizat' });
-    setEditingIngredient(null);
-    setIngredientForm({ name: '', price: '', category: extraIngredientCategories[0] });
+    try {
+      await menuApi.updateExtraIngredient(Number(editingIngredient.id), {
+        name: ingredientForm.name,
+        price: parseFloat(ingredientForm.price),
+        category: ingredientForm.category,
+      });
+      await fetchExtraIngredients();
+      toast({ title: 'Ingredient actualizat' });
+      setEditingIngredient(null);
+      setIngredientForm({ name: '', price: '', category: extraIngredientCategories[0] });
+    } catch (e) {
+      toast({ title: 'Eroare la actualizare', description: String(e), variant: 'destructive' });
+    }
   };
 
-  const handleDeleteIngredient = (id: string) => {
-    setLocalExtraIngredients(localExtraIngredients.filter(ing => ing.id !== id));
-    toast({ title: 'Ingredient șters' });
+  const handleDeleteIngredient = async (id: string) => {
+    try {
+      await menuApi.deleteExtraIngredient(Number(id));
+      await fetchExtraIngredients();
+      toast({ title: 'Ingredient șters' });
+    } catch (e) {
+      toast({ title: 'Eroare la ștergere', description: String(e), variant: 'destructive' });
+    }
   };
 
   const startEditIngredient = (ing: ExtraIngredient) => {
@@ -899,6 +937,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <p className="text-muted-foreground mb-6">
               Ingredientele extra pot fi adăugate de clienți la produse contra cost. Acestea apar în kiosk, aplicație și comenzi telefonice.
             </p>
+
+            {extraIngredientsLoading && (
+              <p className="text-sm text-muted-foreground mb-4">Se încarcă ingredientele extra din baza de date...</p>
+            )}
 
             {/* Group by category */}
             {extraIngredientCategories.map(category => {

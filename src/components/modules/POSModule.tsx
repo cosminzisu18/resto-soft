@@ -161,25 +161,15 @@ const POSModule: React.FC = () => {
     });
   }, [selectedTable]);
 
-  /** Deschide masa cu comandă activă din API (creare dacă lipsește) – salvează în `orders`. */
+  /** Deschide masa cu comandă activă din API; dacă nu există, OrderPanel pornește cu draft local. */
   const openTableForPos = useCallback(
     async (table: Table): Promise<boolean> => {
       setOpeningTable(table);
       setPosOrderLoading(true);
       try {
         const list = await ordersApi.getByTableId(table.id);
-        let active = list.find((o) => o.status === 'active');
-        if (!active) {
-          active = await ordersApi.create({
-            tableId: table.id,
-            tableNumber: table.number,
-            waiterId: currentUser?.id ?? undefined,
-            waiterName: currentUser?.name ?? undefined,
-            source: 'restaurant',
-            items: [],
-          });
-        }
-        setPosOrder(active);
+        const active = list.find((o) => o.status === 'active');
+        setPosOrder(active ?? null);
         setSelectedTable(table);
         void fetchPosOrders();
         return true;

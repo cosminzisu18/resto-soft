@@ -36,6 +36,7 @@ import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import WaiterProfileDialog from '@/components/WaiterProfileDialog';
 import CashRegisterDialog from '@/components/CashRegisterDialog';
 import ExternalOrdersNotification from '@/components/ExternalOrdersNotification';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -136,6 +137,7 @@ const KDSSelectorInline: React.FC<{ onSelectStation: (station: KDSStation) => vo
 };
 
 const RestaurantApp: React.FC = () => {
+  const { toast } = useToast();
   const {
     currentUser,
     logout,
@@ -248,23 +250,20 @@ const RestaurantApp: React.FC = () => {
     setSelectedTable(table);
     try {
       const list = await ordersApi.getByTableId(table.id);
-      let active = list.find((o) => o.status === 'active');
-      if (!active) {
-        active = await ordersApi.create({
-          tableId: table.id,
-          tableNumber: table.number,
-          waiterId: currentUser?.id ?? undefined,
-          waiterName: currentUser?.name ?? undefined,
-          source: 'restaurant',
-          items: [],
-        });
-      }
-      setWaiterOrder(active);
+      const active = list.find((o) => o.status === 'active');
+      // Dacă nu există comandă activă, intrăm cu draft local în OrderPanel.
+      setWaiterOrder(active ?? null);
       setView('order');
     } catch (e) {
       console.error(e);
       setWaiterOrder(null);
-      setView('order');
+      setSelectedTable(null);
+      setView('waiter');
+      toast({
+        title: 'Comanda nu s-a putut deschide',
+        description: 'Conexiunea la API /orders a eșuat. Comanda NU a fost salvată în baza de date.',
+        variant: 'destructive',
+      });
     }
   };
 

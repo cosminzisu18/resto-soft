@@ -68,7 +68,7 @@ export interface MenuItemApi {
   availability?: { restaurant?: boolean; kiosk?: boolean; app?: boolean; delivery?: boolean };
   platformPricing?: Record<string, { name: string; price: number; enabled: boolean }>;
   allergens?: { id: number; name: string }[];
-  availableExtras?: { id: number; name: string; price: number }[];
+  availableExtras?: { id: number; name: string; price: number; image?: string | null }[];
 }
 
 export type KdsStationType = 'soups' | 'pizza' | 'grill' | 'giros';
@@ -176,7 +176,7 @@ export type OrderStatusApi = 'active' | 'completed' | 'cancelled';
 export type OrderItemStatusApi = 'pending' | 'cooking' | 'ready' | 'served';
 
 export interface OrderItemApi {
-  id: string;
+  id: number;
   orderId: number;
   menuItemId: number;
   menuItem: Record<string, unknown> | null;
@@ -184,6 +184,8 @@ export interface OrderItemApi {
   weightGrams?: number | null;
   modifications: { added?: string[]; removed?: string[]; notes?: string } | null;
   status: OrderItemStatusApi;
+  startedAt?: string | null;
+  readyAt?: string | null;
   complimentary?: boolean;
 }
 
@@ -198,6 +200,7 @@ export interface OrderApi {
   totalAmount: number;
   tip: number;
   source: string;
+  fulfillmentType?: 'dine_in' | 'takeaway' | null;
   items: OrderItemApi[];
   syncTiming?: boolean;
   paymentMethod?: 'cash' | 'card' | 'usage_card' | null;
@@ -223,6 +226,11 @@ export interface CreateOrderBody {
   waiterName?: string;
   status?: OrderStatusApi;
   source?: string;
+  fulfillmentType?: 'dine_in' | 'takeaway';
+  customerName?: string;
+  customerPhone?: string;
+  deliveryAddress?: string | null;
+  paymentMethod?: 'cash' | 'card' | 'usage_card';
   items: CreateOrderItemBody[];
 }
 
@@ -235,6 +243,16 @@ export const ordersApi = {
     request<OrderApi>('/orders', { method: 'POST', body: JSON.stringify(body) }),
   addItems: (orderId: number, items: CreateOrderItemBody[]) =>
     request<OrderApi>(`/orders/${orderId}/items`, { method: 'POST', body: JSON.stringify({ items }) }),
+  updateItemStatus: (
+    orderId: number,
+    itemId: number,
+    status: OrderItemStatusApi,
+    actor?: { employeeId?: string; employeeName?: string },
+  ) =>
+    request<OrderApi>(`/orders/${orderId}/items/${itemId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, ...actor }),
+    }),
 };
 
 export const menuApi = {
@@ -251,7 +269,12 @@ export const menuApi = {
   updateKdsStation: (id: number, body: UpdateKdsStationBody) => request<KdsStationApi>(`/menu/kds-stations/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteKdsStation: (id: number) => request<void>(`/menu/kds-stations/${id}`, { method: 'DELETE' }),
   getAllergens: () => request<{ id: number; name: string; icon?: string; color?: string }[]>('/menu/allergens'),
-  getExtraIngredients: () => request<{ id: number; name: string; price: number; category?: string }[]>('/menu/extra-ingredients'),
+  getExtraIngredients: () => request<{ id: number; name: string; price: number; category?: string; image?: string | null }[]>('/menu/extra-ingredients'),
+  createExtraIngredient: (body: { name: string; price: number; category?: string; image?: string }) =>
+    request<{ id: number; name: string; price: number; category?: string; image?: string | null }>('/menu/extra-ingredients', { method: 'POST', body: JSON.stringify(body) }),
+  updateExtraIngredient: (id: number, body: { name?: string; price?: number; category?: string; image?: string }) =>
+    request<{ id: number; name: string; price: number; category?: string; image?: string | null }>(`/menu/extra-ingredients/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteExtraIngredient: (id: number) => request<void>(`/menu/extra-ingredients/${id}`, { method: 'DELETE' }),
   getIngredients: () => request<IngredientApi[]>('/menu/ingredients'),
   createIngredient: (body: { name: string; defaultUnit?: string }) => request<IngredientApi>('/menu/ingredients', { method: 'POST', body: JSON.stringify(body) }),
   updateIngredient: (id: number, body: { name?: string; defaultUnit?: string }) => request<IngredientApi>(`/menu/ingredients/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),

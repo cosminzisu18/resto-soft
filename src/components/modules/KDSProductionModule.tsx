@@ -12,7 +12,7 @@ import {
   ChefHat, Clock, Play, Pause, Check, Printer, AlertTriangle, 
   Package, Scale, Timer, ArrowLeft, Image, Tag
 } from 'lucide-react';
-import { menuItems } from '@/data/mockData';
+import { imageSrc, menuApi, type MenuItemApi } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
 interface Recipe {
@@ -27,109 +27,32 @@ interface Recipe {
   expirationDays: number;
 }
 
-// Mock recipes with detailed data
-const mockRecipes: Recipe[] = [
-  {
-    id: 'r1',
-    name: 'Ciorbă de burtă',
-    image: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?w=400',
-    category: 'Supe',
-    baseQuantity: '25L',
-    prepTime: 120,
+const mapMenuItemToRecipe = (item: MenuItemApi): Recipe => {
+  const baseQuantity = `${item.portions ?? 1} porții`;
+  const ingredients =
+    item.menuItemIngredients?.map((row) => ({
+      name: row.ingredient?.name ?? `Ingredient #${row.ingredientId}`,
+      quantity: String(row.quantity),
+      unit: row.unit,
+      stockLevel: 'high' as const,
+    })) ?? [];
+  const steps = (item.instructions ?? []).map((step, idx) => ({
+    id: idx + 1,
+    text: step.text,
+    duration: step.timeMinutes,
+  }));
+  return {
+    id: String(item.id),
+    name: item.name,
+    image: item.image,
+    category: item.category,
+    baseQuantity,
+    prepTime: item.prepTime ?? 0,
     expirationDays: 2,
-    ingredients: [
-      { name: 'Burtă curățată', quantity: '5', unit: 'kg', stockLevel: 'high' },
-      { name: 'Smântână', quantity: '2', unit: 'L', stockLevel: 'medium' },
-      { name: 'Usturoi', quantity: '200', unit: 'g', stockLevel: 'high' },
-      { name: 'Oțet', quantity: '500', unit: 'ml', stockLevel: 'high' },
-      { name: 'Gălbenuș de ou', quantity: '10', unit: 'buc', stockLevel: 'low' },
-      { name: 'Sare', quantity: '100', unit: 'g', stockLevel: 'high' },
-      { name: 'Piper', quantity: '20', unit: 'g', stockLevel: 'high' },
-    ],
-    steps: [
-      { id: 1, text: 'Spală și curăță burta', duration: 15 },
-      { id: 2, text: 'Fierbe burta 2-3 ore până se înmoaie', duration: 180 },
-      { id: 3, text: 'Taie burta în fâșii subțiri', duration: 20 },
-      { id: 4, text: 'Pregătește dressingul din smântână și gălbenușuri', duration: 10 },
-      { id: 5, text: 'Adaugă usturoiul pisat și oțetul', duration: 5 },
-      { id: 6, text: 'Amestecă și potrivește de sare și piper', duration: 5 },
-    ]
-  },
-  {
-    id: 'r2',
-    name: 'Sos Carbonara',
-    image: 'https://images.unsplash.com/photo-1612874742237-6526221588e3?w=400',
-    category: 'Sosuri',
-    baseQuantity: '10L',
-    prepTime: 45,
-    expirationDays: 3,
-    ingredients: [
-      { name: 'Smântână lichidă', quantity: '5', unit: 'L', stockLevel: 'medium' },
-      { name: 'Parmezan', quantity: '500', unit: 'g', stockLevel: 'high' },
-      { name: 'Bacon', quantity: '1', unit: 'kg', stockLevel: 'low' },
-      { name: 'Gălbenușuri', quantity: '20', unit: 'buc', stockLevel: 'medium' },
-      { name: 'Piper negru', quantity: '50', unit: 'g', stockLevel: 'high' },
-      { name: 'Sare', quantity: '30', unit: 'g', stockLevel: 'high' },
-    ],
-    steps: [
-      { id: 1, text: 'Prăjește baconul până devine crocant', duration: 10 },
-      { id: 2, text: 'Bate gălbenușurile cu parmezanul', duration: 5 },
-      { id: 3, text: 'Încălzește smântâna (nu fierbe!)', duration: 10 },
-      { id: 4, text: 'Combină toate ingredientele', duration: 5 },
-      { id: 5, text: 'Condimentează cu piper și sare', duration: 5 },
-    ]
-  },
-  {
-    id: 'r3',
-    name: 'Pizza Dough',
-    image: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=400',
-    category: 'Aluaturi',
-    baseQuantity: '50 porții',
-    prepTime: 90,
-    expirationDays: 1,
-    ingredients: [
-      { name: 'Făină 00', quantity: '10', unit: 'kg', stockLevel: 'high' },
-      { name: 'Apă', quantity: '6', unit: 'L', stockLevel: 'high' },
-      { name: 'Drojdie', quantity: '100', unit: 'g', stockLevel: 'medium' },
-      { name: 'Sare', quantity: '200', unit: 'g', stockLevel: 'high' },
-      { name: 'Ulei de măsline', quantity: '300', unit: 'ml', stockLevel: 'medium' },
-      { name: 'Zahăr', quantity: '50', unit: 'g', stockLevel: 'high' },
-    ],
-    steps: [
-      { id: 1, text: 'Dizolvă drojdia în apă caldă cu zahăr', duration: 10 },
-      { id: 2, text: 'Amestecă făina cu sarea', duration: 5 },
-      { id: 3, text: 'Adaugă lichidul și frământă 15 min', duration: 15 },
-      { id: 4, text: 'Adaugă uleiul și continuă să frămânți', duration: 10 },
-      { id: 5, text: 'Lasă aluatul la dospit 1 oră', duration: 60 },
-      { id: 6, text: 'Porționează în bucăți de 250g', duration: 15 },
-    ]
-  },
-  {
-    id: 'r4',
-    name: 'Sos de roșii',
-    image: 'https://images.unsplash.com/photo-1472476443507-c7a5948772fc?w=400',
-    category: 'Sosuri',
-    baseQuantity: '25L',
-    prepTime: 60,
-    expirationDays: 5,
-    ingredients: [
-      { name: 'Roșii pasate', quantity: '20', unit: 'kg', stockLevel: 'high' },
-      { name: 'Ceapă', quantity: '2', unit: 'kg', stockLevel: 'high' },
-      { name: 'Usturoi', quantity: '300', unit: 'g', stockLevel: 'high' },
-      { name: 'Ulei de măsline', quantity: '500', unit: 'ml', stockLevel: 'medium' },
-      { name: 'Busuioc', quantity: '100', unit: 'g', stockLevel: 'low' },
-      { name: 'Zahăr', quantity: '200', unit: 'g', stockLevel: 'high' },
-      { name: 'Sare', quantity: '100', unit: 'g', stockLevel: 'high' },
-    ],
-    steps: [
-      { id: 1, text: 'Călește ceapa și usturoiul în ulei', duration: 10 },
-      { id: 2, text: 'Adaugă roșiile pasate', duration: 5 },
-      { id: 3, text: 'Fierbe la foc mic 40 minute', duration: 40 },
-      { id: 4, text: 'Adaugă busuiocul și condimentele', duration: 5 },
-      { id: 5, text: 'Mixează pentru consistență uniformă', duration: 5 },
-    ]
-  },
-];
+    ingredients,
+    steps,
+  };
+};
 
 const quantityMultipliers: Record<string, number> = {
   '25L': 1,
@@ -141,12 +64,34 @@ const quantityMultipliers: Record<string, number> = {
 };
 
 const KDSProductionModule: React.FC = () => {
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [loadingRecipes, setLoadingRecipes] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [selectedQuantity, setSelectedQuantity] = useState<string>('');
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [isProducing, setIsProducing] = useState(false);
   const [productionTime, setProductionTime] = useState(0);
   const [showLabelPreview, setShowLabelPreview] = useState(false);
+
+  useEffect(() => {
+    const fetchMenuProducts = async () => {
+      setLoadingRecipes(true);
+      try {
+        const items = await menuApi.getItems();
+        setRecipes(items.map(mapMenuItemToRecipe));
+      } catch {
+        setRecipes([]);
+        toast({
+          title: 'Nu s-au putut încărca produsele',
+          description: 'Verifică API-ul /menu/items.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoadingRecipes(false);
+      }
+    };
+    void fetchMenuProducts();
+  }, []);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -237,9 +182,14 @@ const KDSProductionModule: React.FC = () => {
           <p className="text-sm text-slate-500">Selectează o rețetă pentru a începe producția</p>
         </div>
 
-        <ScrollArea className="flex-1 px-3 sm:px-6 pb-3 sm:pb-6">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 pb-3 sm:pb-6">
+          {loadingRecipes ? (
+            <div className="text-sm text-slate-500">Se încarcă produsele din baza de date...</div>
+          ) : recipes.length === 0 ? (
+            <div className="text-sm text-slate-500">Nu există produse în meniu.</div>
+          ) : null}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-            {mockRecipes.map(recipe => (
+            {recipes.map(recipe => (
               <Card 
                 key={recipe.id}
                 className="cursor-pointer hover:shadow-lg transition-all hover:scale-[1.02] overflow-hidden"
@@ -251,7 +201,7 @@ const KDSProductionModule: React.FC = () => {
                 {/* Recipe Image */}
                 <div className="h-32 sm:h-40 bg-slate-200 relative overflow-hidden">
                   {recipe.image ? (
-                    <img src={recipe.image} alt={recipe.name} className="w-full h-full object-cover" />
+                    <img src={imageSrc(recipe.image)} alt={recipe.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <Image className="w-12 h-12 text-slate-400" />
@@ -292,7 +242,7 @@ const KDSProductionModule: React.FC = () => {
               </Card>
             ))}
           </div>
-        </ScrollArea>
+        </div>
       </div>
     );
   }

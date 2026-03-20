@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Upload, X } from 'lucide-react';
+import { Loader2, Upload, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { imageSrc } from '@/lib/api';
 
@@ -11,6 +11,7 @@ export interface ImageUploadButtonProps {
   value?: string;
   onChange: (value: string) => void;
   onError?: (message: string) => void;
+  /** Dacă e gol, nu se afișează eticheta deasupra (ca la Meniu → formular produs). */
   label?: string;
   accept?: string;
   className?: string;
@@ -95,9 +96,15 @@ export function ImageUploadButton({
         onClick={() => inputRef.current?.click()}
         disabled={disabled || loading}
         className="gap-2"
+        aria-label={loading ? 'Se încarcă imaginea' : 'Incarca imagine'}
+        title={loading ? 'Se încarcă...' : 'Incarca imagine'}
       >
-        <Upload className="h-4 w-4" />
-        {loading ? 'Se încarcă...' : 'Încarcă imagine'}
+        {loading ? (
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+        ) : (
+          <Upload className="h-4 w-4 shrink-0" aria-hidden />
+        )}
+        {loading ? 'Se încarcă...' : 'Incarca imagine'}
       </Button>
 
       {value && (

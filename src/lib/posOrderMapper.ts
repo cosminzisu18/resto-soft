@@ -28,7 +28,7 @@ function menuItemFromSnapshot(menuItemId: number, raw: Record<string, unknown> |
 export function orderItemApiToOrderItem(i: OrderItemApi): OrderItem {
   const mods = i.modifications ?? { added: [], removed: [], notes: '' };
   return {
-    id: i.id,
+    id: String(i.id),
     menuItemId: String(i.menuItemId),
     menuItem: menuItemFromSnapshot(i.menuItemId, i.menuItem),
     quantity: i.quantity,
@@ -39,6 +39,8 @@ export function orderItemApiToOrderItem(i: OrderItemApi): OrderItem {
       notes: mods.notes ?? '',
     },
     status: i.status,
+    startedAt: i.startedAt ? new Date(i.startedAt) : undefined,
+    readyAt: i.readyAt ? new Date(i.readyAt) : undefined,
     complimentary: i.complimentary,
   };
 }

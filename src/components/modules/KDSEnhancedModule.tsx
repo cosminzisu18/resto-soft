@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { KDSStation, OrderItem, Order, users, MenuItem, allergens } from '@/data/mockData';
+import { ordersApi } from '@/lib/api';
+import { orderApiToPosOrder } from '@/lib/posOrderMapper';
 import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
 import { cn } from '@/lib/utils';
 import { 
@@ -28,13 +29,6 @@ interface KDSEnhancedModuleProps {
 
 type ViewMode = 'grid' | 'list' | 'timeline';
 type FilterMode = 'all' | 'urgent' | 'normal' | 'delayed';
-
-interface ActiveItem {
-  orderId: string;
-  itemId: string;
-  employeeName: string;
-  startedAt: Date;
-}
 
 interface LabelData {
   orderNumber: string;
@@ -112,22 +106,74 @@ const platformConfig = {
 };
 
 const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout }) => {
-  const { getOrdersForStation, updateOrderItemStatus, orders } = useRestaurant();
   const { language, setLanguage, languages } = useLanguage();
+  const [apiOrders, setApiOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [activeItems, setActiveItems] = useState<ActiveItem[]>([]);
-  const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [employeeSelectItem, setEmployeeSelectItem] = useState<{ orderId: string; itemId: string } | null>(null);
+  const [itemStarterBy, setItemStarterBy] = useState<Record<string, string>>({});
   const [recipeViewItem, setRecipeViewItem] = useState<MenuItem | null>(null);
   const [labelPreview, setLabelPreview] = useState<LabelData | null>(null);
   
   const labelRef = useRef<HTMLDivElement>(null);
   const allergenLabelRef = useRef<HTMLDivElement>(null);
 
-  const stationOrders = getOrdersForStation(station);
+  const fetchOrders = useCallback(async () => {
+    setOrdersLoading(true);
+    try {
+      const list = await ordersApi.getAll();
+      setApiOrders(list.map(orderApiToPosOrder));
+    } catch {
+      setApiOrders([]);
+      toast({
+        title: 'Comenzile nu s-au putut încărca',
+        description: 'Verifică backend-ul /orders.',
+        variant: 'destructive',
+      });
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchOrders();
+    const interval = setInterval(() => void fetchOrders(), 5000);
+    return () => clearInterval(interval);
+  }, [fetchOrders]);
+
+  const stationOrders = useMemo(
+    () =>
+      apiOrders
+        .filter((o) => o.status === 'active')
+        .map((order) => ({
+          order,
+          items: order.items.filter(
+            (item) =>
+              orderItemMatchesKdsStation(item, station) &&
+              (item.status === 'pending' || item.status === 'cooking'),
+          ),
+        }))
+        .filter((x) => x.items.length > 0),
+    [apiOrders, station],
+  );
+  const completedStationOrders = useMemo(
+    () =>
+      apiOrders
+        .filter((o) => o.status === 'active')
+        .map((order) => ({
+          order,
+          items: order.items.filter(
+            (item) =>
+              orderItemMatchesKdsStation(item, station) &&
+              (item.status === 'ready' || item.status === 'served'),
+          ),
+        }))
+        .filter((x) => x.items.length > 0),
+    [apiOrders, station],
+  );
   const kitchenEmployees = users.filter(u => u.role === 'kitchen');
 
   useEffect(() => {
@@ -137,10 +183,9 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
   // Calculate order status
   const getOrderStatus = (items: OrderItem[]): 'urgent' | 'normal' | 'delayed' => {
-    const hasActiveItems = items.some(i => {
-      const activeItem = activeItems.find(ai => ai.itemId === i.id);
-      if (!activeItem) return false;
-      const elapsed = (currentTime.getTime() - new Date(activeItem.startedAt).getTime()) / 60000;
+    const hasActiveItems = items.some((i) => {
+      if (i.status !== 'cooking' || !i.startedAt) return false;
+      const elapsed = (currentTime.getTime() - new Date(i.startedAt).getTime()) / 60000;
       return elapsed > i.menuItem.prepTime * 1.5;
     });
     
@@ -151,10 +196,9 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     
     if (allPending) return 'normal';
     if (hasCooking) {
-      const someDelayed = items.some(i => {
-        const activeItem = activeItems.find(ai => ai.itemId === i.id);
-        if (!activeItem) return false;
-        const elapsed = (currentTime.getTime() - new Date(activeItem.startedAt).getTime()) / 60000;
+      const someDelayed = items.some((i) => {
+        if (!i.startedAt) return false;
+        const elapsed = (currentTime.getTime() - new Date(i.startedAt).getTime()) / 60000;
         return elapsed > i.menuItem.prepTime;
       });
       return someDelayed ? 'delayed' : 'normal';
@@ -170,7 +214,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     startTime: Date | null;
   } => {
     // Get all items from the full order across all stations
-    const fullOrder = orders.find(o => o.id === order.id);
+    const fullOrder = apiOrders.find(o => o.id === order.id);
     if (!fullOrder || !fullOrder.syncTiming) {
       return { shouldStartNow: true, minutesUntilStart: 0, syncActive: false, startTime: null };
     }
@@ -205,14 +249,14 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
   };
 
   // Get remaining time - 10% rule for completion
-  const getRemainingTime = (item: OrderItem, activeItem?: ActiveItem): { display: string; percent: number; canComplete: boolean } => {
+  const getRemainingTime = (item: OrderItem): { display: string; percent: number; canComplete: boolean } => {
     const prepTimeMs = item.menuItem.prepTime * 60 * 1000;
-    
-    if (!activeItem) {
+
+    if (!item.startedAt || item.status !== 'cooking') {
       return { display: `${item.menuItem.prepTime} min`, percent: 0, canComplete: false };
     }
 
-    const elapsed = currentTime.getTime() - new Date(activeItem.startedAt).getTime();
+    const elapsed = currentTime.getTime() - new Date(item.startedAt).getTime();
     const remaining = Math.max(0, prepTimeMs - elapsed);
     const percent = Math.min(100, (elapsed / prepTimeMs) * 100);
     
@@ -226,10 +270,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     };
   };
 
-  const getActiveItemInfo = (orderId: string, itemId: string): ActiveItem | undefined => {
-    return activeItems.find(ai => ai.orderId === orderId && ai.itemId === itemId);
-  };
-
   // Filter orders
   const filteredOrders = stationOrders.filter(({ items }) => {
     if (filterMode === 'all') return true;
@@ -239,35 +279,56 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
   // Handlers
   const handleItemTap = (orderId: string, itemId: string) => {
-    const activeItem = activeItems.find(ai => ai.orderId === orderId && ai.itemId === itemId);
+    const item = stationOrders
+      .flatMap((so) => so.items)
+      .find((i) => String(i.id) === String(itemId));
     
-    if (!activeItem) {
+    if (!item || item.status !== 'cooking') {
       setEmployeeSelectItem({ orderId, itemId });
     } else {
-      const item = stationOrders.flatMap(so => so.items).find(i => i.id === itemId);
-      if (item) {
-        const { canComplete } = getRemainingTime(item, activeItem);
-        if (canComplete) {
-          handleCompleteItem(orderId, itemId, activeItem.employeeName);
-        } else {
-          toast({
-            title: "Nu se poate finaliza încă",
-            description: "Trebuie să treacă minim 10% din timpul de preparare",
-            variant: "destructive"
-          });
-        }
+      const { canComplete } = getRemainingTime(item);
+      if (canComplete) {
+        handleCompleteItem(orderId, itemId);
+      } else {
+        toast({
+          title: "Nu se poate finaliza încă",
+          description: "Trebuie să treacă minim 10% din timpul de preparare",
+          variant: "destructive"
+        });
       }
     }
   };
 
-  const handleStartCooking = (employeeName: string) => {
+  const handleStartCooking = async (employeeName: string) => {
     if (!employeeSelectItem) return;
     const { orderId, itemId } = employeeSelectItem;
+    const order = apiOrders.find((o) => String(o.id) === String(orderId));
+    const item = order?.items.find((i) => String(i.id) === String(itemId));
+    if (order && item) {
+      const sync = getSyncStartTime(item, order);
+      if (sync.syncActive && !sync.shouldStartNow) {
+        toast({
+          title: 'Sincronizare activă',
+          description: `Acest preparat pornește peste ${Math.max(1, Math.ceil(sync.minutesUntilStart))} min.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
     
-    setActiveItems(prev => [...prev, {
-      orderId, itemId, employeeName, startedAt: new Date()
-    }]);
-    updateOrderItemStatus(orderId, itemId, 'cooking');
+    try {
+      await ordersApi.updateItemStatus(Number(orderId), Number(itemId), 'cooking', {
+        employeeName,
+      });
+      setItemStarterBy((prev) => ({ ...prev, [`${orderId}:${itemId}`]: employeeName }));
+      await fetchOrders();
+    } catch {
+      toast({
+        title: 'Eroare la update status',
+        description: 'Nu s-a putut marca produsul ca cooking.',
+        variant: 'destructive',
+      });
+    }
     setEmployeeSelectItem(null);
     
     toast({
@@ -276,13 +337,14 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     });
   };
 
-  const handleCompleteItem = (orderId: string, itemId: string, employeeName: string) => {
-    const order = orders.find(o => o.id === orderId);
-    const item = order?.items.find(i => i.id === itemId);
+  const handleCompleteItem = async (orderId: string, itemId: string) => {
+    const order = apiOrders.find((o) => String(o.id) === String(orderId));
+    const item = order?.items.find((i) => String(i.id) === String(itemId));
+    const startedBy = itemStarterBy[`${orderId}:${itemId}`] ?? 'N/A';
     
     if (order && item) {
       const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
-      const productIndex = stationItems.findIndex(i => i.id === itemId) + 1;
+      const productIndex = stationItems.findIndex((i) => String(i.id) === String(itemId)) + 1;
 
       // Create label data
       const labelData: LabelData = {
@@ -293,7 +355,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         quantity: item.quantity,
         modifications: item.modifications,
         station: station.name,
-        preparedBy: employeeName,
+        preparedBy: startedBy,
         timestamp: new Date(),
         allergenIds: item.menuItem.allergenIds
       };
@@ -302,17 +364,18 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
       setLabelPreview(labelData);
     }
 
-    setActiveItems(prev => prev.filter(ai => !(ai.orderId === orderId && ai.itemId === itemId)));
-    updateOrderItemStatus(orderId, itemId, 'ready');
-
-    if (order) {
-      const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
-      const allReady = stationItems.every(i => i.id === itemId || i.status === 'ready');
-      
-      if (allReady) {
-        setCompletedOrders(prev => [...prev, order]);
-      }
+    try {
+      await ordersApi.updateItemStatus(Number(orderId), Number(itemId), 'ready');
+      await fetchOrders();
+    } catch {
+      toast({
+        title: 'Eroare la update status',
+        description: 'Nu s-a putut marca produsul ca ready.',
+        variant: 'destructive',
+      });
     }
+
+    // Completed list is now derived directly from DB statuses.
   };
 
   const handleStartAllItems = (orderId: string, items: OrderItem[]) => {
@@ -331,7 +394,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     e.stopPropagation();
     
     const productIndex = stationItems.findIndex(i => i.id === item.id) + 1;
-    const activeItem = getActiveItemInfo(order.id, item.id);
 
     const labelData: LabelData = {
       orderNumber: order.tableNumber?.toString() || order.id.slice(-4),
@@ -341,7 +403,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
       quantity: item.quantity,
       modifications: item.modifications,
       station: station.name,
-      preparedBy: activeItem?.employeeName || 'N/A',
+      preparedBy: 'N/A',
       timestamp: new Date(),
       allergenIds: item.menuItem.allergenIds
     };
@@ -452,9 +514,13 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
       return { display: `~${maxPrepTime} min`, status: 'normal' };
     }
 
-    const startedItems = activeItems.filter(ai => items.some(i => i.id === ai.itemId));
+    const startedItems = items.filter(
+      (i) => i.startedAt && (i.status === 'cooking' || i.status === 'ready' || i.status === 'served'),
+    );
     if (startedItems.length > 0) {
-      const earliestStart = Math.min(...startedItems.map(ai => new Date(ai.startedAt).getTime()));
+      const earliestStart = Math.min(
+        ...startedItems.map((i) => new Date(i.startedAt as Date).getTime()),
+      );
       const elapsed = Math.floor((currentTime.getTime() - earliestStart) / 60000);
       const remaining = Math.max(0, maxPrepTime - elapsed);
       
@@ -468,10 +534,9 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
   // Render item with full details (used in all views)
   const renderItemRow = (order: Order, item: OrderItem, items: OrderItem[], showButtons: boolean = true) => {
-    const activeItem = getActiveItemInfo(order.id, item.id);
-    const timeInfo = getRemainingTime(item, activeItem);
+    const timeInfo = getRemainingTime(item);
     const isCompleted = isItemCompleted(item);
-    const isActive = !!activeItem;
+    const isActive = item.status === 'cooking';
     const hasModifications = item.modifications.added.length > 0 || item.modifications.removed.length > 0;
     const syncInfo = getSyncStartTime(item, order);
     const isPending = item.status === 'pending';
@@ -536,14 +601,6 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             {/* Second Row: Employee/Time + Buttons */}
             <div className="flex items-center justify-between mt-1">
               <div className="flex items-center gap-2 min-w-0">
-                {/* Show employee name when cooking */}
-                {isActive && !isCompleted && activeItem && (
-                  <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                    <User className="w-3 h-3" />
-                    {activeItem.employeeName}
-                  </span>
-                )}
-                
                 {/* Time display */}
                 <div className={cn(
                   "flex items-center gap-1 text-sm font-mono font-bold",
@@ -658,7 +715,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         const config = platformConfig[order.source] || platformConfig.restaurant;
         const totalTime = getTotalOrderTime(items);
         const hasPendingItems = items.some(i => i.status === 'pending');
-        const fullOrder = orders.find(o => o.id === order.id);
+        const fullOrder = apiOrders.find(o => o.id === order.id);
         const isSyncOrder = fullOrder?.syncTiming;
         
         // Check if any pending item should start now (for alert)
@@ -768,7 +825,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         const config = platformConfig[order.source] || platformConfig.restaurant;
         const totalTime = getTotalOrderTime(items);
         const hasPendingItems = items.some(i => i.status === 'pending');
-        const fullOrder = orders.find(o => o.id === order.id);
+        const fullOrder = apiOrders.find(o => o.id === order.id);
         const isSyncOrder = fullOrder?.syncTiming;
         
         // Check if any pending item should start now (for alert)
@@ -958,7 +1015,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
   // Render Completed Orders
   const renderCompletedOrders = () => (
-    completedOrders.length === 0 ? (
+    completedStationOrders.length === 0 ? (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <CheckCircle2 className="w-20 h-20 mx-auto text-slate-600 mb-4" />
@@ -967,9 +1024,8 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
       </div>
     ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {completedOrders.map(order => {
+        {completedStationOrders.map(({ order, items: stationItems }) => {
           const config = platformConfig[order.source] || platformConfig.restaurant;
-          const stationItems = order.items.filter((i) => orderItemMatchesKdsStation(i, station));
           
           return (
             <Card key={order.id} className="bg-green-50 border-green-200 text-slate-900">
@@ -1043,7 +1099,9 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             <span className="text-2xl md:text-3xl flex-shrink-0">{station.icon}</span>
             <div className="min-w-0">
               <h1 className="text-base md:text-xl font-bold truncate">{station.name}</h1>
-              <p className="text-xs md:text-sm text-slate-400 hidden sm:block">KDS Enhanced</p>
+              <p className="text-xs md:text-sm text-slate-400 hidden sm:block">
+                {ordersLoading ? 'KDS Enhanced · se încarcă din DB…' : 'KDS Enhanced · sursă: DB'}
+              </p>
             </div>
           </div>
           
@@ -1062,7 +1120,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         </div>
         
         {/* Second Row: Controls - Scrollable on mobile */}
-        <div className="flex items-center gap-2 px-3 pb-2 md:px-4 md:pb-3 overflow-x-auto scrollbar-hide">
+        <div className="flex items-center gap-2 px-3 pb-2 md:px-4 md:pb-3 overflow-x-auto">
           {/* Tabs Active/Completed */}
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'active' | 'completed')} className="h-auto flex-shrink-0">
             <TabsList className="bg-slate-700 h-8">
@@ -1070,7 +1128,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 Active ({stationOrders.length})
               </TabsTrigger>
               <TabsTrigger value="completed" className="text-xs md:text-sm px-2 md:px-3 h-6 data-[state=active]:bg-green-600 data-[state=active]:text-white">
-                Finalizate ({completedOrders.length})
+                Finalizate ({completedStationOrders.length})
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -1139,7 +1197,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4">
         {activeTab === 'active' ? (
           filteredOrders.length === 0 ? (
             <div className="h-full flex items-center justify-center">
