@@ -43,7 +43,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
       setEditNumber(selectedTable.number);
       setEditSeats(selectedTable.seats);
       setEditShape(selectedTable.shape);
-      setEditColor((selectedTable as any).color || 'default');
+      setEditColor(selectedTable.color || 'default');
     }
   }, [selectedTable]);
 
