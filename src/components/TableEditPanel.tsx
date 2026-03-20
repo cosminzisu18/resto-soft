@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Trash2, Save, Circle, Square, RectangleHorizontal, QrCode, Info, Copy, RefreshCw, Users } from 'lucide-react';
+import { Plus, Trash2, Save, Circle, Square, RectangleHorizontal, QrCode, Info, Copy, RefreshCw, Users, Printer, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 interface TableEditPanelProps {
@@ -26,6 +27,110 @@ const TABLE_COLORS = [
 ];
 
 const generateQrId = () => `QR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+// Deterministic pseudo-random QR pattern from string
+const generateQrPattern = (str: string): boolean[] => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  const pattern: boolean[] = [];
+  for (let i = 0; i < 225; i++) {
+    hash = ((hash * 16807) + 1) | 0;
+    pattern.push(Math.abs(hash) % 3 !== 0);
+  }
+  // Fixed finder patterns (corners)
+  const setBlock = (row: number, col: number, size: number, val: boolean) => {
+    for (let r = row; r < row + size && r < 15; r++)
+      for (let c = col; c < col + size && c < 15; c++)
+        pattern[r * 15 + c] = val;
+  };
+  // Top-left
+  setBlock(0, 0, 3, true); setBlock(1, 1, 1, false);
+  // Top-right
+  setBlock(0, 12, 3, true); setBlock(1, 13, 1, false);
+  // Bottom-left
+  setBlock(12, 0, 3, true); setBlock(13, 1, 1, false);
+  return pattern;
+};
+
+const QrCodeVisual: React.FC<{ qrId: string; size?: number; tableNumber: number }> = ({ qrId, size = 150, tableNumber }) => {
+  const pattern = generateQrPattern(qrId);
+  const cellSize = size / 15;
+  return (
+    <div className="bg-white p-3 rounded-lg inline-block" style={{ width: size + 24, height: size + 24 }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <rect width={size} height={size} fill="white" />
+        {pattern.map((filled, i) => {
+          if (!filled) return null;
+          const row = Math.floor(i / 15);
+          const col = i % 15;
+          return (
+            <rect
+              key={i}
+              x={col * cellSize}
+              y={row * cellSize}
+              width={cellSize}
+              height={cellSize}
+              fill="black"
+              rx={0.5}
+            />
+          );
+        })}
+        {/* Center label */}
+        <rect x={size / 2 - 14} y={size / 2 - 8} width={28} height={16} fill="white" rx={2} />
+        <text x={size / 2} y={size / 2 + 4} textAnchor="middle" fontSize="11" fontWeight="bold" fill="black">
+          {tableNumber}
+        </text>
+      </svg>
+    </div>
+  );
+};
+
+const handlePrintQr = (qrId: string, tableNumber: number) => {
+  const pattern = generateQrPattern(qrId);
+  const size = 300;
+  const cellSize = size / 15;
+  let svgCells = '';
+  pattern.forEach((filled, i) => {
+    if (!filled) return;
+    const row = Math.floor(i / 15);
+    const col = i % 15;
+    svgCells += `<rect x="${col * cellSize}" y="${row * cellSize}" width="${cellSize}" height="${cellSize}" fill="black" rx="0.5"/>`;
+  });
+
+  const printWindow = window.open('', '_blank', 'width=500,height=600');
+  if (!printWindow) return;
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>QR Masa ${tableNumber}</title>
+    <style>
+      body { margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: system-ui, sans-serif; }
+      .label { font-size: 28px; font-weight: 700; margin-top: 16px; }
+      .sublabel { font-size: 14px; color: #666; margin-top: 4px; }
+      .qr { background: white; padding: 24px; border: 2px solid #eee; border-radius: 12px; }
+      @media print { body { height: auto; padding: 40px 0; } }
+    </style>
+    </head>
+    <body>
+      <div class="qr">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+          <rect width="${size}" height="${size}" fill="white"/>
+          ${svgCells}
+          <rect x="${size / 2 - 28}" y="${size / 2 - 16}" width="56" height="32" fill="white" rx="4"/>
+          <text x="${size / 2}" y="${size / 2 + 6}" text-anchor="middle" font-size="22" font-weight="bold">${tableNumber}</text>
+        </svg>
+      </div>
+      <div class="label">Masa ${tableNumber}</div>
+      <div class="sublabel">Scanează pentru a comanda</div>
+      <div class="sublabel" style="font-size:10px;margin-top:8px;font-family:monospace;color:#999">${qrId}</div>
+      <script>setTimeout(()=>{window.print()},300)</script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
 
 const getPreviewShapeClass = (shape: Table['shape'], seats: number) => {
   const sizeClass = shape === 'rectangle'
@@ -52,6 +157,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [showQrPreview, setShowQrPreview] = useState(false);
 
   // Track which table we loaded into form to avoid resetting on every render
   const loadedTableIdRef = useRef<string | null>(null);
@@ -261,6 +367,12 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
                   </TooltipContent>
                 </Tooltip>
               </div>
+
+              {/* QR Visual Preview */}
+              <div className="flex justify-center py-2">
+                <QrCodeVisual qrId={editQrCode} size={120} tableNumber={editNumber} />
+              </div>
+
               <div className="flex gap-1">
                 <Input
                   value={editQrCode}
@@ -283,6 +395,28 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
                   </TooltipTrigger>
                   <TooltipContent>Regenerează QR</TooltipContent>
                 </Tooltip>
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={() => setShowQrPreview(true)}
+                >
+                  <Eye className="w-3.5 h-3.5 mr-1" />
+                  Previzualizare
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
+                  onClick={() => handlePrintQr(editQrCode, editNumber)}
+                >
+                  <Printer className="w-3.5 h-3.5 mr-1" />
+                  Printează QR
+                </Button>
               </div>
             </div>
 
@@ -324,6 +458,31 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
         </AlertDialog>
 
         {/* Confirm delete */}
+
+        {/* QR Preview Dialog */}
+        <Dialog open={showQrPreview} onOpenChange={setShowQrPreview}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Cod QR — Masa {editNumber}</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4 py-2">
+              <QrCodeVisual qrId={editQrCode} size={240} tableNumber={editNumber} />
+              <p className="text-xs font-mono text-muted-foreground text-center break-all">{editQrCode}</p>
+              <p className="text-xs text-muted-foreground text-center">Clienții scanează acest cod pentru a accesa meniul Self Order la masă.</p>
+              <div className="flex gap-2 w-full">
+                <Button variant="outline" className="flex-1" onClick={() => { handleRegenerateQr(); }}>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Regenerează
+                </Button>
+                <Button className="flex-1" onClick={() => handlePrintQr(editQrCode, editNumber)}>
+                  <Printer className="w-4 h-4 mr-2" />
+                  Printează
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
           <AlertDialogContent>
             <AlertDialogHeader>
