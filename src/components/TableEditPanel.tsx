@@ -59,7 +59,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
       seats: editSeats,
       shape: editShape,
       color: editColor,
-    } as any);
+    });
     toast({ title: `Masa ${editNumber} actualizată` });
     setShowSaveConfirm(false);
   };

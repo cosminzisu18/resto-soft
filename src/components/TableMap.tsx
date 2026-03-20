@@ -107,7 +107,7 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
   };
 
   const getStatusColor = (table: Table) => {
-    const customColor = (table as any).color;
+    const customColor = table.color;
     if (customColor && customColor !== 'default' && TABLE_COLOR_MAP[customColor]) {
       return TABLE_COLOR_MAP[customColor];
     }
