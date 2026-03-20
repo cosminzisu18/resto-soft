@@ -13,7 +13,9 @@ export interface Table {
   seats: number;
   status: "free" | "occupied" | "reserved";
   position: { x: number; y: number };
-  shape: "round" | "square" | "rectangle";
+  shape: 'round' | 'square' | 'rectangle';
+  /** Culoare opțională pe hartă (editor) */
+  color?: string;
   /** Mock: string; API masă: number (orders.id INT) */
   currentOrderId?: string | number;
   reservationId?: string;

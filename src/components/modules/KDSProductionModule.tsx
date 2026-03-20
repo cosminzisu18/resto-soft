@@ -94,7 +94,7 @@ const KDSProductionModule: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isProducing) {
       interval = setInterval(() => {
         setProductionTime(prev => prev + 1);

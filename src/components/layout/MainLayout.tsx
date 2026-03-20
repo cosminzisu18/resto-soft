@@ -154,15 +154,14 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                 const Icon = item.icon;
                 const isActive = activeModule === item.id;
 
-                const button = (
+                const link = (
                   <button
                     key={item.id}
+                    type="button"
                     className={cn(
-                      "w-full flex items-center h-12 rounded-lg transition-colors",
-                      collapsed ? "justify-center px-0" : "gap-4 px-4",
-                      isActive 
-                        ? "bg-primary text-primary-foreground" 
-                        : "text-foreground hover:bg-muted"
+                      'w-full flex items-center h-12 rounded-lg transition-colors text-left',
+                      collapsed ? 'justify-center px-0' : 'gap-4 px-4',
+                      isActive ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-muted',
                     )}
                     onClick={() => {
                       onModuleChange(item.id);
@@ -184,7 +183,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                 if (collapsed) {
                   return (
                     <Tooltip key={item.id}>
-                      <TooltipTrigger asChild>{button}</TooltipTrigger>
+                      <TooltipTrigger asChild>{link}</TooltipTrigger>
                       <TooltipContent side="right" className="text-base font-bold">
                         {item.label}
                       </TooltipContent>
@@ -192,7 +191,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                   );
                 }
 
-                return <div key={item.id}>{button}</div>;
+                return <div key={item.id}>{link}</div>;
               })}
             </nav>
           </ScrollArea>
