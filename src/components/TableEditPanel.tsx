@@ -27,6 +27,7 @@ const TABLE_COLORS = [
 ];
 
 const generateQrId = () => `QR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+const qrInfoText = 'Identificator unic pentru codul QR generat pentru aplicația Self Order. Clienții scanează acest cod pentru a comanda direct de la masă. Poate fi regenerat și printat.';
 
 // Deterministic pseudo-random QR pattern from string
 const generateQrPattern = (str: string): boolean[] => {
@@ -352,20 +353,19 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
                   <QrCode className="w-3 h-3" />
                   ID Cod QR
                 </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Informații despre ID-ul codului QR"
-                      className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      <Info className="w-3.5 h-3.5 cursor-help" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left" className="max-w-[220px] text-xs">
-                    <p>Identificator unic pentru codul QR generat pentru aplicația Self Order. Clienții scanează acest cod pentru a comanda direct de la masă. Poate fi regenerat și printat.</p>
-                  </TooltipContent>
-                </Tooltip>
+                <div className="relative group">
+                  <button
+                    type="button"
+                    title={qrInfoText}
+                    aria-label={qrInfoText}
+                    className="inline-flex text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+                  >
+                    <Info className="w-3.5 h-3.5 cursor-help" />
+                  </button>
+                  <div className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-56 rounded-md border border-border bg-popover px-3 py-2 text-xs leading-relaxed text-popover-foreground shadow-md opacity-0 invisible transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                    {qrInfoText}
+                  </div>
+                </div>
               </div>
 
               {/* QR Visual Preview */}
