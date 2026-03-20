@@ -21,6 +21,7 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
 
   // Drag state
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     tableId: string;
     startMouseX: number;
