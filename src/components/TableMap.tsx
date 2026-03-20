@@ -172,7 +172,7 @@ const TableMap: React.FC<TableMapProps> = ({ onTableSelect }) => {
 
       <div
         ref={containerRef}
-        className={cn("flex-1 relative bg-secondary/30 overflow-auto p-4", editMode && "cursor-grab")}
+        className={cn("flex-1 relative bg-secondary/30 overflow-hidden", editMode && "cursor-grab")}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
