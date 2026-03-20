@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Trash2, Save, Circle, Square, RectangleHorizontal, QrCode, Info, Copy, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Save, Circle, Square, RectangleHorizontal, QrCode, Info, Copy, RefreshCw, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TableEditPanelProps {
@@ -26,6 +26,18 @@ const TABLE_COLORS = [
 ];
 
 const generateQrId = () => `QR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+const getPreviewShapeClass = (shape: Table['shape'], seats: number) => {
+  const sizeClass = shape === 'rectangle'
+    ? 'w-28 h-16'
+    : seats <= 2
+      ? 'w-16 h-16'
+      : seats <= 4
+        ? 'w-20 h-20'
+        : 'w-24 h-24';
+
+  return cn(sizeClass, shape === 'round' ? 'rounded-full' : 'rounded-xl');
+};
 
 const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSelectTable }) => {
   const { tables, updateTable, addTable, deleteTable } = useRestaurant();
@@ -134,6 +146,28 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
             </div>
 
             <div className="space-y-2">
+              <Label className="text-xs">Previzualizare</Label>
+              <div className="rounded-xl border border-border bg-muted/30 p-4 flex items-center justify-center">
+                <div
+                  className={cn(
+                    "border-2 shadow-sm flex flex-col items-center justify-center gap-0.5 transition-all duration-200",
+                    getPreviewShapeClass(editShape, editSeats),
+                    TABLE_COLORS.find(color => color.value === editColor)?.class || TABLE_COLORS[0].class
+                  )}
+                >
+                  <span className="text-lg font-bold">{editNumber}</span>
+                  <span className="text-[10px] flex items-center gap-0.5">
+                    <Users className="w-3 h-3" />
+                    {editSeats}
+                  </span>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Forma și culoarea se văd aici instant, iar pe hartă după confirmarea salvării.
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="table-number" className="text-xs">Număr masă</Label>
               <Input
                 id="table-number"
@@ -214,7 +248,13 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
                 </Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                    <button
+                      type="button"
+                      aria-label="Informații despre ID-ul codului QR"
+                      className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <Info className="w-3.5 h-3.5 cursor-help" />
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="left" className="max-w-[220px] text-xs">
                     <p>Identificator unic pentru codul QR generat pentru aplicația Self Order. Clienții scanează acest cod pentru a comanda direct de la masă. Poate fi regenerat și printat.</p>
