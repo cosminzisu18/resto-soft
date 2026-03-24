@@ -24,105 +24,38 @@ import {
   Eye,
   PlayCircle
 } from 'lucide-react';
+import { ordersApi, type OrderApi, type OrderItemApi } from '@/lib/api';
 
 interface OrderMonitorDashboardProps {
   onBack: () => void;
 }
 
-// Mock data for demonstration
-const mockOrdersWithStatus = [
-  {
-    id: 'ORD-001',
-    type: 'restaurant',
-    table: 5,
-    source: 'restaurant',
-    createdAt: new Date(Date.now() - 25 * 60000),
-    items: [
-      { name: 'Pizza Margherita', station: 'Pizza', status: 'ready', prepTime: 15, startedAt: new Date(Date.now() - 20 * 60000), completedAt: new Date(Date.now() - 5 * 60000) },
-      { name: 'Tiramisu', station: 'Deserturi', status: 'cooking', prepTime: 8, startedAt: new Date(Date.now() - 3 * 60000) },
-    ],
-    totalPrepTime: 23,
-    status: 'in_progress',
-    priority: 'normal',
-  },
-  {
-    id: 'ORD-002',
-    type: 'delivery',
-    platform: 'glovo',
-    customer: { name: 'Ion Popescu', phone: '0721...', address: 'Str. Victoriei 45' },
-    createdAt: new Date(Date.now() - 35 * 60000),
-    items: [
-      { name: 'Kebab Pui', station: 'Giros', status: 'ready', prepTime: 8, startedAt: new Date(Date.now() - 30 * 60000), completedAt: new Date(Date.now() - 22 * 60000) },
-      { name: 'Cartofi Prăjiți', station: 'Grill', status: 'ready', prepTime: 8, startedAt: new Date(Date.now() - 28 * 60000), completedAt: new Date(Date.now() - 20 * 60000) },
-    ],
-    totalPrepTime: 16,
-    status: 'ready_for_pickup',
-    riderStatus: 'arriving',
-    riderEta: 3,
-    priority: 'high',
-    delay: 5,
-  },
-  {
-    id: 'ORD-003',
-    type: 'delivery',
-    platform: 'bolt',
-    customer: { name: 'Maria Ionescu', phone: '0732...', address: 'Bd. Unirii 120' },
-    createdAt: new Date(Date.now() - 15 * 60000),
-    items: [
-      { name: 'Pizza Quattro Formaggi', station: 'Pizza', status: 'cooking', prepTime: 15, startedAt: new Date(Date.now() - 8 * 60000) },
-      { name: 'Cola 500ml', station: 'Bar', status: 'ready', prepTime: 1, startedAt: new Date(Date.now() - 14 * 60000), completedAt: new Date(Date.now() - 13 * 60000) },
-    ],
-    totalPrepTime: 16,
-    status: 'in_progress',
-    riderStatus: 'waiting',
-    priority: 'normal',
-  },
-  {
-    id: 'ORD-004',
-    type: 'restaurant',
-    table: 12,
-    source: 'kiosk',
-    createdAt: new Date(Date.now() - 45 * 60000),
-    items: [
-      { name: 'Ciorbă de Burtă', station: 'Supe', status: 'ready', prepTime: 5, startedAt: new Date(Date.now() - 42 * 60000), completedAt: new Date(Date.now() - 37 * 60000) },
-      { name: 'Mici (10 buc)', station: 'Grill', status: 'ready', prepTime: 12, startedAt: new Date(Date.now() - 40 * 60000), completedAt: new Date(Date.now() - 28 * 60000) },
-      { name: 'Bere Ursus', station: 'Bar', status: 'ready', prepTime: 1, startedAt: new Date(Date.now() - 44 * 60000), completedAt: new Date(Date.now() - 43 * 60000) },
-    ],
-    totalPrepTime: 18,
-    status: 'completed',
-    priority: 'normal',
-  },
-  {
-    id: 'ORD-005',
-    type: 'delivery',
-    platform: 'wolt',
-    customer: { name: 'Andrei Popa', phone: '0744...', address: 'Calea Dorobanți 88' },
-    createdAt: new Date(Date.now() - 50 * 60000),
-    items: [
-      { name: 'Shaorma Mare', station: 'Giros', status: 'delayed', prepTime: 8, startedAt: new Date(Date.now() - 45 * 60000), expectedAt: new Date(Date.now() - 37 * 60000) },
-      { name: 'Hummus', station: 'Giros', status: 'pending', prepTime: 5 },
-    ],
-    totalPrepTime: 13,
-    status: 'delayed',
-    riderStatus: 'waiting',
-    priority: 'urgent',
-    delay: 12,
-  },
-  {
-    id: 'ORD-006',
-    type: 'restaurant',
-    table: 3,
-    source: 'waiter',
-    createdAt: new Date(Date.now() - 5 * 60000),
-    items: [
-      { name: 'Supă de Pui', station: 'Supe', status: 'pending', prepTime: 5 },
-      { name: 'Cotlet de Porc', station: 'Grill', status: 'pending', prepTime: 18 },
-    ],
-    totalPrepTime: 23,
-    status: 'new',
-    priority: 'normal',
-  },
-];
+type MonitorOrderStatus = 'new' | 'in_progress' | 'ready' | 'ready_for_pickup' | 'completed' | 'delayed';
+type RiderStatus = 'arriving' | 'waiting' | 'picked_up' | 'none';
+
+interface MonitorItem {
+  name: string;
+  station: string;
+  status: 'pending' | 'cooking' | 'ready' | 'served' | 'delayed';
+  prepTime: number;
+  startedAt?: Date;
+  completedAt?: Date;
+}
+
+interface MonitorOrder {
+  id: string;
+  type: 'restaurant' | 'delivery';
+  table?: number | null;
+  source: string;
+  platform?: string;
+  customer?: { name?: string; phone?: string; address?: string };
+  createdAt: Date;
+  items: MonitorItem[];
+  status: MonitorOrderStatus;
+  riderStatus: RiderStatus;
+  riderEta?: number;
+  delay: number;
+}
 
 const platformColors: Record<string, { bg: string; text: string; icon: string }> = {
   glovo: { bg: 'bg-yellow-500/10', text: 'text-yellow-600', icon: '🟡' },
@@ -143,11 +76,97 @@ const stationIcons: Record<string, string> = {
   'Deserturi': '🍰',
 };
 
+const DELIVERY_SOURCES = new Set(['glovo', 'wolt', 'bolt', 'own_website', 'phone']);
+
+function mapStationLabel(raw: Record<string, unknown> | null): string {
+  if (!raw) return 'Bucătărie';
+  const type = typeof raw.kdsStationType === 'string' ? raw.kdsStationType : '';
+  if (type === 'soups') return 'Supe';
+  if (type === 'pizza') return 'Pizza';
+  if (type === 'giros') return 'Giros';
+  if (type === 'grill') return 'Grill';
+
+  const category = typeof raw.category === 'string' ? raw.category.toLowerCase() : '';
+  if (category.includes('sup')) return 'Supe';
+  if (category.includes('pizza')) return 'Pizza';
+  if (category.includes('giros') || category.includes('doner')) return 'Giros';
+  if (category.includes('desert')) return 'Deserturi';
+  if (category.includes('băutur') || category.includes('bar')) return 'Bar';
+  return 'Grill';
+}
+
+function toMonitorItem(item: OrderItemApi, now: Date): MonitorItem {
+  const raw = item.menuItem;
+  const prepTime = Number((raw?.prepTime as number | undefined) ?? 0);
+  const startedAt = item.startedAt ? new Date(item.startedAt) : undefined;
+  const readyAt = item.readyAt ? new Date(item.readyAt) : undefined;
+  const elapsed = startedAt ? Math.floor((now.getTime() - startedAt.getTime()) / 60000) : 0;
+  const delayed = item.status === 'cooking' && prepTime > 0 && elapsed > prepTime;
+
+  return {
+    name: String((raw?.name as string | undefined) ?? `Produs #${item.menuItemId}`),
+    station: mapStationLabel(raw),
+    status: delayed ? 'delayed' : item.status,
+    prepTime,
+    startedAt,
+    completedAt: readyAt,
+  };
+}
+
+function toMonitorOrder(order: OrderApi, now: Date): MonitorOrder {
+  const source = order.source ?? 'restaurant';
+  const type: 'restaurant' | 'delivery' = DELIVERY_SOURCES.has(source) ? 'delivery' : 'restaurant';
+  const items = (order.items ?? []).map((i) => toMonitorItem(i, now));
+  const delay = Math.max(
+    0,
+    ...items.map((it) => {
+      if (!it.startedAt || it.prepTime <= 0 || it.status === 'ready' || it.status === 'served') return 0;
+      const elapsed = Math.floor((now.getTime() - it.startedAt.getTime()) / 60000);
+      return Math.max(0, elapsed - it.prepTime);
+    }),
+  );
+
+  const allPending = items.length > 0 && items.every((it) => it.status === 'pending');
+  const allReady = items.length > 0 && items.every((it) => it.status === 'ready' || it.status === 'served');
+  const hasCooking = items.some((it) => it.status === 'cooking' || it.status === 'delayed');
+
+  let status: MonitorOrderStatus = 'new';
+  if (delay > 0) status = 'delayed';
+  else if (allReady) status = type === 'delivery' ? 'ready_for_pickup' : 'ready';
+  else if (hasCooking) status = 'in_progress';
+  else if (allPending) status = 'new';
+  else status = 'in_progress';
+
+  return {
+    id: `ORD-${order.id}`,
+    type,
+    table: order.tableNumber,
+    source,
+    platform: type === 'delivery' ? source : undefined,
+    customer:
+      type === 'delivery'
+        ? {
+            name: order.customerName ?? undefined,
+            phone: order.customerPhone ?? undefined,
+            address: order.deliveryAddress ?? undefined,
+          }
+        : undefined,
+    createdAt: new Date(order.createdAt),
+    items,
+    status,
+    riderStatus: type === 'delivery' ? (status === 'ready_for_pickup' ? 'arriving' : 'waiting') : 'none',
+    riderEta: type === 'delivery' && status === 'ready_for_pickup' ? 5 : undefined,
+    delay,
+  };
+}
+
 const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeTab, setActiveTab] = useState('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
+  const [orders, setOrders] = useState<MonitorOrder[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -155,6 +174,26 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const loadOrders = async () => {
+      setLoading(true);
+      try {
+        const apiOrders = await ordersApi.getAll();
+        const activeApiOrders = apiOrders.filter((o) => o.status === 'active');
+        setOrders(activeApiOrders.map((o) => toMonitorOrder(o, new Date())));
+      } catch {
+        setOrders([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadOrders();
+    if (!autoRefresh) return;
+    const interval = setInterval(() => void loadOrders(), 10000);
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
 
   const getElapsedMinutes = (date: Date) => {
     return Math.floor((currentTime.getTime() - date.getTime()) / 60000);
@@ -245,7 +284,7 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
     }
   };
 
-  const filteredOrders = mockOrdersWithStatus.filter(order => {
+  const filteredOrders = orders.filter(order => {
     if (activeTab === 'all') return true;
     if (activeTab === 'restaurant') return order.type === 'restaurant';
     if (activeTab === 'delivery') return order.type === 'delivery';
@@ -254,11 +293,11 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
   });
 
   const stats = {
-    total: mockOrdersWithStatus.length,
-    inProgress: mockOrdersWithStatus.filter(o => o.status === 'in_progress' || o.status === 'new').length,
-    ready: mockOrdersWithStatus.filter(o => o.status === 'ready_for_pickup' || o.status === 'ready').length,
-    delayed: mockOrdersWithStatus.filter(o => o.status === 'delayed' || (o.delay && o.delay > 0)).length,
-    delivery: mockOrdersWithStatus.filter(o => o.type === 'delivery').length,
+    total: orders.length,
+    inProgress: orders.filter(o => o.status === 'in_progress' || o.status === 'new').length,
+    ready: orders.filter(o => o.status === 'ready_for_pickup' || o.status === 'ready').length,
+    delayed: orders.filter(o => o.status === 'delayed' || (o.delay && o.delay > 0)).length,
+    delivery: orders.filter(o => o.type === 'delivery').length,
   };
 
   return (
@@ -385,7 +424,19 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
             <TabsContent value={activeTab} className="flex-1 min-h-0 mt-0 p-4">
               <ScrollArea className="h-full">
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {filteredOrders.map((order) => {
+                  {loading ? (
+                    <Card className="col-span-full">
+                      <CardContent className="p-6 text-sm text-muted-foreground">
+                        Se încarcă comenzile din baza de date...
+                      </CardContent>
+                    </Card>
+                  ) : filteredOrders.length === 0 ? (
+                    <Card className="col-span-full">
+                      <CardContent className="p-6 text-sm text-muted-foreground">
+                        Nu există comenzi active pentru filtrul selectat.
+                      </CardContent>
+                    </Card>
+                  ) : filteredOrders.map((order) => {
                     const progress = getOrderProgress(order);
                     const remainingTime = getOrderRemainingTime(order);
                     const elapsed = getElapsedMinutes(order.createdAt);
@@ -419,12 +470,12 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
                             {order.type === 'restaurant' ? (
                               <span className="flex items-center gap-1">
                                 <UtensilsCrossed className="w-4 h-4" />
-                                Masă {order.table}
+                                Masă {order.table ?? '-'}
                               </span>
                             ) : (
                               <span className="flex items-center gap-1">
                                 <MapPin className="w-4 h-4" />
-                                {order.customer?.address?.substring(0, 25)}...
+                                {(order.customer?.address ?? 'Adresă indisponibilă').substring(0, 25)}
                               </span>
                             )}
                             <span className="flex items-center gap-1">
@@ -482,7 +533,7 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
                           {selectedOrder === order.id && (
                             <div className="pt-3 border-t border-border space-y-2 animate-fade-in">
                               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Produse:</p>
-                              {order.items.map((item: any, idx: number) => (
+                              {order.items.map((item, idx) => (
                                 <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
                                   <div className="flex items-center gap-2">
                                     {getItemStatusIcon(item.status)}
@@ -523,15 +574,15 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
                                   <div className="space-y-1 text-sm">
                                     <p className="flex items-center gap-2">
                                       <span className="text-muted-foreground">Client:</span>
-                                      <span className="font-medium">{order.customer.name}</span>
+                                      <span className="font-medium">{order.customer.name ?? 'N/A'}</span>
                                     </p>
                                     <p className="flex items-center gap-2">
                                       <Phone className="w-3 h-3 text-muted-foreground" />
-                                      <span>{order.customer.phone}</span>
+                                      <span>{order.customer.phone ?? 'N/A'}</span>
                                     </p>
                                     <p className="flex items-center gap-2">
                                       <MapPin className="w-3 h-3 text-muted-foreground" />
-                                      <span>{order.customer.address}</span>
+                                      <span>{order.customer.address ?? 'N/A'}</span>
                                     </p>
                                   </div>
                                 </div>
@@ -558,16 +609,36 @@ const OrderMonitorDashboard: React.FC<OrderMonitorDashboardProps> = ({ onBack })
           </div>
           <ScrollArea className="flex-1">
             <div className="p-4 space-y-3">
-              {[
-                { time: '14:32', event: 'ORD-002 gata pentru curier', type: 'success' },
-                { time: '14:30', event: 'Curier Glovo în drum', type: 'info' },
-                { time: '14:28', event: 'ORD-005 întârziată +10min', type: 'warning' },
-                { time: '14:25', event: 'ORD-003 Pizza în cuptor', type: 'info' },
-                { time: '14:22', event: 'ORD-001 Tiramisu început', type: 'info' },
-                { time: '14:20', event: 'ORD-006 comandă nouă Masă 3', type: 'new' },
-                { time: '14:18', event: 'ORD-001 Pizza gata', type: 'success' },
-                { time: '14:15', event: 'ORD-004 finalizată', type: 'complete' },
-              ].map((activity, idx) => (
+              {orders
+                .slice()
+                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+                .slice(0, 8)
+                .map((order, idx) => {
+                  const activityType =
+                    order.status === 'delayed'
+                      ? 'warning'
+                      : order.status === 'ready' || order.status === 'ready_for_pickup'
+                        ? 'success'
+                        : order.status === 'new'
+                          ? 'new'
+                          : 'info';
+                  const activityText =
+                    order.status === 'delayed'
+                      ? `${order.id} întârziată +${order.delay}min`
+                      : order.status === 'ready_for_pickup'
+                        ? `${order.id} gata pentru curier`
+                        : order.status === 'ready'
+                          ? `${order.id} gata pentru servire`
+                          : order.status === 'new'
+                            ? `${order.id} comandă nouă`
+                            : `${order.id} în preparare`;
+                  return {
+                    time: order.createdAt.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }),
+                    event: activityText,
+                    type: activityType,
+                  };
+                })
+                .map((activity, idx) => (
                 <div key={idx} className="flex gap-3 text-sm">
                   <span className="text-xs text-muted-foreground font-mono w-12">{activity.time}</span>
                   <div className={cn(

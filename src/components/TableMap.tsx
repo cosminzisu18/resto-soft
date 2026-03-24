@@ -246,21 +246,32 @@ const TableMap: React.FC<TableMapProps> = ({
     setSelectedForMerge([]);
   };
 
-  const toggleEditMode = () => {
+  const toggleEditMode = async () => {
     if (editMode) {
       // La „Blochează”: persistă și o tragere neterminată (dacă există), ca poziția să ajungă în DB
       persistInProgressDrag();
       if (isApiControlled && dirtyTableIds.size > 0) {
-        for (const id of dirtyTableIds) {
-          const changed = stagedTables.find((t) => t.id === id);
-          if (changed) onTableUpdated?.(changed);
+        try {
+          for (const id of dirtyTableIds) {
+            const changed = stagedTables.find((t) => t.id === id);
+            if (changed) {
+              await onTableUpdated?.(changed);
+            }
+          }
+          toast({
+            title: 'Harta salvată în baza de date',
+            description: `${dirtyTableIds.size} ${dirtyTableIds.size === 1 ? 'masă actualizată' : 'mese actualizate'}.`,
+          });
+          hasDirtyRef.current = false;
+          setDirtyTableIds(new Set());
+        } catch {
+          toast({
+            title: 'Eroare la salvarea hărții',
+            description: 'Unele poziții nu au fost salvate. Încearcă din nou.',
+            variant: 'destructive',
+          });
+          return;
         }
-        toast({
-          title: 'Harta salvată în baza de date',
-          description: `${dirtyTableIds.size} ${dirtyTableIds.size === 1 ? 'masă actualizată' : 'mese actualizate'}.`,
-        });
-        hasDirtyRef.current = false;
-        setDirtyTableIds(new Set());
       }
       setSelectedEditTableId(null);
     }
@@ -289,7 +300,7 @@ const TableMap: React.FC<TableMapProps> = ({
             Rezervată
           </span>
         </div>
-        <Button variant={editMode ? 'default' : 'outline'} size="sm" onClick={toggleEditMode}>
+        <Button variant={editMode ? 'default' : 'outline'} size="sm" onClick={() => void toggleEditMode()}>
           {editMode ? <Lock className="w-4 h-4 mr-1" /> : <Move className="w-4 h-4 mr-1" />}
           {editMode ? 'Blochează' : 'Editează hartă'}
         </Button>

@@ -142,6 +142,7 @@ const POSModule: React.FC = () => {
           description: 'Verifică API-ul PATCH /tables/:id.',
           variant: 'destructive',
         });
+        throw new Error('PATCH /tables/:id failed');
       }
     },
     [toast],
@@ -367,21 +368,49 @@ const POSModule: React.FC = () => {
     }
   };
 
-  const handleChangePaymentMethod = (orderId: string, newMethod: PaymentMethod) => {
-    const order = posOrders.find((o) => o.id === orderId);
-    if (order) {
-      const next = { ...order, paymentMethod: newMethod };
-      setPosOrders((prev) => prev.map((o) => (o.id === orderId ? next : o)));
-      if (selectedOrderDetails?.id === orderId) {
-        setSelectedOrderDetails(next);
-      }
-      toast({
-        title: 'Metodă de plată (local)',
-        description: `${getPaymentLabel(newMethod)} – reîncarcă lista după ce există PATCH /orders în API.`,
-      });
+  const handleChangePaymentMethod = async (orderId: string, newMethod: PaymentMethod) => {
+    const numericId = Number(orderId);
+    if (!Number.isFinite(numericId)) {
+      setEditingPaymentOrderId(null);
+      return;
     }
-    setEditingPaymentOrderId(null);
+
+    try {
+      await ordersApi.update(numericId, { paymentMethod: newMethod });
+      await fetchPosOrders();
+      if (selectedOrderDetails?.id === orderId) {
+        const refreshed = await ordersApi.getOne(numericId);
+        setSelectedOrderDetails(orderApiToPosOrder(refreshed));
+      }
+      toast({ title: 'Metodă de plată actualizată', description: getPaymentLabel(newMethod) });
+    } catch {
+      toast({
+        title: 'Eroare la actualizarea plății',
+        description: 'Nu s-a putut salva metoda de plată în baza de date.',
+        variant: 'destructive',
+      });
+    } finally {
+      setEditingPaymentOrderId(null);
+    }
   };
+
+  const handleUpdateExternalOrder = useCallback(
+    async (order: Order) => {
+      const numericId = Number(order.id);
+      if (!Number.isFinite(numericId)) return;
+      try {
+        await ordersApi.update(numericId, { status: order.status });
+        await fetchPosOrders();
+      } catch {
+        toast({
+          title: 'Eroare la actualizarea comenzii',
+          description: 'Nu s-a putut salva statusul comenzii în baza de date.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [fetchPosOrders, toast],
+  );
 
   const handleGenerateInvoice = (order: Order) => {
     setInvoiceOrder(order);
@@ -544,9 +573,7 @@ const POSModule: React.FC = () => {
           </Button>
           <ExternalOrdersNotification
             orders={posOrders}
-            onUpdateOrder={(o) =>
-              setPosOrders((prev) => prev.map((x) => (x.id === o.id ? o : x)))
-            }
+            onUpdateOrder={(o) => void handleUpdateExternalOrder(o)}
           />
           <Button
             variant="outline"

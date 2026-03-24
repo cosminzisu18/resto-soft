@@ -267,6 +267,14 @@ export interface CreateOrderBody {
   items: CreateOrderItemBody[];
 }
 
+export interface UpdateOrderBody {
+  status?: OrderStatusApi;
+  paymentMethod?: 'cash' | 'card' | 'usage_card';
+  tip?: number;
+  cui?: string;
+  paidAt?: string;
+}
+
 export interface CustomerApi {
   id: number;
   name: string;
@@ -330,6 +338,8 @@ export const ordersApi = {
   getOne: (id: number) => request<OrderApi | null>(`/orders/${id}`),
   create: (body: CreateOrderBody) =>
     request<OrderApi>('/orders', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: number, body: UpdateOrderBody) =>
+    request<OrderApi | null>(`/orders/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   addItems: (orderId: number, items: CreateOrderItemBody[]) =>
     request<OrderApi>(`/orders/${orderId}/items`, { method: 'POST', body: JSON.stringify({ items }) }),
   updateItemStatus: (

@@ -167,6 +167,7 @@ const RestaurantApp: React.FC = () => {
           description: 'Verifică API-ul PATCH /tables/:id.',
           variant: 'destructive',
         });
+        throw new Error('PATCH /tables/:id failed');
       }
     },
     [toast],
