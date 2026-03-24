@@ -15,6 +15,15 @@ import { cn } from '@/lib/utils';
 interface TableEditPanelProps {
   selectedTableId: number | null;
   onSelectTable: (id: number | null) => void;
+  /** Lista meselor de pe hartă (ex. din API); altfel se folosește contextul. */
+  tablesForEdit?: Table[];
+  /**
+   * Înlocuiește doar `updateTable` când e setat: actualizare context + sincron părinte/API.
+   * Dacă lipsește, se folosește `updateTable` din context.
+   */
+  onTableUpdated?: (table: Table) => void;
+  /** Când e furnizat, adăugarea de masă se face prin părinte (ex: API), nu local context. */
+  onTableCreated?: (table: Omit<Table, 'id'>) => Promise<void> | void;
 }
 
 const TABLE_COLORS = [
@@ -71,10 +80,17 @@ const getPreviewShapeClass = (shape: Table['shape'], seats: number) => {
   return cn(sizeClass, shape === 'round' ? 'rounded-full' : 'rounded-xl');
 };
 
-const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSelectTable }) => {
-  const { tables, updateTable, addTable, deleteTable } = useRestaurant();
+const TableEditPanel: React.FC<TableEditPanelProps> = ({
+  selectedTableId,
+  onSelectTable,
+  tablesForEdit,
+  onTableUpdated,
+  onTableCreated,
+}) => {
+  const { tables: contextTables, updateTable, addTable, deleteTable } = useRestaurant();
+  const editList = tablesForEdit ?? contextTables;
   const { toast } = useToast();
-  const selectedTable = tables.find(t => t.id === selectedTableId);
+  const selectedTable = editList.find((t) => t.id === selectedTableId);
 
   const [editNumber, setEditNumber] = useState(0);
   const [editSeats, setEditSeats] = useState(4);
@@ -118,7 +134,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
 
   const confirmSave = () => {
     if (!selectedTable) return;
-    updateTable({
+    const updated: Table = {
       ...selectedTable,
       number: editNumber,
       seats: editSeats,
@@ -126,7 +142,12 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
       color: editColor,
       qrCode: editQrCode,
       position: { x: editPosX, y: editPosY },
-    });
+    };
+    if (onTableUpdated) {
+      onTableUpdated(updated);
+    } else {
+      updateTable(updated);
+    }
     toast({ title: `Masa ${editNumber} actualizată` });
     setShowSaveConfirm(false);
   };
@@ -144,16 +165,21 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
     setShowDeleteConfirm(false);
   };
 
-  const handleAddTable = () => {
-    const maxNumber = tables.reduce((max, t) => Math.max(max, t.number), 0);
-    addTable({
+  const handleAddTable = async () => {
+    const maxNumber = editList.reduce((max, t) => Math.max(max, t.number), 0);
+    const draft: Omit<Table, 'id'> = {
       number: maxNumber + 1,
       seats: 4,
       status: 'free',
       position: { x: 50, y: 50 },
       shape: 'square',
       qrCode: generateQrId(),
-    });
+    };
+    if (onTableCreated) {
+      await onTableCreated(draft);
+    } else {
+      addTable(draft);
+    }
     toast({ title: `Masa ${maxNumber + 1} adăugată` });
   };
 
@@ -176,7 +202,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({ selectedTableId, onSele
         </div>
 
         <div className="p-3">
-          <Button onClick={handleAddTable} size="sm" className="w-full">
+          <Button onClick={() => void handleAddTable()} size="sm" className="w-full">
             <Plus className="w-4 h-4 mr-2" />
             Adaugă masă nouă
           </Button>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Reservation, Table } from '@/data/mockData';
@@ -10,13 +10,14 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { reservationsApi, type ReservationApi } from '@/lib/api';
 
 interface ReservationManagerProps {
   reservations: Reservation[];
   tables: Table[];
   onCreateReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'>) => void;
   onUpdateReservation: (reservation: Reservation) => void;
-  onDeleteReservation: (id: string) => void;
+  onDeleteReservation: (id: number) => void;
 }
 
 const ReservationManager: React.FC<ReservationManagerProps> = ({
@@ -29,6 +30,8 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
   const { toast } = useToast();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [apiReservations, setApiReservations] = useState<Reservation[]>([]);
+  const [loadingReservations, setLoadingReservations] = useState(false);
   
   const [form, setForm] = useState({
     customerName: '',
@@ -44,7 +47,7 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
   // Suggest tables based on party size
   const suggestTables = (partySize: number): number[] => {
     const sortedTables = [...tables]
-      .filter(t => t.status === 'free')
+      .filter((t) => availableTables.some((at) => at.id === t.id))
       .sort((a, b) => a.seats - b.seats);
 
     // First, try to find a single table that fits
@@ -74,48 +77,131 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
   };
 
   const [suggestedTableIds, setSuggestedTableIds] = useState<number[]>([]);
+  const [selectedTableIds, setSelectedTableIds] = useState<number[]>([]);
+
+  const mapApiReservation = (r: ReservationApi): Reservation => ({
+    id: r.id,
+    customerName: r.customerName,
+    customerPhone: r.customerPhone ?? '',
+    customerEmail: r.customerEmail ?? undefined,
+    date: new Date(r.date),
+    time: r.time,
+    partySize: r.partySize,
+    tableIds: r.reservationTables?.map((rt) => rt.tableId) ?? [],
+    status: r.status,
+    notes: r.notes ?? undefined,
+    source: r.source,
+    createdAt: new Date(r.createdAt),
+  });
+
+  const loadReservations = async (date?: string) => {
+    setLoadingReservations(true);
+    try {
+      const list = await reservationsApi.getAll(date);
+      setApiReservations(list.map(mapApiReservation));
+    } catch {
+      setApiReservations([]);
+      toast({
+        title: 'Nu s-au putut încărca rezervările din DB',
+        description: 'Verifică backend-ul / baza de date.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingReservations(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadReservations(selectedDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
+  const reservationsList = apiReservations;
 
   const handlePartySizeChange = (size: string) => {
     setForm({ ...form, partySize: size });
     const suggested = suggestTables(parseInt(size));
     setSuggestedTableIds(suggested);
+    setSelectedTableIds(suggested);
+  };
+
+  const availableTables = useMemo(() => {
+    const blockedByReservation = new Set(
+      reservationsList
+        .filter((r) => {
+          if (!['pending', 'confirmed', 'arrived'].includes(r.status)) return false;
+          const sameDate = new Date(r.date).toDateString() === new Date(form.date).toDateString();
+          return sameDate && r.time === form.time;
+        })
+        .flatMap((r) => r.tableIds),
+    );
+    return tables.filter((t) => !blockedByReservation.has(t.id));
+  }, [tables, reservationsList, form.date, form.time]);
+
+  const toggleSelectedTable = (tableId: number) => {
+    setSelectedTableIds((prev) =>
+      prev.includes(tableId) ? prev.filter((id) => id !== tableId) : [...prev, tableId],
+    );
   };
 
   const handleSubmit = () => {
-    if (!form.customerName || !form.customerPhone || suggestedTableIds.length === 0) {
+    if (!form.customerName || !form.customerPhone || selectedTableIds.length === 0) {
       toast({ title: 'Completează toate câmpurile', variant: 'destructive' });
       return;
     }
 
-    onCreateReservation({
-      customerName: form.customerName,
-      customerPhone: form.customerPhone,
-      customerEmail: form.customerEmail || undefined,
-      date: new Date(form.date),
-      time: form.time,
-      partySize: parseInt(form.partySize),
-      tableIds: suggestedTableIds,
-      status: 'pending',
-      notes: form.notes || undefined,
-      source: form.source,
-    });
-
-    toast({ title: 'Rezervare creată cu succes' });
-    setShowAddDialog(false);
-    setForm({
-      customerName: '',
-      customerPhone: '',
-      customerEmail: '',
-      date: new Date().toISOString().split('T')[0],
-      time: '19:00',
-      partySize: '2',
-      notes: '',
-      source: 'phone',
-    });
-    setSuggestedTableIds([]);
+    reservationsApi
+      .create({
+        customerName: form.customerName,
+        customerPhone: form.customerPhone,
+        customerEmail: form.customerEmail || undefined,
+        date: form.date,
+        time: form.time,
+        partySize: parseInt(form.partySize, 10),
+        tableIds: selectedTableIds,
+        status: 'pending',
+        notes: form.notes || undefined,
+        source: form.source,
+      })
+      .then(async () => {
+        onCreateReservation({
+          customerName: form.customerName,
+          customerPhone: form.customerPhone,
+          customerEmail: form.customerEmail || undefined,
+          date: new Date(form.date),
+          time: form.time,
+          partySize: parseInt(form.partySize, 10),
+          tableIds: selectedTableIds,
+          status: 'pending',
+          notes: form.notes || undefined,
+          source: form.source,
+        });
+        await loadReservations(selectedDate);
+        toast({ title: 'Rezervare creată cu succes' });
+        setShowAddDialog(false);
+        setForm({
+          customerName: '',
+          customerPhone: '',
+          customerEmail: '',
+          date: new Date().toISOString().split('T')[0],
+          time: '19:00',
+          partySize: '2',
+          notes: '',
+          source: 'phone',
+        });
+        setSuggestedTableIds([]);
+        setSelectedTableIds([]);
+      })
+      .catch((e) =>
+        toast({
+          title: 'Eroare la crearea rezervării',
+          description: String(e),
+          variant: 'destructive',
+        }),
+      );
   };
 
-  const todayReservations = reservations.filter(r => 
+  const todayReservations = reservationsList.filter(r => 
     new Date(r.date).toDateString() === new Date(selectedDate).toDateString()
   );
 
@@ -234,7 +320,17 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
                       <Button
                         size="sm"
                         className="flex-1 min-w-[80px]"
-                        onClick={() => onUpdateReservation({ ...reservation, status: 'confirmed' })}
+                        onClick={() => {
+                          reservationsApi
+                            .update(reservation.id, { status: 'confirmed' })
+                            .then(async () => {
+                              onUpdateReservation({ ...reservation, status: 'confirmed' });
+                              await loadReservations(selectedDate);
+                            })
+                            .catch(() =>
+                              toast({ title: 'Eroare la actualizare', variant: 'destructive' }),
+                            );
+                        }}
                       >
                         <Check className="w-4 h-4 mr-1" />
                         Confirmă
@@ -245,7 +341,17 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
                         size="sm"
                         variant="success"
                         className="flex-1 min-w-[80px]"
-                        onClick={() => onUpdateReservation({ ...reservation, status: 'arrived' })}
+                        onClick={() => {
+                          reservationsApi
+                            .update(reservation.id, { status: 'arrived' })
+                            .then(async () => {
+                              onUpdateReservation({ ...reservation, status: 'arrived' });
+                              await loadReservations(selectedDate);
+                            })
+                            .catch(() =>
+                              toast({ title: 'Eroare la actualizare', variant: 'destructive' }),
+                            );
+                        }}
                       >
                         Sosit
                       </Button>
@@ -254,7 +360,17 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
                       size="sm"
                       variant="destructive"
                       className="shrink-0"
-                      onClick={() => onDeleteReservation(reservation.id)}
+                      onClick={() => {
+                        reservationsApi
+                          .delete(reservation.id)
+                          .then(async () => {
+                            onDeleteReservation(reservation.id);
+                            await loadReservations(selectedDate);
+                          })
+                          .catch(() =>
+                            toast({ title: 'Eroare la ștergere', variant: 'destructive' }),
+                          );
+                      }}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -384,6 +500,38 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
             )}
 
             <div>
+              <label className="text-sm font-medium">Selectează mesele *</label>
+              <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-border p-2">
+                {availableTables.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nu sunt mese disponibile la data/ora selectată.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {availableTables.map((table) => {
+                      const selected = selectedTableIds.includes(table.id);
+                      return (
+                        <button
+                          key={table.id}
+                          type="button"
+                          onClick={() => toggleSelectedTable(table.id)}
+                          className={cn(
+                            'rounded-full border px-3 py-1 text-sm transition-colors',
+                            selected
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-border bg-background hover:border-primary',
+                          )}
+                        >
+                          Masa {table.number} ({table.seats})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
               <label className="text-sm font-medium">Note</label>
               <Input
                 value={form.notes}
@@ -395,7 +543,7 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
             <Button 
               className="w-full" 
               onClick={handleSubmit}
-              disabled={suggestedTableIds.length === 0}
+              disabled={selectedTableIds.length === 0 || loadingReservations}
             >
               <Calendar className="w-4 h-4 mr-2" />
               Creează rezervare

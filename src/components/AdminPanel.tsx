@@ -14,7 +14,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, MenuItem, menuCategories, users, deliveryPlatforms, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation, upsellQuestions, UpsellQuestion, expiringProducts, ExpiringProduct, menuItems } from '@/data/mockData';
-import { menuApi, tablesApi, type TableApi } from '@/lib/api';
+import { menuApi, tablesApi, normalizeTablePosition, type TableApi } from '@/lib/api';
 import AdminTableMap from '@/components/AdminTableMap';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -80,7 +80,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     number: api.number,
     seats: api.seats,
     status: api.status,
-    position: api.position ?? { x: 50, y: 50 },
+    position: normalizeTablePosition(api.position) ?? { x: 50, y: 50 },
     shape: api.shape,
     currentOrderId: api.currentOrderId ?? undefined,
     reservationId: api.reservationId ?? undefined,

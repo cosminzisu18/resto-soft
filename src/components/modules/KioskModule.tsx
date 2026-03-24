@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { useLanguage } from '@/context/LanguageContext';
-import { imageSrc, menuApi, ordersApi, type MenuItemApi } from '@/lib/api';
+import { imageSrc, menuApi, ordersApi, tablesApi, type MenuItemApi, type TableApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
@@ -35,6 +35,8 @@ interface KioskMenuItem {
   description: string;
   price: number;
   category: string;
+  kdsStationId?: number;
+  kdsStationType?: string;
   prepTime: number;
   ingredients: string[];
   availableExtras: { id: number; name: string; price: number; image?: string | null }[];
@@ -110,6 +112,8 @@ const KioskModule: React.FC = () => {
       description: item.description ?? '',
       price: Number(item.price ?? 0),
       category: item.category,
+      kdsStationId: item.kdsStationId,
+      kdsStationType: item.kdsStation?.type,
       prepTime: Number(item.prepTime ?? 0),
       ingredients:
         item.menuItemIngredients?.map((r) => r.ingredient?.name ?? `Ingredient #${r.ingredientId}`) ??
@@ -268,10 +272,34 @@ const KioskModule: React.FC = () => {
     if (!orderMode || cart.length === 0) return;
     setStep('processing');
     try {
+      const allTables = await tablesApi.getTables();
+      let kioskFallbackTable =
+        allTables.find((t) => (t.zone ?? '').toLowerCase().includes('kiosk')) ??
+        allTables.find((t) => t.number === 0) ??
+        null;
+
+      if (!kioskFallbackTable) {
+        const usedNumbers = new Set(allTables.map((t) => t.number));
+        let candidateNumber = 9000;
+        while (usedNumbers.has(candidateNumber)) candidateNumber += 1;
+        kioskFallbackTable = await tablesApi.createTable({
+          number: candidateNumber,
+          seats: 1,
+          shape: 'square',
+          zone: 'Kiosk',
+          status: 'occupied',
+          position: { x: 40, y: 40 },
+        });
+      }
+
+      const resolvedTable: TableApi | null = kioskFallbackTable;
+
       const created = await ordersApi.create({
+        tableId: resolvedTable?.id,
         source: 'kiosk',
+        orderType: 'kiosk',
         fulfillmentType: orderMode === 'dine-in' ? 'dine_in' : 'takeaway',
-        tableNumber: orderMode === 'dine-in' ? 0 : undefined,
+        tableNumber: resolvedTable?.number ?? 0,
         customerName: 'Kiosk Self-Order',
         deliveryAddress: orderMode === 'takeaway' ? 'La pachet (Kiosk)' : null,
         items: cart.map((c) => ({
@@ -281,6 +309,8 @@ const KioskModule: React.FC = () => {
             id: Number(c.menuItem.id),
             name: c.menuItem.name,
             category: c.menuItem.category,
+            kdsStationId: c.menuItem.kdsStationId,
+            kdsStationType: c.menuItem.kdsStationType,
             prepTime: c.menuItem.prepTime,
             image: c.menuItem.image ?? null,
           },

@@ -28,5 +28,16 @@ export function orderItemMatchesKdsStation(item: OrderItem, station: KDSStation)
   if (mi.kdsStationId != null && String(mi.kdsStationId) === String(station.id)) return true;
   if (mi.kdsStation === station.id) return true;
   if (mi.kdsStation === station.type) return true;
+  const category = (mi.category ?? '').toLowerCase();
+  const inferredType: KdsStationType | null = category.includes('sup')
+    ? 'soups'
+    : category.includes('pizza')
+      ? 'pizza'
+      : category.includes('giros') || category.includes('doner')
+        ? 'giros'
+        : category
+              ? 'grill'
+              : null;
+  if (inferredType && inferredType === station.type) return true;
   return false;
 }

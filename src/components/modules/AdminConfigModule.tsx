@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
-import { imageSrc, menuApi, storageApi, tablesApi, type KdsStationApi, type KdsStationType, type StorageZoneApi, type TableApi } from '@/lib/api';
+import { imageSrc, menuApi, normalizeTablePosition, storageApi, tablesApi, type KdsStationApi, type KdsStationType, type StorageZoneApi, type TableApi } from '@/lib/api';
 import { ImageUploadButton } from '@/components/ui/image-upload-button';
 import {
   Settings,
@@ -223,7 +223,12 @@ export const AdminConfigModule: React.FC = () => {
     setDbTablesLoading(true);
     try {
       const list = await tablesApi.getTables();
-      setDbTables(list);
+      setDbTables(
+        list.map((t) => ({
+          ...t,
+          position: normalizeTablePosition(t.position),
+        })),
+      );
     } catch {
       toast({ title: 'Eroare', description: 'Nu s-au putut încărca mesele.', variant: 'destructive' });
     } finally {

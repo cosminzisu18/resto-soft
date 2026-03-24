@@ -6,6 +6,12 @@ function menuItemFromSnapshot(menuItemId: number, raw: Record<string, unknown> |
   const name = String(mj.name ?? 'Produs');
   const price = Number(mj.price ?? 0);
   const prepTime = Number(mj.prepTime ?? 0);
+  const kdsStationId =
+    typeof mj.kdsStationId === 'number'
+      ? mj.kdsStationId
+      : Number.isFinite(Number(mj.kdsStationId))
+        ? Number(mj.kdsStationId)
+        : undefined;
   const kdsStation =
     typeof mj.kdsStation === 'string'
       ? mj.kdsStation
@@ -22,6 +28,7 @@ function menuItemFromSnapshot(menuItemId: number, raw: Record<string, unknown> |
     prepTime,
     ingredients: [],
     unitType: mj.unitType === 'gram' || mj.unitType === 'portie' || mj.unitType === 'buc' ? mj.unitType : undefined,
+    ...(kdsStationId != null ? { kdsStationId } : {}),
   };
 }
 
@@ -66,6 +73,7 @@ export function orderApiToPosOrder(a: OrderApi): Order {
     tip: Number(a.tip ?? 0),
     cui: a.cui ?? undefined,
     source,
+    orderType: a.orderType ?? undefined,
     customerName: a.customerName ?? undefined,
     customerPhone: a.customerPhone ?? undefined,
     deliveryAddress: a.deliveryAddress ?? undefined,

@@ -5,6 +5,7 @@ import { Table, MenuItem, Order, OrderItem, UnitType } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { menuApi, ordersApi, imageSrc, type CreateOrderItemBody, type MenuItemApi, type OrderApi, type OrderItemApi } from '@/lib/api';
+import { orderApiToPosOrder } from '@/lib/posOrderMapper';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
@@ -50,9 +51,17 @@ interface OrderPanelProps {
   apiOrder?: OrderApi | null;
   /** Reîncarcă comanda din API după adăugare articole. */
   refetchOrder?: () => Promise<void>;
+  /** Tipul de comandă implicit când se creează prima comandă pe masă. */
+  defaultOrderType?: 'restaurant' | 'phone' | 'takeaway';
 }
 
-const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refetchOrder }) => {
+const OrderPanel: React.FC<OrderPanelProps> = ({
+  table,
+  onClose,
+  apiOrder,
+  refetchOrder,
+  defaultOrderType = 'restaurant',
+}) => {
   const { 
     createOrder, addItemToOrder, 
     updateOrder, completeOrder, updateOrderItemStatus, orders
@@ -111,6 +120,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
   const [modWeightGrams, setModWeightGrams] = useState<string>('');
   const [upsellAnsweredForOrder, setUpsellAnsweredForOrder] = useState<string | null>(null);
   const [showOrderHistory, setShowOrderHistory] = useState(false);
+  const [tableHistoryOrders, setTableHistoryOrders] = useState<Order[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   
   // Payment state
@@ -620,10 +631,19 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
             }
           }
           const createItems = Array.from(grouped.values());
+          const createSource = defaultOrderType === 'phone' ? 'phone' : 'restaurant';
+          const createOrderType =
+            defaultOrderType === 'takeaway'
+              ? 'takeaway'
+              : defaultOrderType === 'phone'
+                ? 'phone'
+                : 'restaurant';
           const created = await ordersApi.create({
             tableId: table.id,
             tableNumber: table.number,
-            source: 'restaurant',
+            source: createSource,
+            orderType: createOrderType,
+            fulfillmentType: defaultOrderType === 'takeaway' ? 'takeaway' : 'dine_in',
             items: createItems,
           });
           await refetchOrder?.();
@@ -677,6 +697,28 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
     const ctxPendingItems = pendingItems as OrderItem[];
     void ctxPendingItems;
     toast({ title: 'Comandă trimisă la bucătărie', description: `${pendingItems.length} articole trimise (pending)` });
+  };
+
+  const handleOpenOrderHistory = async () => {
+    if (!useApi) {
+      setShowOrderHistory(true);
+      return;
+    }
+
+    setHistoryLoading(true);
+    try {
+      const list = await ordersApi.getByTableId(table.id);
+      setTableHistoryOrders(list.map(orderApiToPosOrder));
+      setShowOrderHistory(true);
+    } catch (e) {
+      toast({
+        title: 'Istoric indisponibil',
+        description: String(e),
+        variant: 'destructive',
+      });
+    } finally {
+      setHistoryLoading(false);
+    }
   };
 
   const getPayableAmount = (): number => {
@@ -786,9 +828,10 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => setShowOrderHistory(true)}
+            onClick={() => void handleOpenOrderHistory()}
+            disabled={historyLoading}
           >
-            <History className="w-4 h-4 md:mr-2" />
+            <History className={cn('w-4 h-4 md:mr-2', historyLoading && 'animate-spin')} />
             <span className="hidden md:inline">Istoric</span>
           </Button>
           <Button 
@@ -1924,7 +1967,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ table, onClose, apiOrder, refet
       <OrderHistoryDialog
         open={showOrderHistory}
         onClose={() => setShowOrderHistory(false)}
-        orders={orders}
+        orders={useApi ? tableHistoryOrders : orders}
         tableNumber={table.number}
         onUpdateOrder={updateOrder}
       />

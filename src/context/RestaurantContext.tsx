@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { 
   User, Table, MenuItem, Order, OrderItem, KDSStation, Reservation, Notification, OrderSource,
-  users, initialTables, menuItems, kdsStations, sampleOrders, sampleReservations, sampleNotifications, deliveryPlatforms
+  users, initialTables, menuItems, kdsStations, sampleOrders, sampleNotifications, deliveryPlatforms
 } from '@/data/mockData';
 import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
 
@@ -37,7 +37,7 @@ interface RestaurantContextType {
   reservations: Reservation[];
   createReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'>) => void;
   updateReservation: (reservation: Reservation) => void;
-  deleteReservation: (id: string) => void;
+  deleteReservation: (id: number) => void;
   
   // Notifications
   notifications: Notification[];
@@ -64,7 +64,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [tables, setTables] = useState<Table[]>(initialTables);
   const [menu, setMenu] = useState<MenuItem[]>(menuItems);
   const [orders, setOrders] = useState<Order[]>(sampleOrders);
-  const [reservations, setReservations] = useState<Reservation[]>(sampleReservations);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>(sampleNotifications);
   const [kdsStationsList, setKdsStationsList] = useState<KDSStation[]>(kdsStations);
 
@@ -258,7 +258,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const createReservation = useCallback((reservation: Omit<Reservation, 'id' | 'createdAt'>) => {
     const newReservation: Reservation = {
       ...reservation,
-      id: `r${Date.now()}`,
+      id: Date.now(),
       createdAt: new Date(),
     };
     setReservations(prev => [...prev, newReservation]);
@@ -282,7 +282,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setReservations(prev => prev.map(r => r.id === reservation.id ? reservation : r));
   }, []);
 
-  const deleteReservation = useCallback((id: string) => {
+  const deleteReservation = useCallback((id: number) => {
     const reservation = reservations.find(r => r.id === id);
     if (reservation) {
       reservation.tableIds.forEach(tableId => {

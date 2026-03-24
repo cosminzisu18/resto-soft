@@ -140,6 +140,29 @@ export interface TableApi {
   branchId?: string | null;
 }
 
+export function normalizeTablePosition(
+  raw: unknown,
+): { x: number; y: number } | null {
+  if (!raw) return null;
+
+  let parsed: unknown = raw;
+  for (let i = 0; i < 3 && typeof parsed === 'string'; i += 1) {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const maybe = parsed as { x?: unknown; y?: unknown };
+  const x = typeof maybe.x === 'number' ? maybe.x : Number(maybe.x);
+  const y = typeof maybe.y === 'number' ? maybe.y : Number(maybe.y);
+  if (Number.isNaN(x) || Number.isNaN(y)) return null;
+
+  return { x, y };
+}
+
 export interface UpdateTableBody {
   position?: { x: number; y: number };
   mergedWith?: number[];
@@ -200,6 +223,15 @@ export interface OrderApi {
   totalAmount: number;
   tip: number;
   source: string;
+  orderType?:
+    | 'restaurant'
+    | 'takeaway'
+    | 'phone'
+    | 'glovo'
+    | 'wolt'
+    | 'bolt'
+    | 'own_website'
+    | 'kiosk';
   fulfillmentType?: 'dine_in' | 'takeaway' | null;
   items: OrderItemApi[];
   syncTiming?: boolean;
@@ -226,6 +258,7 @@ export interface CreateOrderBody {
   waiterName?: string;
   status?: OrderStatusApi;
   source?: string;
+  orderType?: 'restaurant' | 'takeaway' | 'phone' | 'glovo' | 'wolt' | 'bolt' | 'own_website' | 'kiosk';
   fulfillmentType?: 'dine_in' | 'takeaway';
   customerName?: string;
   customerPhone?: string;
@@ -234,9 +267,65 @@ export interface CreateOrderBody {
   items: CreateOrderItemBody[];
 }
 
+export interface CustomerApi {
+  id: number;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  orderHistory?: string[] | null;
+  createdAt: string;
+  notes?: string | null;
+}
+
+export interface CreateCustomerBody {
+  name: string;
+  phone?: string;
+  email?: string;
+  orderHistory?: string[];
+  notes?: string;
+}
+
+export type UpdateCustomerBody = Partial<CreateCustomerBody>;
+
+export type ReservationStatusApi = 'pending' | 'confirmed' | 'arrived' | 'completed' | 'cancelled';
+export type ReservationSourceApi = 'phone' | 'online' | 'walk-in';
+
+export interface ReservationApi {
+  id: number;
+  customerName: string;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  date: string;
+  time: string;
+  partySize: number;
+  status: ReservationStatusApi;
+  notes?: string | null;
+  source: ReservationSourceApi;
+  createdAt: string;
+  reservationTables?: { tableId: number }[];
+}
+
+export interface CreateReservationBody {
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  date: string;
+  time: string;
+  partySize: number;
+  status?: ReservationStatusApi;
+  notes?: string;
+  source: ReservationSourceApi;
+  tableIds: number[];
+}
+
+export type UpdateReservationBody = Partial<CreateReservationBody>;
+
 export const ordersApi = {
-  getByTableId: (tableId: number) =>
-    request<OrderApi[]>(`/orders?tableId=${encodeURIComponent(String(tableId))}`),
+  getByTableId: (tableId: number, date?: string) => {
+    const params = new URLSearchParams({ tableId: String(tableId) });
+    if (date) params.set('date', date);
+    return request<OrderApi[]>(`/orders?${params.toString()}`);
+  },
   getAll: () => request<OrderApi[]>('/orders'),
   getOne: (id: number) => request<OrderApi | null>(`/orders/${id}`),
   create: (body: CreateOrderBody) =>
@@ -253,6 +342,35 @@ export const ordersApi = {
       method: 'PATCH',
       body: JSON.stringify({ status, ...actor }),
     }),
+};
+
+export const customersApi = {
+  getAll: () => request<CustomerApi[]>('/customers'),
+  getOne: (id: number) => request<CustomerApi | null>(`/customers/${id}`),
+  create: (body: CreateCustomerBody) =>
+    request<CustomerApi>('/customers', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: number, body: UpdateCustomerBody) =>
+    request<CustomerApi | null>(`/customers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  delete: (id: number) => request<void>(`/customers/${id}`, { method: 'DELETE' }),
+};
+
+export const reservationsApi = {
+  getAll: (date?: string) =>
+    request<ReservationApi[]>(
+      date ? `/reservations?date=${encodeURIComponent(date)}` : '/reservations',
+    ),
+  getOne: (id: number) => request<ReservationApi | null>(`/reservations/${id}`),
+  create: (body: CreateReservationBody) =>
+    request<ReservationApi>('/reservations', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: number, body: UpdateReservationBody) =>
+    request<ReservationApi | null>(`/reservations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  delete: (id: number) => request<void>(`/reservations/${id}`, { method: 'DELETE' }),
 };
 
 export const menuApi = {

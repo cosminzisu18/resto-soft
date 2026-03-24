@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Table } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,13 @@ interface TableMapProps {
   tables?: Table[];
   /** Când e furnizat, se folosește pentru badge-ul de articole pe masă (ex. comanda din API). */
   getActiveOrderForTable?: (tableId: number) => { items: unknown[] } | undefined;
+  /**
+   * După mutare/salvare pe hartă: actualizează lista controlată de părinte + opțional API.
+   * Necesar când `tables` vine din state (ex. ospătar/POS din DB) — altfel doar contextul se actualiza.
+   */
+  onTableUpdated?: (table: Table) => void;
+  /** Creează o masă nouă (ex. POST /tables) când harta e API-controlled. */
+  onTableCreated?: (table: Omit<Table, 'id'>) => Promise<void> | void;
 }
 
 const DRAG_THRESHOLD = 6;
@@ -30,6 +37,8 @@ const TableMap: React.FC<TableMapProps> = ({
   onTableSelect,
   tables: tablesProp,
   getActiveOrderForTable: getOrderProp,
+  onTableUpdated,
+  onTableCreated,
 }) => {
   const { tables: contextTables, getActiveOrderForTable: contextGetOrder, updateTable } = useRestaurant();
   const tables = tablesProp ?? contextTables;
@@ -39,6 +48,42 @@ const TableMap: React.FC<TableMapProps> = ({
   const [selectedForMerge, setSelectedForMerge] = useState<number[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [selectedEditTableId, setSelectedEditTableId] = useState<number | null>(null);
+
+  const isApiControlled = Boolean(tablesProp && onTableUpdated);
+  const [stagedTables, setStagedTables] = useState<Table[]>(tables);
+  const [dirtyTableIds, setDirtyTableIds] = useState<Set<number>>(new Set());
+  const hasDirtyRef = useRef(false);
+
+  useEffect(() => {
+    // În edit mode API-controlled, nu suprascriem stagedTables dacă există modificări locale nesalvate.
+    if (isApiControlled && editMode && hasDirtyRef.current) return;
+    setStagedTables(tables);
+    hasDirtyRef.current = false;
+    setDirtyTableIds(new Set());
+  }, [tables, isApiControlled, editMode]);
+
+  const visibleTables = useMemo(
+    () => (isApiControlled && editMode ? stagedTables : tables),
+    [isApiControlled, editMode, stagedTables, tables],
+  );
+
+  const applyTableUpdate = useCallback(
+    (t: Table) => {
+      if (isApiControlled) {
+        setStagedTables((prev) => prev.map((x) => (x.id === t.id ? t : x)));
+        setDirtyTableIds((prev) => {
+          const next = new Set(prev);
+          next.add(t.id);
+          hasDirtyRef.current = next.size > 0;
+          return next;
+        });
+        return;
+      }
+      updateTable(t);
+      onTableUpdated?.(t);
+    },
+    [isApiControlled, updateTable, onTableUpdated],
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -97,7 +142,8 @@ const TableMap: React.FC<TableMapProps> = ({
     [pxToPercent],
   );
 
-  const handlePointerUp = useCallback(() => {
+  /** Salvează poziția în context + părinte/API dacă există drag activ cu poziție; golește mereu starea de drag. */
+  const persistInProgressDrag = useCallback(() => {
     const drag = dragRef.current;
     if (!drag) return;
     const wasDragging = drag.dragging;
@@ -105,23 +151,43 @@ const TableMap: React.FC<TableMapProps> = ({
     const finalPos = latestDragPosRef.current;
     dragRef.current = null;
     latestDragPosRef.current = null;
+    setDragTableId(null);
+    setDragPos(null);
 
     if (wasDragging && finalPos) {
-      const table = tables.find((t) => t.id === tid);
+      const table = visibleTables.find((t) => t.id === tid);
       if (table) {
-        updateTable({ ...table, position: { x: finalPos.x, y: finalPos.y } });
+        applyTableUpdate({ ...table, position: { x: finalPos.x, y: finalPos.y } });
         toast({
           title: `Masa ${table.number} mutată`,
           description: `Poziție: ${finalPos.x.toFixed(1)}%, ${finalPos.y.toFixed(1)}%`,
         });
       }
-    } else if (!wasDragging && editMode) {
-      setSelectedEditTableId(tid);
+    }
+  }, [visibleTables, applyTableUpdate, toast]);
+
+  const handlePointerUp = useCallback(() => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const wasDragging = drag.dragging;
+    const tid = drag.tableId;
+    const finalPos = latestDragPosRef.current;
+
+    if (wasDragging && finalPos) {
+      persistInProgressDrag();
+      return;
     }
 
+    dragRef.current = null;
+    latestDragPosRef.current = null;
     setDragTableId(null);
     setDragPos(null);
-  }, [tables, updateTable, toast, editMode]);
+
+    if (!wasDragging && editMode) {
+      setSelectedEditTableId(tid);
+    }
+  }, [editMode, persistInProgressDrag]);
+
 
   const getTableShape = (shape: Table['shape']) => {
     switch (shape) {
@@ -169,11 +235,11 @@ const TableMap: React.FC<TableMapProps> = ({
       toast({ title: 'Selectează cel puțin 2 mese', variant: 'destructive' });
       return;
     }
-    const mainTable = tables.find((t) => t.id === selectedForMerge[0]);
+    const mainTable = visibleTables.find((t) => t.id === selectedForMerge[0]);
     if (mainTable) {
-      updateTable({ ...mainTable, mergedWith: selectedForMerge.slice(1) });
+      applyTableUpdate({ ...mainTable, mergedWith: selectedForMerge.slice(1) });
       toast({
-        title: `Mese unite: ${selectedForMerge.map((id) => tables.find((t) => t.id === id)?.number).join(' + ')}`,
+        title: `Mese unite: ${selectedForMerge.map((id) => visibleTables.find((t) => t.id === id)?.number).join(' + ')}`,
       });
     }
     setMergeMode(false);
@@ -181,10 +247,24 @@ const TableMap: React.FC<TableMapProps> = ({
   };
 
   const toggleEditMode = () => {
-    setEditMode((prev) => {
-      if (prev) setSelectedEditTableId(null);
-      return !prev;
-    });
+    if (editMode) {
+      // La „Blochează”: persistă și o tragere neterminată (dacă există), ca poziția să ajungă în DB
+      persistInProgressDrag();
+      if (isApiControlled && dirtyTableIds.size > 0) {
+        for (const id of dirtyTableIds) {
+          const changed = stagedTables.find((t) => t.id === id);
+          if (changed) onTableUpdated?.(changed);
+        }
+        toast({
+          title: 'Harta salvată în baza de date',
+          description: `${dirtyTableIds.size} ${dirtyTableIds.size === 1 ? 'masă actualizată' : 'mese actualizate'}.`,
+        });
+        hasDirtyRef.current = false;
+        setDirtyTableIds(new Set());
+      }
+      setSelectedEditTableId(null);
+    }
+    setEditMode((prev) => !prev);
     if (mergeMode) {
       setMergeMode(false);
       setSelectedForMerge([]);
@@ -236,7 +316,7 @@ const TableMap: React.FC<TableMapProps> = ({
       </div>
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {tablesProp !== undefined && tables.length === 0 ? (
+        {tablesProp !== undefined && visibleTables.length === 0 ? (
           <div className="flex flex-col items-center justify-center flex-1 min-h-[400px] text-center text-muted-foreground px-4">
             <p className="font-medium text-foreground mb-1">Nu există mese în baza de date</p>
             <p className="text-sm max-w-md">
@@ -267,7 +347,7 @@ const TableMap: React.FC<TableMapProps> = ({
                   backgroundSize: '20px 20px',
                 }}
               >
-                {tables.map((table) => {
+                {visibleTables.map((table) => {
                   const order = getActiveOrderForTable(table.id);
                   const hasItems = order && order.items.length > 0;
                   const isSelectedForMerge = selectedForMerge.includes(table.id);
@@ -320,7 +400,13 @@ const TableMap: React.FC<TableMapProps> = ({
             </div>
 
             {editMode && (
-              <TableEditPanel selectedTableId={selectedEditTableId} onSelectTable={setSelectedEditTableId} />
+              <TableEditPanel
+                selectedTableId={selectedEditTableId}
+                onSelectTable={setSelectedEditTableId}
+                tablesForEdit={visibleTables}
+                onTableUpdated={applyTableUpdate}
+                onTableCreated={onTableCreated}
+              />
             )}
           </>
         )}

@@ -124,6 +124,16 @@ export type OrderSource =
   | "own_website"
   | "phone"
   | "kiosk";
+
+export type OrderType =
+  | "restaurant"
+  | "takeaway"
+  | "phone"
+  | "glovo"
+  | "wolt"
+  | "bolt"
+  | "own_website"
+  | "kiosk";
 export type PaymentMethod = "cash" | "card" | "usage_card";
 
 export interface UsageCard {
@@ -171,6 +181,7 @@ export interface Order {
   cui?: string;
   paidAt?: Date;
   source: OrderSource;
+  orderType?: OrderType;
   deliveryAddress?: string;
   customerName?: string;
   customerPhone?: string;
@@ -183,7 +194,7 @@ export interface Order {
 }
 
 export interface Reservation {
-  id: string;
+  id: number;
   customerName: string;
   customerPhone: string;
   customerEmail?: string;
@@ -1018,7 +1029,7 @@ export const orderHistoryItems: {
 // Sample reservations
 export const sampleReservations: Reservation[] = [
   {
-    id: "r1",
+    id: 1,
     customerName: "Andrei Marinescu",
     customerPhone: "0721234567",
     customerEmail: "andrei@email.com",
@@ -1032,7 +1043,7 @@ export const sampleReservations: Reservation[] = [
     createdAt: new Date(Date.now() - 2 * 24 * 60 * 60000),
   },
   {
-    id: "r2",
+    id: 2,
     customerName: "Familia Popescu",
     customerPhone: "0731234567",
     date: new Date(),

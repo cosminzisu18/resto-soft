@@ -1,13 +1,14 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
 import { RestaurantProvider, useRestaurant } from '@/context/RestaurantContext';
 import { Table, KDSStation, kdsStations } from '@/data/mockData';
-import { tablesApi, ordersApi, menuApi, type TableApi, type OrderApi } from '@/lib/api';
+import { tablesApi, ordersApi, menuApi, normalizeTablePosition, type TableApi, type OrderApi } from '@/lib/api';
 import { kdsStationApiToKdsStation } from '@/lib/kdsUtils';
+import { parsePathname, ROUTES } from '@/lib/appRoutes';
 import LoginScreen from '@/components/LoginScreen';
 import TableMap from '@/components/TableMap';
 import OrderPanel from '@/components/OrderPanel';
-import AdminPanel from '@/components/AdminPanel';
-import KDSDisplay from '@/components/KDSDisplay';
 import NotificationCenter from '@/components/NotificationCenter';
 import ReservationManager from '@/components/ReservationManager';
 import DeliveryOrders from '@/components/DeliveryOrders';
@@ -18,7 +19,6 @@ import DashboardModule from '@/components/modules/DashboardModule';
 import ReportsModule from '@/components/modules/ReportsModule';
 import StocksModule from '@/components/modules/StocksModule';
 import PlaceholderModule from '@/components/modules/PlaceholderModule';
-import KDSModuleOptimized from '@/components/modules/KDSModuleOptimized';
 import KDSEnhancedModule from '@/components/modules/KDSEnhancedModule';
 import KDSProductionModule from '@/components/modules/KDSProductionModule';
 import POSModule from '@/components/modules/POSModule';
@@ -69,7 +69,7 @@ import {
   type LucideIcon
 } from 'lucide-react';
 
-type AppView = 'login' | 'waiter' | 'order' | 'admin' | 'kds-select' | 'kds' | 'kiosk' | 'self-order' | 'new-dashboard' | 'order-monitor';
+const getCurrentDateParam = () => new Date().toISOString().slice(0, 10);
 
 const moduleConfig: Record<ModuleType, { title: string; description: string; icon: LucideIcon | null; features: string[] }> = {
   dashboard: { title: '', description: '', icon: null, features: [] },
@@ -92,51 +92,11 @@ const moduleConfig: Record<ModuleType, { title: string; description: string; ico
   chat: { title: 'Chat Intern', description: 'Comunicare internă', icon: MessageSquare, features: ['Chat echipă', 'Suport', 'Notificări'] },
 };
 
-// KDS Selector component inline
-const KDSSelectorInline: React.FC<{ onSelectStation: (station: KDSStation) => void; onBack: () => void }> = ({ onSelectStation, onBack }) => {
-  return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <header className="p-4 border-b border-border">
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Înapoi la login
-        </Button>
-      </header>
-
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full">
-          <div className="text-center mb-8">
-            <MonitorIcon className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h1 className="text-3xl font-bold">Selectează stația KDS</h1>
-            <p className="text-muted-foreground mt-2">Alege stația de bucătărie pentru afișare</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            {kdsStations.map(station => (
-              <button
-                key={station.id}
-                onClick={() => onSelectStation(station)}
-                className={cn(
-                  "p-8 rounded-2xl border-2 border-border transition-all",
-                  "hover:border-primary hover:scale-105",
-                  "bg-card"
-                )}
-              >
-                <span className="text-5xl block mb-4">{station.icon}</span>
-                <h2 className="text-xl font-bold">{station.name}</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Click pentru a deschide
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const RestaurantApp: React.FC = () => {
+  const router = useRouter();
+  const pathname = usePathname();
+  const route = useMemo(() => parsePathname(pathname), [pathname]);
+
   const { toast } = useToast();
   const {
     currentUser,
@@ -153,11 +113,12 @@ const RestaurantApp: React.FC = () => {
     deleteReservation
   } = useRestaurant();
 
-  const [view, setView] = useState<AppView>('login');
+  const activeModule: ModuleType =
+    route.kind === 'dashboard' ? route.module : 'dashboard';
+
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
-  const [selectedStation, setSelectedStation] = useState<KDSStation | null>(null);
-  const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
   const [kdsModuleStation, setKdsModuleStation] = useState<KDSStation | null>(null);
+  const [orderRouteLoading, setOrderRouteLoading] = useState(false);
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('right');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showGlobalHistory, setShowGlobalHistory] = useState(false);
@@ -178,7 +139,7 @@ const RestaurantApp: React.FC = () => {
     number: api.number,
     seats: api.seats,
     status: api.status,
-    position: api.position ?? { x: 50, y: 50 },
+    position: normalizeTablePosition(api.position) ?? { x: 50, y: 50 },
     shape: api.shape,
     currentOrderId: api.currentOrderId ?? undefined,
     reservationId: api.reservationId ?? undefined,
@@ -187,17 +148,70 @@ const RestaurantApp: React.FC = () => {
     qrCode: api.qrCode ?? undefined,
   }), []);
 
+  /** Sincronizare hartă mese (drag/editor) cu state-ul ospătarului și DB. */
+  const persistWaiterTableToStateAndApi = useCallback(
+    async (t: Table) => {
+      setWaiterTables((prev) => prev.map((x) => (x.id === t.id ? t : x)));
+      try {
+        await tablesApi.updateTable(t.id, {
+          position: { x: t.position.x, y: t.position.y },
+          number: t.number,
+          seats: t.seats,
+          shape: t.shape,
+          status: t.status,
+          ...(t.mergedWith !== undefined ? { mergedWith: t.mergedWith } : {}),
+        });
+      } catch {
+        toast({
+          title: 'Eroare la salvarea mesei',
+          description: 'Verifică API-ul PATCH /tables/:id.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast],
+  );
+
+  const createWaiterTableInApi = useCallback(
+    async (draft: Omit<Table, 'id'>) => {
+      try {
+        const created = await tablesApi.createTable({
+          number: draft.number,
+          seats: draft.seats,
+          shape: draft.shape,
+          status: draft.status,
+          position: { x: draft.position.x, y: draft.position.y },
+        });
+        setWaiterTables((prev) => [...prev, mapApiTableToTable(created)]);
+      } catch {
+        toast({
+          title: 'Eroare la adăugarea mesei',
+          description: 'Verifică API-ul POST /tables.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [mapApiTableToTable, toast],
+  );
+
   useEffect(() => {
-    if (view !== 'waiter') return;
+    if (route.kind === 'unknown') {
+      router.replace(ROUTES.login);
+    }
+  }, [route.kind, router]);
+
+  useEffect(() => {
+    if (route.kind !== 'waiter') return;
     setWaiterTablesLoading(true);
-    tablesApi.getTables()
+    tablesApi
+      .getTables()
       .then((list) => setWaiterTables(list.map(mapApiTableToTable)))
       .catch(() => setWaiterTables([]))
       .finally(() => setWaiterTablesLoading(false));
-  }, [view, mapApiTableToTable]);
+  }, [route.kind, mapApiTableToTable]);
 
   useEffect(() => {
-    if (view !== 'new-dashboard') return;
+    if (route.kind !== 'dashboard') return;
     setDashboardKdsLoading(true);
     menuApi
       .getKdsStations()
@@ -208,11 +222,54 @@ const RestaurantApp: React.FC = () => {
       })
       .catch(() => setDashboardKdsStations(kdsStations))
       .finally(() => setDashboardKdsLoading(false));
-  }, [view]);
+  }, [route.kind]);
+
+  useEffect(() => {
+    if (route.kind !== 'order') {
+      setSelectedTable(null);
+      setOrderRouteLoading(false);
+      return;
+    }
+    const tableId = route.tableId;
+    let cancelled = false;
+    setOrderRouteLoading(true);
+    Promise.all([tablesApi.getTable(tableId), ordersApi.getByTableId(tableId, getCurrentDateParam())])
+      .then(([api, orderList]) => {
+        if (cancelled) return;
+        if (!api) {
+          toast({ title: 'Masa nu există', variant: 'destructive' });
+          router.replace(ROUTES.waiter);
+          return;
+        }
+        setSelectedTable(mapApiTableToTable(api));
+        const active = orderList.find((o) => o.status === 'active');
+        setWaiterOrder(active ?? null);
+      })
+      .catch(() => {
+        toast({
+          title: 'Comanda nu s-a putut încărca',
+          description: 'Verifică API-ul /orders.',
+          variant: 'destructive',
+        });
+        router.replace(ROUTES.waiter);
+      })
+      .finally(() => {
+        if (!cancelled) setOrderRouteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [route, router, toast, mapApiTableToTable]);
+
+  useEffect(() => {
+    if (route.kind === 'waiter') {
+      setWaiterOrder(null);
+    }
+  }, [route.kind]);
 
   const refetchWaiterOrder = useCallback(() => {
     if (!selectedTable) return;
-    return ordersApi.getByTableId(selectedTable.id).then((list) => {
+    return ordersApi.getByTableId(selectedTable.id, getCurrentDateParam()).then((list) => {
       const active = list.find((o) => o.status === 'active');
       setWaiterOrder(active ?? null);
     });
@@ -228,54 +285,27 @@ const RestaurantApp: React.FC = () => {
 
   const handleLoginSuccess = (role: 'admin' | 'kitchen' | 'waiter') => {
     if (role === 'admin') {
-      setView('new-dashboard');
-      setActiveModule('dashboard');
+      router.push(ROUTES.dashboard('dashboard'));
     } else if (role === 'kitchen') {
-      setView('new-dashboard');
-      setActiveModule('kds');
+      router.push(ROUTES.dashboard('kds'));
     } else {
-      setView('waiter');
+      router.push(ROUTES.waiter);
     }
   };
 
   const handleLogout = () => {
     logout();
-    setView('login');
     setSelectedTable(null);
-    setSelectedStation(null);
     setKdsModuleStation(null);
+    router.push(ROUTES.login);
   };
 
-  const handleTableSelect = async (table: Table) => {
-    setSelectedTable(table);
-    try {
-      const list = await ordersApi.getByTableId(table.id);
-      const active = list.find((o) => o.status === 'active');
-      // Dacă nu există comandă activă, intrăm cu draft local în OrderPanel.
-      setWaiterOrder(active ?? null);
-      setView('order');
-    } catch (e) {
-      console.error(e);
-      setWaiterOrder(null);
-      setSelectedTable(null);
-      setView('waiter');
-      toast({
-        title: 'Comanda nu s-a putut deschide',
-        description: 'Conexiunea la API /orders a eșuat. Comanda NU a fost salvată în baza de date.',
-        variant: 'destructive',
-      });
-    }
+  const handleTableSelect = (table: Table) => {
+    router.push(ROUTES.order(table.id));
   };
 
   const handleOrderClose = () => {
-    setSelectedTable(null);
-    setWaiterOrder(null);
-    setView('waiter');
-  };
-
-  const handleKdsSelect = (station: KDSStation) => {
-    setSelectedStation(station);
-    setView('kds');
+    router.push(ROUTES.waiter);
   };
 
   // Render module content for new dashboard
@@ -306,9 +336,6 @@ const RestaurantApp: React.FC = () => {
 
             <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-muted-foreground flex-shrink-0">
               Stații KDS
-              <span className="block text-xs font-normal text-muted-foreground/80 mt-0.5">
-                Sursă: baza de date (kds_stations)
-              </span>
             </h3>
             {dashboardKdsLoading ? (
               <div className="flex min-h-[120px] items-center justify-center text-sm text-muted-foreground mb-4 sm:mb-8">
@@ -370,73 +397,83 @@ const RestaurantApp: React.FC = () => {
     }
   };
 
-  if (view === 'login') {
+  if (route.kind === 'login') {
     return (
       <div className="min-h-screen flex flex-col">
         <LoginScreen onLoginSuccess={handleLoginSuccess} />
 
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-card/90 backdrop-blur p-3 rounded-2xl border shadow-lg">
-          <Button variant="outline" size="sm" onClick={() => setView('kiosk')} className="flex items-center gap-2">
-            <Tablet className="w-4 h-4" />
-            Kiosk Demo
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex flex-wrap justify-center gap-2 bg-card/90 backdrop-blur p-3 rounded-2xl border shadow-lg max-w-[95vw]">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={ROUTES.kiosk} className="flex items-center gap-2">
+              <Tablet className="w-4 h-4" />
+              Kiosk Demo
+            </Link>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setView('self-order')} className="flex items-center gap-2">
-            <QrCode className="w-4 h-4" />
-            Self-Order
+          <Button variant="outline" size="sm" asChild>
+            <Link href={ROUTES.selfOrder} className="flex items-center gap-2">
+              <QrCode className="w-4 h-4" />
+              Self-Order
+            </Link>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setView('new-dashboard')} className="flex items-center gap-2">
-            <MonitorIcon className="w-4 h-4" />
-            Dashboard Nou
+          <Button variant="outline" size="sm" asChild>
+            <Link href={ROUTES.dashboard('dashboard')} className="flex items-center gap-2">
+              <MonitorIcon className="w-4 h-4" />
+              Dashboard Nou
+            </Link>
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setView('order-monitor')} className="flex items-center gap-2">
-            <Eye className="w-4 h-4" />
-            Monitorizare Comenzi
+          <Button variant="outline" size="sm" asChild>
+            <Link href={ROUTES.orderMonitor} className="flex items-center gap-2">
+              <Eye className="w-4 h-4" />
+              Monitorizare Comenzi
+            </Link>
           </Button>
         </div>
       </div>
     );
   }
 
-  if (view === 'kiosk') {
+  if (route.kind === 'kiosk') {
     return (
       <div className="relative">
         <KioskOrdering />
-        <Button variant="outline" className="fixed top-4 left-4 z-50" onClick={() => setView('login')}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Ieși
+        <Button variant="outline" className="fixed top-4 left-4 z-50" asChild>
+          <Link href={ROUTES.login} className="flex items-center">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Ieși
+          </Link>
         </Button>
       </div>
     );
   }
 
-  if (view === 'self-order') {
+  if (route.kind === 'self-order') {
     return (
       <div className="relative">
         <CustomerSelfOrder initialTableId="t1" />
-        <Button variant="outline" className="fixed top-4 left-4 z-50" onClick={() => setView('login')}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Ieși
+        <Button variant="outline" className="fixed top-4 left-4 z-50" asChild>
+          <Link href={ROUTES.login} className="flex items-center">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Ieși
+          </Link>
         </Button>
       </div>
     );
   }
 
-  if (view === 'new-dashboard') {
+  if (route.kind === 'dashboard') {
     return (
       <MainLayout
-        activeModule={activeModule}
-        onModuleChange={setActiveModule}
         isOnline={true}
         restaurantName="Restaurant Demo"
         currentLocation="Locația Principală"
-        onLogout={() => setView('login')}
+        onLogout={handleLogout}
       >
         {renderModule()}
       </MainLayout>
     );
   }
 
-  if (view === 'waiter' && !selectedTable) {
+  if (route.kind === 'waiter') {
     const ReservationSidebar = (
       <div className={cn(
         "w-80 border-border bg-card flex flex-col h-full",
@@ -505,6 +542,8 @@ const RestaurantApp: React.FC = () => {
                 tables={waiterTables}
                 getActiveOrderForTable={waiterOrder ? (tableId) => (waiterOrder.tableId === tableId ? waiterOrder : undefined) : undefined}
                 onTableSelect={handleTableSelect}
+                onTableUpdated={persistWaiterTableToStateAndApi}
+                onTableCreated={createWaiterTableInApi}
               />
             )}
           </div>
@@ -516,11 +555,15 @@ const RestaurantApp: React.FC = () => {
           </Button>
         )}
         <div className="fixed bottom-4 right-4 flex gap-2">
-          <Button variant="outline" onClick={() => setView('new-dashboard')} className="flex items-center gap-2">
-            <MonitorIcon className="w-4 h-4" />
-            Dashboard
+          <Button variant="outline" asChild>
+            <Link href={ROUTES.dashboard('dashboard')} className="flex items-center gap-2">
+              <MonitorIcon className="w-4 h-4" />
+              Dashboard
+            </Link>
           </Button>
-          <Button variant="destructive" onClick={handleLogout}>Deconectare</Button>
+          <Button variant="destructive" onClick={handleLogout}>
+            Deconectare
+          </Button>
         </div>
         <OrderHistoryDialog open={showGlobalHistory} onClose={() => setShowGlobalHistory(false)} orders={orders} onUpdateOrder={updateOrder} />
         <WaiterProfileDialog open={showProfile} onClose={() => setShowProfile(false)} user={currentUser} orders={orders} onLogout={handleLogout} />
@@ -529,7 +572,14 @@ const RestaurantApp: React.FC = () => {
     );
   }
 
-  if (view === 'order' && selectedTable) {
+  if (route.kind === 'order') {
+    if (orderRouteLoading || !selectedTable) {
+      return (
+        <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+          Se încarcă comanda…
+        </div>
+      );
+    }
     return (
       <div className="h-screen">
         <OrderPanel
@@ -542,19 +592,11 @@ const RestaurantApp: React.FC = () => {
     );
   }
 
-  if (view === 'admin') {
-    return (
-      <MainLayout activeModule={activeModule} onModuleChange={setActiveModule} isOnline={true} restaurantName="Restaurant Demo" currentLocation="Locația Principală" onLogout={handleLogout}>
-        {renderModule()}
-      </MainLayout>
-    );
-  }
-
-  if (view === 'order-monitor') {
+  if (route.kind === 'order-monitor') {
     const OrderMonitorDashboard = React.lazy(() => import('@/components/OrderMonitorDashboard'));
     return (
       <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center">Se încarcă...</div>}>
-        <OrderMonitorDashboard onBack={() => setView('login')} />
+        <OrderMonitorDashboard onBack={() => router.push(ROUTES.login)} />
       </React.Suspense>
     );
   }

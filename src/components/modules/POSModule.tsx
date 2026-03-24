@@ -27,10 +27,11 @@ import OrderPanel from '@/components/OrderPanel';
 import ReservationManager from '@/components/ReservationManager';
 import { useToast } from '@/hooks/use-toast';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
-import { tablesApi, ordersApi, type TableApi, type OrderApi } from '@/lib/api';
+import { tablesApi, ordersApi, normalizeTablePosition, type TableApi, type OrderApi } from '@/lib/api';
 import { orderApiToPosOrder } from '@/lib/posOrderMapper';
 
 type POSView = 'tables' | 'all-orders';
+const getCurrentDateParam = () => new Date().toISOString().slice(0, 10);
 
 const POSModule: React.FC = () => {
   const {
@@ -68,6 +69,7 @@ const POSModule: React.FC = () => {
   // Phone/Takeaway order dialog
   const [showPhoneOrderDialog, setShowPhoneOrderDialog] = useState(false);
   const [showTakeawayDialog, setShowTakeawayDialog] = useState(false);
+  const [pendingOrderType, setPendingOrderType] = useState<'restaurant' | 'phone' | 'takeaway'>('restaurant');
   const [phoneCustomerName, setPhoneCustomerName] = useState('');
   const [phoneCustomerPhone, setPhoneCustomerPhone] = useState('');
   const [showCashRegister, setShowCashRegister] = useState(false);
@@ -113,7 +115,7 @@ const POSModule: React.FC = () => {
     number: api.number,
     seats: api.seats,
     status: api.status,
-    position: api.position ?? { x: 50, y: 50 },
+    position: normalizeTablePosition(api.position) ?? { x: 50, y: 50 },
     shape: api.shape,
     currentOrderId: api.currentOrderId ?? undefined,
     reservationId: api.reservationId ?? undefined,
@@ -121,6 +123,51 @@ const POSModule: React.FC = () => {
     mergedWith: api.mergedWith ?? undefined,
     qrCode: api.qrCode ?? undefined,
   }), []);
+
+  const persistPosTableToStateAndApi = useCallback(
+    async (t: Table) => {
+      setPosTables((prev) => prev.map((x) => (x.id === t.id ? t : x)));
+      try {
+        await tablesApi.updateTable(t.id, {
+          position: { x: t.position.x, y: t.position.y },
+          number: t.number,
+          seats: t.seats,
+          shape: t.shape,
+          status: t.status,
+          ...(t.mergedWith !== undefined ? { mergedWith: t.mergedWith } : {}),
+        });
+      } catch {
+        toast({
+          title: 'Eroare la salvarea mesei',
+          description: 'Verifică API-ul PATCH /tables/:id.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast],
+  );
+
+  const createPosTableInApi = useCallback(
+    async (draft: Omit<Table, 'id'>) => {
+      try {
+        const created = await tablesApi.createTable({
+          number: draft.number,
+          seats: draft.seats,
+          shape: draft.shape,
+          status: draft.status,
+          position: { x: draft.position.x, y: draft.position.y },
+        });
+        setPosTables((prev) => [...prev, mapApiTableToTable(created)]);
+      } catch {
+        toast({
+          title: 'Eroare la adăugarea mesei',
+          description: 'Verifică API-ul POST /tables.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [mapApiTableToTable, toast],
+  );
 
   const fetchPosTables = useCallback(async () => {
     setPosTablesLoading(true);
@@ -155,7 +202,7 @@ const POSModule: React.FC = () => {
 
   const refetchPosOrder = useCallback(() => {
     if (!selectedTable) return Promise.resolve();
-    return ordersApi.getByTableId(selectedTable.id).then((list) => {
+    return ordersApi.getByTableId(selectedTable.id, getCurrentDateParam()).then((list) => {
       const active = list.find((o) => o.status === 'active');
       setPosOrder(active ?? null);
     });
@@ -167,7 +214,7 @@ const POSModule: React.FC = () => {
       setOpeningTable(table);
       setPosOrderLoading(true);
       try {
-        const list = await ordersApi.getByTableId(table.id);
+        const list = await ordersApi.getByTableId(table.id, getCurrentDateParam());
         const active = list.find((o) => o.status === 'active');
         setPosOrder(active ?? null);
         setSelectedTable(table);
@@ -191,6 +238,7 @@ const POSModule: React.FC = () => {
   );
 
   const handleTableSelect = (table: Table) => {
+    setPendingOrderType('restaurant');
     void openTableForPos(table);
   };
 
@@ -203,6 +251,7 @@ const POSModule: React.FC = () => {
   // Source configuration for display
   const sourceConfig: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
     restaurant: { icon: <Utensils className="w-4 h-4" />, label: 'POS', color: 'bg-primary' },
+    takeaway: { icon: <Package className="w-4 h-4" />, label: 'La pachet', color: 'bg-amber-600' },
     glovo: { icon: <span className="text-sm">🟡</span>, label: 'Glovo', color: 'bg-yellow-500' },
     wolt: { icon: <span className="text-sm">🔵</span>, label: 'Wolt', color: 'bg-blue-500' },
     bolt: { icon: <span className="text-sm">🟢</span>, label: 'Bolt', color: 'bg-green-500' },
@@ -214,8 +263,9 @@ const POSModule: React.FC = () => {
   // Filter orders for All Orders view (sursă: GET /orders)
   const filteredOrders = useMemo(() => {
     return posOrders.filter((order) => {
+      const orderType = order.orderType ?? order.source;
       if (ordersFilter !== 'all' && order.status !== ordersFilter) return false;
-      if (sourceFilter !== 'all' && order.source !== sourceFilter) return false;
+      if (sourceFilter !== 'all' && orderType !== sourceFilter) return false;
       if (filterPayment !== 'all') {
         if (filterPayment === 'unpaid' && order.paymentMethod) return false;
         if (filterPayment !== 'unpaid' && order.paymentMethod !== filterPayment) return false;
@@ -282,6 +332,7 @@ const POSModule: React.FC = () => {
     }
     const freeTable = posTables.find((t) => t.status === 'free');
     if (freeTable) {
+      setPendingOrderType('phone');
       setShowPhoneOrderDialog(false);
       const name = phoneCustomerName;
       const ok = await openTableForPos(freeTable);
@@ -357,7 +408,7 @@ const POSModule: React.FC = () => {
     const rows = filteredOrders.map(order => {
       const products = order.items.map(i => `${i.quantity}x ${i.menuItem.name}${i.complimentary ? ' (gratis)' : ''}`).join('; ');
       const totalItems = order.items.reduce((s, i) => s + i.quantity, 0);
-      const source = sourceConfig[order.source]?.label || order.source;
+      const source = sourceConfig[order.orderType ?? order.source]?.label || (order.orderType ?? order.source);
       return [
         String(order.id).slice(0, 8),
         new Date(order.createdAt).toLocaleString('ro-RO'),
@@ -392,6 +443,7 @@ const POSModule: React.FC = () => {
   const handleStartTakeawayOrder = async () => {
     const freeTable = posTables.find((t) => t.status === 'free');
     if (freeTable) {
+      setPendingOrderType('takeaway');
       setShowTakeawayDialog(false);
       const ok = await openTableForPos(freeTable);
       if (ok) {
@@ -420,6 +472,7 @@ const POSModule: React.FC = () => {
           onClose={handleOrderClose}
           apiOrder={posOrder}
           refetchOrder={refetchPosOrder}
+          defaultOrderType={pendingOrderType}
         />
       </div>
     );
@@ -583,11 +636,7 @@ const POSModule: React.FC = () => {
               
               {/* Harta: mese din GET /tables (baza de date) */}
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground shrink-0">
-                  <span>
-                    Sursă: <strong className="text-foreground">baza de date</strong>
-                    {posTablesLoading ? ' · se încarcă…' : ` · ${posTables.length} ${posTables.length === 1 ? 'masă' : 'mese'}`}
-                  </span>
+                <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2 border-b border-border bg-muted/30 text-xs text-muted-foreground shrink-0">
                   <Button
                     type="button"
                     variant="ghost"
@@ -606,7 +655,12 @@ const POSModule: React.FC = () => {
                       Se încarcă mesele din baza de date…
                     </div>
                   ) : (
-                    <TableMap tables={posTables} onTableSelect={handleTableSelect} />
+                    <TableMap
+                      tables={posTables}
+                      onTableSelect={handleTableSelect}
+                      onTableUpdated={persistPosTableToStateAndApi}
+                      onTableCreated={createPosTableInApi}
+                    />
                   )}
                 </div>
               </div>
@@ -616,8 +670,7 @@ const POSModule: React.FC = () => {
             <div className="h-full flex flex-col p-4 min-h-0">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1 py-2 rounded-lg bg-muted/40 text-xs text-muted-foreground shrink-0">
                 <span>
-                  Sursă comenzi: <strong className="text-foreground">GET /orders</strong>
-                  {posOrdersLoading ? ' · se încarcă…' : ` · ${posOrders.length} în listă`}
+                  {posOrdersLoading ? 'Se încarcă…' : `${posOrders.length} în listă`}
                 </span>
                 <Button
                   type="button"
@@ -723,6 +776,7 @@ const POSModule: React.FC = () => {
                     <SelectContent>
                       <SelectItem value="all">Toate sursele</SelectItem>
                       <SelectItem value="restaurant">POS</SelectItem>
+                      <SelectItem value="takeaway">La pachet</SelectItem>
                       <SelectItem value="kiosk">Kiosk</SelectItem>
                       <SelectItem value="phone">Telefon</SelectItem>
                       <SelectItem value="glovo">Glovo</SelectItem>
@@ -780,7 +834,7 @@ const POSModule: React.FC = () => {
                     </div>
                   ) : (
                     filteredOrders.map(order => {
-                      const source = sourceConfig[order.source] || sourceConfig.restaurant;
+                      const source = sourceConfig[order.orderType ?? order.source] || sourceConfig.restaurant;
                       return (
                         <Card 
                           key={order.id} 
@@ -945,8 +999,8 @@ const POSModule: React.FC = () => {
                 <div>
                   <p className="text-xs text-muted-foreground">Sursă</p>
                   <div className="flex items-center gap-1">
-                    {sourceConfig[selectedOrderDetails.source]?.icon}
-                    <span className="font-medium">{sourceConfig[selectedOrderDetails.source]?.label}</span>
+                    {sourceConfig[selectedOrderDetails.orderType ?? selectedOrderDetails.source]?.icon}
+                    <span className="font-medium">{sourceConfig[selectedOrderDetails.orderType ?? selectedOrderDetails.source]?.label}</span>
                   </div>
                 </div>
                 <div>

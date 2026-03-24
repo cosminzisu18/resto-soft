@@ -9,10 +9,10 @@ export default function NotFound() {
           Oops! Pagina nu a fost găsită
         </p>
         <Link
-          href="/"
+          href="/login"
           className="text-primary underline hover:text-primary/90"
         >
-          Înapoi la pagina principală
+          Înapoi la login
         </Link>
       </div>
     </div>
