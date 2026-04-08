@@ -1,4 +1,4 @@
-import type { KDSStation, MenuItem, OrderItem } from '@/data/mockData';
+import type { KDSStation, MenuItem, OrderItem, Order } from '@/data/mockData';
 import type { KdsStationApi, KdsStationType } from '@/lib/api';
 
 const KDS_DEFAULTS: Record<KdsStationType, { color: string; icon: string }> = {
@@ -24,10 +24,16 @@ export function kdsStationApiToKdsStation(api: KdsStationApi): KDSStation {
 
 /** Potrivește articolul de comandă cu stația (mock: kdsStation slug; API: kdsStationId + type). */
 export function orderItemMatchesKdsStation(item: OrderItem, station: KDSStation): boolean {
-  const mi = item.menuItem as MenuItem & { kdsStationId?: number };
+  const mi = item.menuItem as MenuItem & { kdsStationId?: number; kdsStationType?: string };
   if (mi.kdsStationId != null && String(mi.kdsStationId) === String(station.id)) return true;
-  if (mi.kdsStation === station.id) return true;
-  if (mi.kdsStation === station.type) return true;
+  const typeSlug =
+    typeof mi.kdsStation === 'string' && mi.kdsStation.trim() !== ''
+      ? mi.kdsStation
+      : typeof mi.kdsStationType === 'string'
+        ? mi.kdsStationType
+        : undefined;
+  if (typeSlug === station.id) return true;
+  if (typeSlug === station.type) return true;
   const category = (mi.category ?? '').toLowerCase();
   const inferredType: KdsStationType | null = category.includes('sup')
     ? 'soups'
@@ -40,4 +46,10 @@ export function orderItemMatchesKdsStation(item: OrderItem, station: KDSStation)
               : null;
   if (inferredType && inferredType === station.type) return true;
   return false;
+}
+
+/** Număr afișat pe KDS: masă sau id comandă pentru livrări (fără masă). */
+export function kdsOrderDisplayNumber(order: Order): string {
+  if (order.tableNumber != null) return String(order.tableNumber);
+  return String(order.id);
 }

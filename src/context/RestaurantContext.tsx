@@ -1,13 +1,18 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { 
   User, Table, MenuItem, Order, OrderItem, KDSStation, Reservation, Notification, OrderSource,
-  users, initialTables, menuItems, kdsStations, sampleOrders, sampleNotifications, deliveryPlatforms
+  users as defaultDirectoryUsers,
+  initialTables, menuItems, kdsStations, sampleOrders, sampleNotifications, deliveryPlatforms
 } from '@/data/mockData';
 import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
+import { usersApi, userApiToUser } from '@/lib/api';
 
 interface RestaurantContextType {
   // Auth
   currentUser: User | null;
+  /** Conturi pentru login și liste (ospătari/bucătărie); sincronizat cu GET /users când API-ul răspunde. */
+  directoryUsers: User[];
+  refreshDirectoryUsers: () => Promise<void>;
   login: (userId: string, pin: string) => boolean;
   logout: () => void;
   
@@ -61,6 +66,28 @@ const RestaurantContext = createContext<RestaurantContextType | undefined>(undef
 
 export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [directoryUsers, setDirectoryUsers] = useState<User[]>(defaultDirectoryUsers);
+
+  useEffect(() => {
+    usersApi
+      .list()
+      .then((list) => {
+        setDirectoryUsers(list.map(userApiToUser));
+      })
+      .catch(() => {
+        /* rămân utilizatorii mock din defaultDirectoryUsers dacă API indisponibil */
+      });
+  }, []);
+
+  const refreshDirectoryUsers = useCallback(async () => {
+    try {
+      const list = await usersApi.list();
+      setDirectoryUsers(list.map(userApiToUser));
+    } catch {
+      /* ignoră */
+    }
+  }, []);
+
   const [tables, setTables] = useState<Table[]>(initialTables);
   const [menu, setMenu] = useState<MenuItem[]>(menuItems);
   const [orders, setOrders] = useState<Order[]>(sampleOrders);
@@ -70,13 +97,13 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Auth
   const login = useCallback((userId: string, pin: string): boolean => {
-    const user = users.find(u => u.id === userId && u.pin === pin);
+    const user = directoryUsers.find((u) => u.id === userId && u.pin === pin);
     if (user) {
       setCurrentUser(user);
       return true;
     }
     return false;
-  }, []);
+  }, [directoryUsers]);
 
   const logout = useCallback(() => {
     setCurrentUser(null);
@@ -374,6 +401,8 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   return (
     <RestaurantContext.Provider value={{
       currentUser,
+      directoryUsers,
+      refreshDirectoryUsers,
       login,
       logout,
       tables,

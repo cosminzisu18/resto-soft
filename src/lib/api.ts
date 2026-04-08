@@ -1,4 +1,17 @@
-export const API_BASE = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001') : process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const DEFAULT_API_BASE = 'http://localhost:3001';
+
+function resolveRuntimeApiBase(): string {
+  if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_BASE;
+
+  // Android emulator: aplicația rulează din 10.0.2.2 și backend-ul local este expus tot prin 10.0.2.2.
+  if (window.location.hostname === '10.0.2.2') {
+    return 'http://10.0.2.2:3001';
+  }
+
+  return process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_BASE;
+}
+
+export const API_BASE = resolveRuntimeApiBase();
 
 /** Pentru imaginile din API: data URL rămâne neschimbat, /images/... devine URL complet către backend. */
 export function imageSrc(path: string | null | undefined): string {
@@ -67,6 +80,12 @@ export interface MenuItemApi {
   unitType?: 'buc' | 'portie' | 'gram';
   availability?: { restaurant?: boolean; kiosk?: boolean; app?: boolean; delivery?: boolean };
   platformPricing?: Record<string, { name: string; price: number; enabled: boolean }>;
+  platformPrices?: Array<{
+    platformId: number;
+    displayName?: string | null;
+    price: number;
+    platform?: SalesPlatformApi;
+  }>;
   allergens?: { id: number; name: string }[];
   availableExtras?: { id: number; name: string; price: number; image?: string | null }[];
 }
@@ -111,6 +130,11 @@ export interface CreateMenuItemBody {
   unitType?: 'buc' | 'portie' | 'gram';
   availability?: Record<string, boolean>;
   platformPricing?: Record<string, { name: string; price: number; enabled: boolean }>;
+  platformPrices?: Array<{
+    platformId: number;
+    displayName?: string;
+    price: number;
+  }>;
   allergenIds?: number[];
   availableExtrasIds?: number[];
 }
@@ -122,6 +146,83 @@ export interface MenuCategoryApi {
   name: string;
   icon?: string | null;
 }
+
+export interface SalesPlatformApi {
+  id: number;
+  code: string;
+  name: string;
+  icon?: string | null;
+  active: boolean;
+  sortOrder: number;
+}
+
+export interface CreateSalesPlatformBody {
+  code: string;
+  name: string;
+  icon?: string;
+  active?: boolean;
+  sortOrder?: number;
+}
+
+export type UpdateSalesPlatformBody = Partial<CreateSalesPlatformBody>;
+
+// --- Utilizatori (conturi PIN: admin, ospătar, bucătărie) ---
+export type UserRoleApi = 'waiter' | 'admin' | 'kitchen';
+
+export interface UserApi {
+  id: string;
+  name: string;
+  role: UserRoleApi;
+  pin: string;
+  avatar: string | null;
+  branchId?: string | null;
+  branch?: { id: string; name?: string } | null;
+}
+
+export interface CreateUserBody {
+  name: string;
+  role: UserRoleApi;
+  pin: string;
+  avatar?: string;
+  branchId?: string | null;
+}
+
+export type UpdateUserBody = Partial<CreateUserBody>;
+
+export function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.trim().slice(0, 2).toUpperCase() || '?';
+}
+
+/** Mapare răspuns API → model UI (avatar = inițiale dacă lipsește). */
+export function userApiToUser(api: UserApi): {
+  id: string;
+  name: string;
+  role: UserRoleApi;
+  pin: string;
+  avatar: string;
+} {
+  return {
+    id: api.id,
+    name: api.name,
+    role: api.role,
+    pin: api.pin,
+    avatar: (api.avatar && api.avatar.trim()) || initialsFromName(api.name),
+  };
+}
+
+export const usersApi = {
+  list: () => request<UserApi[]>('/users'),
+  get: (id: string) => request<UserApi | null>(`/users/${encodeURIComponent(id)}`),
+  create: (body: CreateUserBody) =>
+    request<UserApi>('/users', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: UpdateUserBody) =>
+    request<UserApi>(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  delete: (id: string) => request<void>(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+};
 
 // --- Tables (mese RestoSoft – poziții și unire) ---
 export interface TableApi {
@@ -143,7 +244,8 @@ export interface TableApi {
 export function normalizeTablePosition(
   raw: unknown,
 ): { x: number; y: number } | null {
-  if (!raw) return null;
+  // Nu folosi `!raw`: obiectul { x: 0, y: 0 } este poziție validă (colț).
+  if (raw === null || raw === undefined || raw === '') return null;
 
   let parsed: unknown = raw;
   for (let i = 0; i < 3 && typeof parsed === 'string'; i += 1) {
@@ -204,12 +306,23 @@ export interface OrderItemApi {
   menuItemId: number;
   menuItem: Record<string, unknown> | null;
   quantity: number;
+  unitPrice: number;
+  lineTotal: number;
   weightGrams?: number | null;
   modifications: { added?: string[]; removed?: string[]; notes?: string } | null;
   status: OrderItemStatusApi;
   startedAt?: string | null;
   readyAt?: string | null;
   complimentary?: boolean;
+}
+
+export interface OrderDeliveryAddressApi {
+  id: number;
+  orderId: number;
+  addressLine: string;
+  city?: string | null;
+  postalCode?: string | null;
+  notes?: string | null;
 }
 
 export interface OrderApi {
@@ -240,6 +353,8 @@ export interface OrderApi {
   customerPhone?: string | null;
   deliveryAddress?: string | null;
   cui?: string | null;
+  kioskId?: number | null;
+  deliveryAddressDetail?: OrderDeliveryAddressApi | null;
 }
 
 export interface CreateOrderItemBody {
@@ -263,8 +378,19 @@ export interface CreateOrderBody {
   customerName?: string;
   customerPhone?: string;
   deliveryAddress?: string | null;
+  deliveryCity?: string;
+  deliveryPostalCode?: string;
+  deliveryNotes?: string;
+  kioskId?: number;
   paymentMethod?: 'cash' | 'card' | 'usage_card';
   items: CreateOrderItemBody[];
+}
+
+export interface KioskApi {
+  id: number;
+  number: number;
+  name?: string | null;
+  active: boolean;
 }
 
 export interface UpdateOrderBody {
@@ -383,6 +509,28 @@ export const reservationsApi = {
   delete: (id: number) => request<void>(`/reservations/${id}`, { method: 'DELETE' }),
 };
 
+export const kiosksApi = {
+  getAll: () => request<KioskApi[]>('/kiosks'),
+  getByNumber: (number: number) => request<KioskApi | null>(`/kiosks?number=${number}`),
+  getOne: (id: number) => request<KioskApi | null>(`/kiosks/${id}`),
+  create: (body: { number: number; name?: string; active?: boolean }) =>
+    request<KioskApi>('/kiosks', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: number, body: { number?: number; name?: string; active?: boolean }) =>
+    request<KioskApi | null>(`/kiosks/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  delete: (id: number) => request<void>(`/kiosks/${id}`, { method: 'DELETE' }),
+};
+
+export const platformsApi = {
+  getAll: (active?: boolean) =>
+    request<SalesPlatformApi[]>(active === undefined ? '/platforms' : `/platforms?active=${active ? 'true' : 'false'}`),
+  getOne: (id: number) => request<SalesPlatformApi | null>(`/platforms/${id}`),
+  create: (body: CreateSalesPlatformBody) =>
+    request<SalesPlatformApi>('/platforms', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: number, body: UpdateSalesPlatformBody) =>
+    request<SalesPlatformApi | null>(`/platforms/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  delete: (id: number) => request<void>(`/platforms/${id}`, { method: 'DELETE' }),
+};
+
 export const menuApi = {
   getItems: () => request<MenuItemApi[]>('/menu/items'),
   getItem: (id: string) => request<MenuItemApi | null>(`/menu/items/${id}`),
@@ -443,6 +591,26 @@ export interface TransferRequestApi {
   menuItem?: { id: number; name: string };
 }
 
+export interface InventoryCountApi {
+  id: number;
+  inventoryId: number;
+  scripticQuantity: number;
+  countedQuantity: number;
+  differenceQuantity: number;
+  notes?: string | null;
+  countedBy?: string | null;
+  countedAt: string;
+  inventory?: {
+    id: number;
+    menuItemId: number;
+    zoneId: number;
+    quantity: number;
+    unit: string;
+    menuItem?: { id: number; name: string; category: string; price?: number };
+    zone?: { id: number; name: string };
+  };
+}
+
 export const storageApi = {
   getZones: () => request<StorageZoneApi[]>('/storage/zones'),
   getZone: (id: number) => request<StorageZoneApi | null>(`/storage/zones/${id}`),
@@ -451,6 +619,9 @@ export const storageApi = {
   deleteZone: (id: number) => request<void>(`/storage/zones/${id}`, { method: 'DELETE' }),
   getInventory: (zoneId?: number) => request<InventoryApi[]>(zoneId != null ? `/storage/inventory?zoneId=${zoneId}` : '/storage/inventory'),
   upsertInventory: (body: { menuItemId: number; zoneId: number; quantity: number; unit?: string }) => request<InventoryApi>('/storage/inventory', { method: 'POST', body: JSON.stringify(body) }),
+  getInventoryCounts: (zoneId?: number) => request<InventoryCountApi[]>(zoneId != null ? `/storage/inventory-counts?zoneId=${zoneId}` : '/storage/inventory-counts'),
+  recordInventoryCount: (body: { inventoryId: number; countedQuantity: number; notes?: string; countedBy?: string }) =>
+    request<InventoryCountApi>('/storage/inventory-counts', { method: 'POST', body: JSON.stringify(body) }),
   getTransfers: (status?: 'pending' | 'approved' | 'rejected') => request<TransferRequestApi[]>(status != null ? `/storage/transfers?status=${status}` : '/storage/transfers'),
   createTransfer: (body: { fromZoneId: number; toZoneId: number; menuItemId: number; quantity: number; unit?: string }) => request<TransferRequestApi>('/storage/transfers', { method: 'POST', body: JSON.stringify(body) }),
   approveTransfer: (id: number, approvedBy?: string) => request<TransferRequestApi>(`/storage/transfers/${id}/approve`, { method: 'PATCH', body: JSON.stringify(approvedBy != null ? { approvedBy } : {}) }),

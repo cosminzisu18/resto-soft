@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/context/LanguageContext';
-import { KDSStation, OrderItem, Order, users, MenuItem, allergens } from '@/data/mockData';
+import { useRestaurant } from '@/context/RestaurantContext';
+import { KDSStation, OrderItem, Order, MenuItem, allergens } from '@/data/mockData';
 import { ordersApi } from '@/lib/api';
 import { orderApiToPosOrder } from '@/lib/posOrderMapper';
-import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
+import { orderItemMatchesKdsStation, kdsOrderDisplayNumber } from '@/lib/kdsUtils';
 import { cn } from '@/lib/utils';
 import { 
   Clock, LogOut, Truck, MessageSquare, ChefHat, CheckCircle2, Timer, 
@@ -106,6 +107,7 @@ const platformConfig = {
 };
 
 const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout }) => {
+  const { directoryUsers } = useRestaurant();
   const { language, setLanguage, languages } = useLanguage();
   const [apiOrders, setApiOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -174,7 +176,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         .filter((x) => x.items.length > 0),
     [apiOrders, station],
   );
-  const kitchenEmployees = users.filter(u => u.role === 'kitchen');
+  const kitchenEmployees = directoryUsers.filter((u) => u.role === 'kitchen');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -348,7 +350,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
       // Create label data
       const labelData: LabelData = {
-        orderNumber: order.tableNumber?.toString() || order.id.slice(-4),
+        orderNumber: kdsOrderDisplayNumber(order),
         productNumber: productIndex,
         totalProducts: stationItems.length,
         productName: item.menuItem.name,
@@ -396,7 +398,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     const productIndex = stationItems.findIndex(i => i.id === item.id) + 1;
 
     const labelData: LabelData = {
-      orderNumber: order.tableNumber?.toString() || order.id.slice(-4),
+      orderNumber: kdsOrderDisplayNumber(order),
       productNumber: productIndex,
       totalProducts: stationItems.length,
       productName: item.menuItem.name,
@@ -739,7 +741,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-black text-primary">
-                    #{order.tableNumber || order.id.slice(-4)}
+                    #{kdsOrderDisplayNumber(order)}
                   </span>
                   {status === 'urgent' && <AlertTriangle className="w-5 h-5 text-red-500 animate-bounce" />}
                   {isSyncOrder && (
@@ -848,7 +850,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             {/* Header Row */}
             <div className="flex items-center gap-4 p-4 border-b border-slate-200 bg-slate-50">
               <div className="flex items-center gap-3">
-                <span className="text-2xl font-black text-primary">#{order.tableNumber || order.id.slice(-4)}</span>
+                <span className="text-2xl font-black text-primary">#{kdsOrderDisplayNumber(order)}</span>
                 {status === 'urgent' && <AlertTriangle className="w-5 h-5 text-red-500" />}
                 {isSyncOrder && (
                   <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
@@ -929,7 +931,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               <Card key={order.id} className="bg-white shadow-sm animate-fade-in overflow-hidden">
                 <CardHeader className="p-3 pb-2 border-b border-slate-100">
                   <div className="flex items-center justify-between">
-                    <span className="font-black text-primary text-lg">#{order.tableNumber || order.id.slice(-4)}</span>
+                    <span className="font-black text-primary text-lg">#{kdsOrderDisplayNumber(order)}</span>
                     <Badge className={cn("text-xs", config.color, "text-white")}>
                       {config.label}
                     </Badge>
@@ -965,7 +967,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               <Card key={order.id} className="bg-white shadow-sm border-l-4 border-yellow-500 animate-fade-in overflow-hidden">
                 <CardHeader className="p-3 pb-2 border-b border-slate-100">
                   <div className="flex items-center justify-between">
-                    <span className="font-black text-primary text-lg">#{order.tableNumber || order.id.slice(-4)}</span>
+                    <span className="font-black text-primary text-lg">#{kdsOrderDisplayNumber(order)}</span>
                     <div className="flex items-center gap-2">
                       <Progress value={progress} className="w-16 h-2" />
                       <span className="text-xs font-bold">{progress}%</span>
@@ -994,7 +996,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             <Card key={order.id} className="bg-white shadow-sm border-l-4 border-green-500 animate-fade-in">
               <CardContent className="p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-black text-green-600 text-lg">#{order.tableNumber || order.id.slice(-4)}</span>
+                  <span className="font-black text-green-600 text-lg">#{kdsOrderDisplayNumber(order)}</span>
                   <CheckCircle2 className="w-5 h-5 text-green-500" />
                 </div>
                 <div className="space-y-1">
@@ -1032,7 +1034,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               <CardHeader className="p-3 pb-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xl font-black text-green-700">
-                    #{order.tableNumber || order.id.slice(-4)}
+                    #{kdsOrderDisplayNumber(order)}
                   </span>
                   <Badge className={cn("text-xs", config.color, "text-white")}>
                     {config.label}
@@ -1057,7 +1059,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                               e.stopPropagation();
                               const productIndex = stationItems.findIndex(i => i.id === item.id) + 1;
                               const labelData: LabelData = {
-                                orderNumber: order.tableNumber?.toString() || order.id.slice(-4),
+                                orderNumber: kdsOrderDisplayNumber(order),
                                 productNumber: productIndex,
                                 totalProducts: stationItems.length,
                                 productName: item.menuItem.name,

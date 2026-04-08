@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { useLanguage } from '@/context/LanguageContext';
-import { imageSrc, menuApi, ordersApi, tablesApi, type MenuItemApi, type TableApi } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import { imageSrc, kiosksApi, menuApi, ordersApi, type KioskApi, type MenuItemApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
@@ -15,7 +16,7 @@ import {
 } from 'lucide-react';
 import AllergenBadges from '@/components/AllergenBadges';
 
-type KioskStep = 'idle' | 'mode' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
+type KioskStep = 'idle' | 'kiosk-number' | 'mode' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
 type OrderMode = 'dine-in' | 'takeaway';
 
 interface CartItem {
@@ -79,9 +80,14 @@ const languages = [
 
 const KioskModule: React.FC = () => {
   const { language, setLanguage } = useLanguage();
+  const { toast } = useToast();
   const [menu, setMenu] = useState<KioskMenuItem[]>([]);
+  const [kiosks, setKiosks] = useState<KioskApi[]>([]);
   const [menuCategories, setMenuCategories] = useState<string[]>([]);
   const [savedOrderNumber, setSavedOrderNumber] = useState<number | null>(null);
+  const [kioskIndicatorInput, setKioskIndicatorInput] = useState('');
+  const [selectedKiosk, setSelectedKiosk] = useState<KioskApi | null>(null);
+  const [kioskError, setKioskError] = useState<string | null>(null);
   
   const [step, setStep] = useState<KioskStep>('idle');
   const [orderMode, setOrderMode] = useState<OrderMode | null>(null);
@@ -133,15 +139,17 @@ const KioskModule: React.FC = () => {
 
     const fetchKioskMenu = async () => {
       try {
-        const [cats, items] = await Promise.all([menuApi.getCategories(), menuApi.getItems()]);
+        const [cats, items, kiosksList] = await Promise.all([menuApi.getCategories(), menuApi.getItems(), kiosksApi.getAll()]);
         const categoryNames = cats.map((c) => c.name);
         const mapped = items.map(mapApiItem);
         setMenuCategories(categoryNames);
         setMenu(mapped);
+        setKiosks(kiosksList.filter((k) => k.active));
         if (categoryNames.length > 0) setActiveCategory((prev) => prev || categoryNames[0]);
       } catch {
         setMenu([]);
         setMenuCategories([]);
+        setKiosks([]);
       }
     };
 
@@ -256,6 +264,25 @@ const KioskModule: React.FC = () => {
     setActiveCategory(menuCategories[0] ?? '');
     setIdleTimer(0);
     setSavedOrderNumber(null);
+    setKioskIndicatorInput('');
+    setSelectedKiosk(null);
+    setKioskError(null);
+  };
+
+  const handleValidateKioskNumber = () => {
+    const n = Number(kioskIndicatorInput);
+    if (!Number.isInteger(n) || n < 1) {
+      setKioskError('Introduceți un număr valid.');
+      return;
+    }
+    const match = kiosks.find((k) => k.number === n && k.active);
+    if (!match) {
+      setKioskError('Numărul indicatorului nu există sau este inactiv.');
+      return;
+    }
+    setSelectedKiosk(match);
+    setKioskError(null);
+    setStep('menu');
   };
 
   const calculateItemTotal = (item: CartItem) => {
@@ -272,35 +299,24 @@ const KioskModule: React.FC = () => {
     if (!orderMode || cart.length === 0) return;
     setStep('processing');
     try {
-      const allTables = await tablesApi.getTables();
-      let kioskFallbackTable =
-        allTables.find((t) => (t.zone ?? '').toLowerCase().includes('kiosk')) ??
-        allTables.find((t) => t.number === 0) ??
-        null;
-
-      if (!kioskFallbackTable) {
-        const usedNumbers = new Set(allTables.map((t) => t.number));
-        let candidateNumber = 9000;
-        while (usedNumbers.has(candidateNumber)) candidateNumber += 1;
-        kioskFallbackTable = await tablesApi.createTable({
-          number: candidateNumber,
-          seats: 1,
-          shape: 'square',
-          zone: 'Kiosk',
-          status: 'occupied',
-          position: { x: 40, y: 40 },
+      if (!selectedKiosk) {
+        setStep('kiosk-number');
+        toast({
+          title: 'Lipsește numărul kiosk',
+          description: 'Introduceți numărul indicatorului înainte de plată.',
+          variant: 'destructive',
         });
+        return;
       }
 
-      const resolvedTable: TableApi | null = kioskFallbackTable;
-
       const created = await ordersApi.create({
-        tableId: resolvedTable?.id,
+        tableId: null,
         source: 'kiosk',
         orderType: 'kiosk',
         fulfillmentType: orderMode === 'dine-in' ? 'dine_in' : 'takeaway',
-        tableNumber: resolvedTable?.number ?? 0,
-        customerName: 'Kiosk Self-Order',
+        tableNumber: selectedKiosk.number,
+        kioskId: selectedKiosk.id,
+        customerName: `Kiosk #${selectedKiosk.number} Self-Order`,
         deliveryAddress: orderMode === 'takeaway' ? 'La pachet (Kiosk)' : null,
         items: cart.map((c) => ({
           menuItemId: Number(c.menuItem.id),
@@ -403,7 +419,7 @@ const KioskModule: React.FC = () => {
           {/* Order Type Buttons */}
           <div className="flex gap-8 mb-12">
             <button
-              onClick={(e) => { e.stopPropagation(); setOrderMode('dine-in'); setStep('menu'); resetIdleTimer(); }}
+              onClick={(e) => { e.stopPropagation(); setOrderMode('dine-in'); setStep('kiosk-number'); resetIdleTimer(); }}
               className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all min-w-[180px]"
             >
               <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center shadow-lg">
@@ -451,6 +467,104 @@ const KioskModule: React.FC = () => {
     );
   }
 
+  if (step === 'kiosk-number') {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-100" onClick={resetIdleTimer}>
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 flex gap-2">
+          {languages.map(lang => (
+            <button
+              key={lang.code}
+              onClick={(e) => { e.stopPropagation(); setLanguage(lang.code as 'ro' | 'en' | 'de' | 'hu'); }}
+              className={cn(
+                "w-8 h-8 sm:w-10 sm:h-10 rounded-full text-lg sm:text-xl flex items-center justify-center transition-all border-2",
+                language === lang.code ? "bg-white border-primary shadow-lg" : "bg-white/80 border-transparent hover:bg-white"
+              )}
+            >
+              {lang.flag}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8">
+          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-primary/10 rounded-2xl flex items-center justify-center mb-6">
+            <span className="text-4xl sm:text-5xl">🪧</span>
+          </div>
+
+          <h1 className="text-2xl sm:text-4xl font-bold mb-2 text-slate-800 text-center">Introduceți numărul de pe indicator</h1>
+          <p className="text-slate-500 mb-6 sm:mb-8 text-center max-w-md">
+            Veți primi un indicator cu număr pentru a fi plasat pe masă. Chelnerul vă va aduce comanda.
+          </p>
+
+          <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 mb-6 min-w-[200px] text-center shadow-lg">
+            <div className="text-5xl sm:text-7xl font-bold text-primary">
+              {kioskIndicatorInput || '—'}
+            </div>
+            <div className="text-sm text-slate-500 mt-2">Număr Indicator</div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 mb-4 max-w-xs">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+              <button
+                key={num}
+                onClick={() => {
+                  setKioskIndicatorInput(prev => prev.length < 3 ? prev + num : prev);
+                  if (kioskError) setKioskError(null);
+                }}
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-white border-2 border-slate-200 text-2xl sm:text-3xl font-bold text-slate-800 hover:bg-primary hover:text-white hover:border-primary transition-all shadow-sm"
+              >
+                {num}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setKioskIndicatorInput('');
+                if (kioskError) setKioskError(null);
+              }}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-100 border-2 border-slate-200 text-lg font-medium text-slate-600 hover:bg-slate-200 transition-all"
+            >
+              Șterge
+            </button>
+            <button
+              onClick={() => {
+                setKioskIndicatorInput(prev => prev.length < 3 ? prev + '0' : prev);
+                if (kioskError) setKioskError(null);
+              }}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-white border-2 border-slate-200 text-2xl sm:text-3xl font-bold text-slate-800 hover:bg-primary hover:text-white hover:border-primary transition-all shadow-sm"
+            >
+              0
+            </button>
+            <button
+              onClick={() => {
+                setKioskIndicatorInput(prev => prev.slice(0, -1));
+                if (kioskError) setKioskError(null);
+              }}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-slate-100 border-2 border-slate-200 text-lg font-medium text-slate-600 hover:bg-slate-200 transition-all"
+            >
+              ←
+            </button>
+          </div>
+
+          {kioskError && <p className="text-red-600 text-sm mb-4 text-center">{kioskError}</p>}
+
+          <div className="flex gap-4">
+            <Button variant="outline" size="lg" onClick={() => { setStep('mode'); setKioskIndicatorInput(''); }} className="px-8">
+              <ArrowLeft className="w-5 h-5 mr-2" />
+              Înapoi
+            </Button>
+            <Button size="lg" onClick={handleValidateKioskNumber} disabled={!kioskIndicatorInput} className="px-8 text-lg">
+              Continuă
+              <ArrowRight className="w-5 h-5 ml-2" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-4 text-center text-slate-400 text-xs sm:text-sm border-t">
+          Indicatorul va fi afișat pe comandă • Timeout: {IDLE_TIMEOUT - idleTimer}s
+        </div>
+      </div>
+    );
+  }
+
   // ============ MODE SELECTION ============
   if (step === 'mode') {
     const promo = promotions[0];
@@ -487,7 +601,10 @@ const KioskModule: React.FC = () => {
 
           <div className="flex gap-6">
             <button
-              onClick={() => { setOrderMode('dine-in'); setStep('menu'); }}
+              onClick={() => {
+                setOrderMode('dine-in');
+                setStep('kiosk-number');
+              }}
               className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all min-w-[200px]"
             >
               <div className="w-20 h-20 bg-orange-100 rounded-2xl flex items-center justify-center">
@@ -497,7 +614,10 @@ const KioskModule: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { setOrderMode('takeaway'); setStep('menu'); }}
+              onClick={() => {
+                setOrderMode('takeaway');
+                setStep('kiosk-number');
+              }}
               className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all min-w-[200px]"
             >
               <div className="w-20 h-20 bg-amber-100 rounded-2xl flex items-center justify-center">

@@ -6,6 +6,10 @@ import { Users, Link2, Move, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import TableEditPanel from '@/components/TableEditPanel';
+import {
+  clientPointToMapPercent,
+  isInvalidAccidentalZeroPosition,
+} from '@/lib/tablePosition';
 
 interface TableMapProps {
   onTableSelect: (table: Table) => void;
@@ -100,12 +104,7 @@ const TableMap: React.FC<TableMapProps> = ({
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
 
   const pxToPercent = useCallback((clientX: number, clientY: number) => {
-    const map = mapRef.current;
-    if (!map) return { x: 0, y: 0 };
-    const rect = map.getBoundingClientRect();
-    const x = Math.max(2, Math.min(98, ((clientX - rect.left) / rect.width) * 100));
-    const y = Math.max(2, Math.min(98, ((clientY - rect.top) / rect.height) * 100));
-    return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+    return clientPointToMapPercent(clientX, clientY, mapRef.current);
   }, []);
 
   const handlePointerDown = useCallback(
@@ -135,6 +134,7 @@ const TableMap: React.FC<TableMapProps> = ({
       if (!drag.dragging && Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) return;
       drag.dragging = true;
       const pos = pxToPercent(e.clientX, e.clientY);
+      if (!pos) return;
       latestDragPosRef.current = pos;
       setDragTableId(drag.tableId);
       setDragPos(pos);
@@ -142,8 +142,12 @@ const TableMap: React.FC<TableMapProps> = ({
     [pxToPercent],
   );
 
-  /** Salvează poziția în context + părinte/API dacă există drag activ cu poziție; golește mereu starea de drag. */
-  const persistInProgressDrag = useCallback(() => {
+  /**
+   * Finalizează drag-ul: golește starea de drag.
+   * În mod API-controlled, salvează imediat în DB (PATCH), nu doar la „Blochează”,
+   * ca repornirea backend-ului să reîncarce pozițiile corecte.
+   */
+  const persistInProgressDrag = useCallback(async () => {
     const drag = dragRef.current;
     if (!drag) return;
     const wasDragging = drag.dragging;
@@ -155,16 +159,51 @@ const TableMap: React.FC<TableMapProps> = ({
     setDragPos(null);
 
     if (wasDragging && finalPos) {
+      if (isInvalidAccidentalZeroPosition(finalPos)) {
+        toast({
+          title: 'Poziție nesalvată',
+          description: 'Harta nu era încă gata (0%, 0%). Încearcă din nou după ce se încarcă zona.',
+          variant: 'destructive',
+        });
+        return;
+      }
       const table = visibleTables.find((t) => t.id === tid);
       if (table) {
-        applyTableUpdate({ ...table, position: { x: finalPos.x, y: finalPos.y } });
-        toast({
-          title: `Masa ${table.number} mutată`,
-          description: `Poziție: ${finalPos.x.toFixed(1)}%, ${finalPos.y.toFixed(1)}%`,
-        });
+        const updated = { ...table, position: { x: finalPos.x, y: finalPos.y } };
+        if (isApiControlled && onTableUpdated) {
+          try {
+            await onTableUpdated(updated);
+            setStagedTables((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+            setDirtyTableIds((prev) => {
+              const next = new Set(prev);
+              next.delete(updated.id);
+              hasDirtyRef.current = next.size > 0;
+              return next;
+            });
+            toast({
+              title: `Masa ${table.number} mutată`,
+              description: `Poziție salvată: ${finalPos.x.toFixed(1)}%, ${finalPos.y.toFixed(1)}%`,
+            });
+          } catch {
+            toast({
+              title: 'Eroare la salvarea poziției',
+              description: 'Verifică conexiunea la server și încearcă din nou.',
+              variant: 'destructive',
+            });
+            setStagedTables((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+            setDirtyTableIds((prev) => new Set([...prev, updated.id]));
+            hasDirtyRef.current = true;
+          }
+        } else {
+          applyTableUpdate(updated);
+          toast({
+            title: `Masa ${table.number} mutată`,
+            description: `Poziție: ${finalPos.x.toFixed(1)}%, ${finalPos.y.toFixed(1)}%`,
+          });
+        }
       }
     }
-  }, [visibleTables, applyTableUpdate, toast]);
+  }, [visibleTables, applyTableUpdate, toast, isApiControlled, onTableUpdated]);
 
   const handlePointerUp = useCallback(() => {
     const drag = dragRef.current;
@@ -174,7 +213,7 @@ const TableMap: React.FC<TableMapProps> = ({
     const finalPos = latestDragPosRef.current;
 
     if (wasDragging && finalPos) {
-      persistInProgressDrag();
+      void persistInProgressDrag();
       return;
     }
 
@@ -248,8 +287,8 @@ const TableMap: React.FC<TableMapProps> = ({
 
   const toggleEditMode = async () => {
     if (editMode) {
-      // La „Blochează”: persistă și o tragere neterminată (dacă există), ca poziția să ajungă în DB
-      persistInProgressDrag();
+      // La „Blochează”: persistă și o tragere neterminată (dacă există)
+      await persistInProgressDrag();
       if (isApiControlled && dirtyTableIds.size > 0) {
         try {
           for (const id of dirtyTableIds) {

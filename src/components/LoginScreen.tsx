@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { users } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { Lock, ChefHat, User, Shield, Fingerprint, Wifi, Smartphone } from 'lucide-react';
@@ -18,14 +17,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [authMethod, setAuthMethod] = useState<AuthMethod>('pin');
   const [isBiometricScanning, setIsBiometricScanning] = useState(false);
   const [isNfcScanning, setIsNfcScanning] = useState(false);
-  const { login } = useRestaurant();
+  const { login, directoryUsers } = useRestaurant();
   const { toast } = useToast();
 
   const handlePinSubmit = () => {
     if (!selectedUserId) return;
     
     const success = login(selectedUserId, pin);
-    const user = users.find(u => u.id === selectedUserId);
+    const user = directoryUsers.find(u => u.id === selectedUserId);
     
     if (success) {
       toast({
@@ -51,7 +50,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         setTimeout(() => {
           if (selectedUserId) {
             const success = login(selectedUserId, newPin);
-            const user = users.find(u => u.id === selectedUserId);
+            const user = directoryUsers.find(u => u.id === selectedUserId);
             if (success) {
               toast({ title: 'Conectat cu succes', description: `Bine ai venit, ${user?.name}!` });
               onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
@@ -73,7 +72,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setTimeout(() => {
       setIsBiometricScanning(false);
       if (selectedUserId) {
-        const user = users.find(u => u.id === selectedUserId);
+        const user = directoryUsers.find(u => u.id === selectedUserId);
         login(selectedUserId, user?.pin || '');
         toast({ title: 'Autentificare biometrică reușită', description: `Bine ai venit, ${user?.name}!` });
         onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
@@ -86,7 +85,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setTimeout(() => {
       setIsNfcScanning(false);
       if (selectedUserId) {
-        const user = users.find(u => u.id === selectedUserId);
+        const user = directoryUsers.find(u => u.id === selectedUserId);
         login(selectedUserId, user?.pin || '');
         toast({ title: 'Card NFC detectat', description: `Bine ai venit, ${user?.name}!` });
         onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
@@ -118,7 +117,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const selectedUser = users.find(u => u.id === selectedUserId);
+  const selectedUser = directoryUsers.find(u => u.id === selectedUserId);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
@@ -139,7 +138,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           <div className="bg-card rounded-3xl shadow-2xl shadow-black/5 p-6 border border-border/50">
             <h2 className="text-lg font-semibold mb-6 text-center">Selectează contul</h2>
             <div className="grid grid-cols-2 gap-3">
-              {users.map(user => (
+              {directoryUsers.map(user => (
                 <button
                   key={user.id}
                   onClick={() => setSelectedUserId(user.id)}
@@ -165,7 +164,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     {getRoleIcon(user.role)}
                     {getRoleLabel(user.role)}
                   </span>
-                  <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-0.5 rounded">
+                  <span className="text-xs font-mono font-semibold text-foreground bg-muted px-2 py-0.5 rounded border border-border">
                     PIN: {user.pin}
                   </span>
                 </button>

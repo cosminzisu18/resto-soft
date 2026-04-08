@@ -34,10 +34,14 @@ function menuItemFromSnapshot(menuItemId: number, raw: Record<string, unknown> |
 
 export function orderItemApiToOrderItem(i: OrderItemApi): OrderItem {
   const mods = i.modifications ?? { added: [], removed: [], notes: '' };
+  const snapshotWithPrice =
+    i.menuItem && Number.isFinite(Number(i.menuItem.price))
+      ? i.menuItem
+      : { ...(i.menuItem ?? {}), price: Number(i.unitPrice ?? 0) };
   return {
     id: String(i.id),
     menuItemId: String(i.menuItemId),
-    menuItem: menuItemFromSnapshot(i.menuItemId, i.menuItem),
+    menuItem: menuItemFromSnapshot(i.menuItemId, snapshotWithPrice),
     quantity: i.quantity,
     weightGrams: i.weightGrams ?? undefined,
     modifications: {

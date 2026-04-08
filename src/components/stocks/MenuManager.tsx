@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MenuItem, extraIngredients as mockExtraIngredients } from '@/data/mockData';
-import { menuApi, recipesApi, imageSrc, type MenuItemApi, type MenuCategoryApi, type MenuItemIngredientApi, type InstructionStepApi } from '@/lib/api';
+import { menuApi, platformsApi, recipesApi, imageSrc, type MenuItemApi, type MenuCategoryApi, type MenuItemIngredientApi, type InstructionStepApi, type SalesPlatformApi } from '@/lib/api';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ImageUploadButton } from '@/components/ui/image-upload-button';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -60,6 +60,7 @@ interface MenuItemDisplay extends Omit<MenuItem, 'id' | 'kdsStation' | 'allergen
   instructions?: InstructionStepApi[];
   portions?: number;
   gallery?: string[];
+  platformPrices?: MenuItemApi['platformPrices'];
 }
 
 interface MenuFormData {
@@ -79,12 +80,7 @@ interface MenuFormData {
     app: boolean;
     delivery: boolean;
   };
-  platformPricing: {
-    glovo: { name: string; price: number; enabled: boolean };
-    wolt: { name: string; price: number; enabled: boolean };
-    bolt: { name: string; price: number; enabled: boolean };
-    own: { name: string; price: number; enabled: boolean };
-  };
+  platformPricing: Record<number, { displayName: string; price: number; enabled: boolean }>;
 }
 
 const defaultFormData: MenuFormData = {
@@ -104,12 +100,7 @@ const defaultFormData: MenuFormData = {
     app: true,
     delivery: true,
   },
-  platformPricing: {
-    glovo: { name: '', price: 0, enabled: false },
-    wolt: { name: '', price: 0, enabled: false },
-    bolt: { name: '', price: 0, enabled: false },
-    own: { name: '', price: 0, enabled: false },
-  },
+  platformPricing: {},
 };
 
 function mapApiItemToMenuItem(api: MenuItemApi): MenuItemDisplay {
@@ -135,6 +126,7 @@ function mapApiItemToMenuItem(api: MenuItemApi): MenuItemDisplay {
       delivery: api.availability?.delivery ?? true,
     },
     platformPricing: api.platformPricing,
+    platformPrices: api.platformPrices,
   };
 }
 
@@ -144,6 +136,7 @@ export const MenuManager: React.FC = () => {
   const [allergensFromApi, setAllergensFromApi] = useState<{ id: number; name: string; icon?: string }[]>([]);
   const [extraIngredients, setExtraIngredients] = useState<{ id: number; name: string; price: number; category?: string }[]>([]);
   const [categoriesFromApi, setCategoriesFromApi] = useState<MenuCategoryApi[]>([]);
+  const [salesPlatforms, setSalesPlatforms] = useState<SalesPlatformApi[]>([]);
   const [categoryPopoverOpen, setCategoryPopoverOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('');
@@ -223,12 +216,22 @@ export const MenuManager: React.FC = () => {
     }
   };
 
+  const fetchSalesPlatforms = async () => {
+    try {
+      const list = await platformsApi.getAll(true);
+      setSalesPlatforms(list);
+    } catch {
+      setSalesPlatforms([]);
+    }
+  };
+
   useEffect(() => {
     fetchMenu();
     fetchExtraIngredients();
     fetchKdsAndAllergens();
     fetchCategories();
     fetchIngredients();
+    fetchSalesPlatforms();
   }, []);
 
   useEffect(() => {
@@ -317,12 +320,15 @@ export const MenuManager: React.FC = () => {
       image: item.image || '',
       availableExtras: item.availableExtras || [],
       availability: item.availability || { restaurant: true, kiosk: true, app: true, delivery: true },
-      platformPricing: {
-        glovo: item.platformPricing?.glovo || { name: '', price: 0, enabled: false },
-        wolt: item.platformPricing?.wolt || { name: '', price: 0, enabled: false },
-        bolt: item.platformPricing?.bolt || { name: '', price: 0, enabled: false },
-        own: item.platformPricing?.own || { name: '', price: 0, enabled: false },
-      },
+      platformPricing: (item.platformPrices ?? []).reduce<Record<number, { displayName: string; price: number; enabled: boolean }>>((acc, row) => {
+        if (!row?.platformId) return acc;
+        acc[row.platformId] = {
+          displayName: row.displayName ?? '',
+          price: Number(row.price ?? 0),
+          enabled: true,
+        };
+        return acc;
+      }, {}),
     });
     setFormInstructions(
       item.instructions?.length
@@ -382,6 +388,14 @@ export const MenuManager: React.FC = () => {
         pricePerUnit: i.pricePerUnit,
         lossPercent: i.lossPercent ?? 0,
       }));
+    const platformPrices = Object.entries(formData.platformPricing)
+      .map(([platformId, row]) => ({
+        platformId: Number(platformId),
+        displayName: row.displayName?.trim() || undefined,
+        price: Number(row.price),
+        enabled: Boolean(row.enabled),
+      }))
+      .filter((row) => row.enabled && row.platformId > 0 && Number.isFinite(row.price));
     return {
       name: formData.name.trim(),
       description: formData.description || undefined,
@@ -395,7 +409,13 @@ export const MenuManager: React.FC = () => {
       image: formData.image || undefined,
       gallery: formGallery.length ? formGallery : undefined,
       availability: formData.availability,
-      platformPricing: formData.platformPricing,
+      platformPrices: platformPrices.length
+        ? platformPrices.map((row) => ({
+            platformId: row.platformId,
+            displayName: row.displayName,
+            price: row.price,
+          }))
+        : [],
       allergenIds: formData.allergenIds.length ? formData.allergenIds : undefined,
       // Important: trimitem mereu array-ul ca să putem șterge relațiile când se deselectează toate.
       availableExtrasIds: formData.availableExtras,
@@ -1221,213 +1241,71 @@ export const MenuManager: React.FC = () => {
 
                 <ScrollArea className="h-[320px] w-full rounded-lg border p-1">
                 <div className="space-y-4 pr-3 pb-2">
-                  {/* Glovo */}
-                  <div className="p-4 rounded-xl border bg-card">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">🟡</span>
-                        <span className="font-medium">Glovo</span>
-                      </div>
-                      <Switch
-                        checked={formData.platformPricing.glovo.enabled}
-                        onCheckedChange={(checked) => setFormData(prev => ({
-                          ...prev,
-                          platformPricing: {
-                            ...prev.platformPricing,
-                            glovo: { ...prev.platformPricing.glovo, enabled: checked }
-                          }
-                        }))}
-                      />
-                    </div>
-                    {formData.platformPricing.glovo.enabled && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <Label className="text-xs">Nume afișat</Label>
-                          <Input
-                            value={formData.platformPricing.glovo.name}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                glovo: { ...prev.platformPricing.glovo, name: e.target.value }
-                              }
-                            }))}
-                            placeholder={formData.name}
+                  {salesPlatforms.map((platform) => {
+                    const row = formData.platformPricing[platform.id] ?? {
+                      displayName: '',
+                      price: 0,
+                      enabled: false,
+                    };
+                    return (
+                      <div key={platform.id} className="p-4 rounded-xl border bg-card">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">{platform.icon || '🌐'}</span>
+                            <span className="font-medium">{platform.name}</span>
+                          </div>
+                          <Switch
+                            checked={row.enabled}
+                            onCheckedChange={(checked) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                platformPricing: {
+                                  ...prev.platformPricing,
+                                  [platform.id]: { ...row, enabled: checked },
+                                },
+                              }))
+                            }
                           />
                         </div>
-                        <div>
-                          <Label className="text-xs">Preț (RON)</Label>
-                          <Input
-                            type="number"
-                            value={formData.platformPricing.glovo.price}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                glovo: { ...prev.platformPricing.glovo, price: parseFloat(e.target.value) || 0 }
-                              }
-                            }))}
-                          />
-                        </div>
+                        {row.enabled && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs">Nume afișat</Label>
+                              <Input
+                                value={row.displayName}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    platformPricing: {
+                                      ...prev.platformPricing,
+                                      [platform.id]: { ...row, displayName: e.target.value },
+                                    },
+                                  }))
+                                }
+                                placeholder={formData.name}
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Preț (RON)</Label>
+                              <Input
+                                type="number"
+                                value={row.price}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    platformPricing: {
+                                      ...prev.platformPricing,
+                                      [platform.id]: { ...row, price: parseFloat(e.target.value) || 0 },
+                                    },
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-
-                  {/* Wolt */}
-                  <div className="p-4 rounded-xl border bg-card">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">🔵</span>
-                        <span className="font-medium">Wolt</span>
-                      </div>
-                      <Switch
-                        checked={formData.platformPricing.wolt.enabled}
-                        onCheckedChange={(checked) => setFormData(prev => ({
-                          ...prev,
-                          platformPricing: {
-                            ...prev.platformPricing,
-                            wolt: { ...prev.platformPricing.wolt, enabled: checked }
-                          }
-                        }))}
-                      />
-                    </div>
-                    {formData.platformPricing.wolt.enabled && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <Label className="text-xs">Nume afișat</Label>
-                          <Input
-                            value={formData.platformPricing.wolt.name}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                wolt: { ...prev.platformPricing.wolt, name: e.target.value }
-                              }
-                            }))}
-                            placeholder={formData.name}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Preț (RON)</Label>
-                          <Input
-                            type="number"
-                            value={formData.platformPricing.wolt.price}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                wolt: { ...prev.platformPricing.wolt, price: parseFloat(e.target.value) || 0 }
-                              }
-                            }))}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Bolt */}
-                  <div className="p-4 rounded-xl border bg-card">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">🟢</span>
-                        <span className="font-medium">Bolt Food</span>
-                      </div>
-                      <Switch
-                        checked={formData.platformPricing.bolt.enabled}
-                        onCheckedChange={(checked) => setFormData(prev => ({
-                          ...prev,
-                          platformPricing: {
-                            ...prev.platformPricing,
-                            bolt: { ...prev.platformPricing.bolt, enabled: checked }
-                          }
-                        }))}
-                      />
-                    </div>
-                    {formData.platformPricing.bolt.enabled && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <Label className="text-xs">Nume afișat</Label>
-                          <Input
-                            value={formData.platformPricing.bolt.name}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                bolt: { ...prev.platformPricing.bolt, name: e.target.value }
-                              }
-                            }))}
-                            placeholder={formData.name}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Preț (RON)</Label>
-                          <Input
-                            type="number"
-                            value={formData.platformPricing.bolt.price}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                bolt: { ...prev.platformPricing.bolt, price: parseFloat(e.target.value) || 0 }
-                              }
-                            }))}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Website */}
-                  <div className="p-4 rounded-xl border bg-card">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">🏠</span>
-                        <span className="font-medium">Website Propriu</span>
-                      </div>
-                      <Switch
-                        checked={formData.platformPricing.own.enabled}
-                        onCheckedChange={(checked) => setFormData(prev => ({
-                          ...prev,
-                          platformPricing: {
-                            ...prev.platformPricing,
-                            own: { ...prev.platformPricing.own, enabled: checked }
-                          }
-                        }))}
-                      />
-                    </div>
-                    {formData.platformPricing.own.enabled && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <Label className="text-xs">Nume afișat</Label>
-                          <Input
-                            value={formData.platformPricing.own.name}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                own: { ...prev.platformPricing.own, name: e.target.value }
-                              }
-                            }))}
-                            placeholder={formData.name}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Preț (RON)</Label>
-                          <Input
-                            type="number"
-                            value={formData.platformPricing.own.price}
-                            onChange={(e) => setFormData(prev => ({
-                              ...prev,
-                              platformPricing: {
-                                ...prev.platformPricing,
-                                own: { ...prev.platformPricing.own, price: parseFloat(e.target.value) || 0 }
-                              }
-                            }))}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })}
                 </div>
                 </ScrollArea>
               </TabsContent>

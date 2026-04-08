@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +8,7 @@ import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { menuCategories, MenuItem, extraIngredients as extraIngredientsData } from '@/data/mockData';
 import { cn } from '@/lib/utils';
+import { kiosksApi, type KioskApi } from '@/lib/api';
 import { 
   ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
   Package, UtensilsCrossed, Check, X,
@@ -142,6 +144,7 @@ const languages = [
 ];
 
 const KioskOrdering: React.FC = () => {
+  const searchParams = useSearchParams();
   const { menu, createDeliveryOrder, addItemToOrder } = useRestaurant();
   const { language, setLanguage } = useLanguage();
   const { toast } = useToast();
@@ -155,6 +158,13 @@ const KioskOrdering: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<KioskPaymentMethod>('card');
   const [tableNumber, setTableNumber] = useState<string>('');
+  const [kiosks, setKiosks] = useState<KioskApi[]>([]);
+  const [selectedKiosk, setSelectedKiosk] = useState<KioskApi | null>(null);
+  const validKioskNumbers = useMemo(
+    () => new Set((kiosks ?? []).filter((k) => k.active).map((k) => Number(k.number)).filter((n) => Number.isFinite(n))),
+    [kiosks],
+  );
+  const initializedFromQueryRef = useRef(false);
   
   // Customization
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -175,6 +185,30 @@ const KioskOrdering: React.FC = () => {
       return () => clearInterval(interval);
     }
   }, [step]);
+
+  useEffect(() => {
+    kiosksApi
+      .getAll()
+      .then((list) => setKiosks(list))
+      .catch(() => setKiosks([]));
+  }, []);
+
+  // Dacă venim din /dashboard/kiosk, deschidem direct ecranul cu indicator.
+  useEffect(() => {
+    if (initializedFromQueryRef.current) return;
+    const indicator = searchParams.get('indicator');
+    const modeParam = searchParams.get('mode');
+    if (indicator !== '1') return;
+
+    if (modeParam === 'dine-in' || modeParam === 'takeaway') {
+      setOrderMode(modeParam);
+      setStep('table-number');
+      initializedFromQueryRef.current = true;
+      return;
+    }
+    setStep('table-number');
+    initializedFromQueryRef.current = true;
+  }, [searchParams]);
 
   // Idle timeout
   useEffect(() => {
@@ -275,6 +309,7 @@ const KioskOrdering: React.FC = () => {
     setIdleTimer(0);
     setPaymentMethod('card');
     setTableNumber('');
+    setSelectedKiosk(null);
   };
 
   const calculateItemTotal = (item: CartItem) => {
@@ -286,6 +321,23 @@ const KioskOrdering: React.FC = () => {
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const filteredMenu = menu.filter(m => m.category === activeCategory && m.availability?.kiosk !== false);
+
+  const handleContinueWithTableNumber = () => {
+    const parsed = Number(tableNumber);
+    console.log('[KIOSK] Indicator introdus:', tableNumber, '=> parsed:', parsed);
+    console.log('[KIOSK] Numere kiosk valide:', Array.from(validKioskNumbers).sort((a, b) => a - b));
+    if (!tableNumber || !Number.isInteger(parsed) || !validKioskNumbers.has(parsed)) {
+      toast({
+        title: 'Număr indicator invalid',
+        description: 'Introduceți un număr de indicator kiosk valid.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const matched = kiosks.find((k) => k.active && Number(k.number) === parsed) ?? null;
+    setSelectedKiosk(matched);
+    setStep('menu');
+  };
 
   const handleExtraQuantity = (ingredientName: string, delta: number, price: number) => {
     setTempExtras(prev => {
@@ -308,9 +360,10 @@ const KioskOrdering: React.FC = () => {
       ? `Kiosk - Masă #${tableNumber || 'N/A'}` 
       : 'Kiosk - La pachet';
     
-    const order = createDeliveryOrder('own_website', {
+    const order = createDeliveryOrder('kiosk', {
       name: orderName,
       phone: 'Kiosk',
+      platformOrderId: selectedKiosk ? `kiosk:${selectedKiosk.id}` : undefined,
     });
     
     cart.forEach(item => {
@@ -576,7 +629,7 @@ const KioskOrdering: React.FC = () => {
             </Button>
             <Button
               size="lg"
-              onClick={() => setStep('menu')}
+              onClick={handleContinueWithTableNumber}
               disabled={!tableNumber}
               className="px-8 text-lg"
             >

@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, MenuItem, menuCategories, users, deliveryPlatforms, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation, upsellQuestions, UpsellQuestion, expiringProducts, ExpiringProduct, menuItems } from '@/data/mockData';
+import { Table, MenuItem, menuCategories, deliveryPlatforms, ExtraIngredient, extraIngredientCategories, kioskSteps, allergens, KDSStation, upsellQuestions, UpsellQuestion, expiringProducts, ExpiringProduct, menuItems } from '@/data/mockData';
 import { menuApi, tablesApi, normalizeTablePosition, type TableApi } from '@/lib/api';
+import { sanitizeTablePositionForApi } from '@/lib/tablePosition';
 import AdminTableMap from '@/components/AdminTableMap';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +34,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const isMobile = useIsMobile();
   const { 
     tables,
+    directoryUsers,
     menu, addMenuItem, updateMenuItem, deleteMenuItem,
     kdsStations, addKdsStation, updateKdsStation, deleteKdsStation,
     orders, reservations, deleteReservation, updateReservation
@@ -75,32 +77,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const [schemaTablesLoading, setSchemaTablesLoading] = useState(false);
 
   /** Mapează răspuns API la tipul Table (mockData) folosit de AdminTableMap. */
-  const mapApiTableToTable = (api: TableApi): Table => ({
-    id: api.id,
-    number: api.number,
-    seats: api.seats,
-    status: api.status,
-    position: normalizeTablePosition(api.position) ?? { x: 50, y: 50 },
-    shape: api.shape,
-    currentOrderId: api.currentOrderId ?? undefined,
-    reservationId: api.reservationId ?? undefined,
-    currentGuests: api.currentGuests,
-    mergedWith: api.mergedWith ?? undefined,
-    qrCode: api.qrCode ?? undefined,
-  });
+  const mapApiTableToTable = useCallback(
+    (api: TableApi, fallbackPosition?: { x: number; y: number }): Table => ({
+      id: api.id,
+      number: api.number,
+      seats: api.seats,
+      status: api.status,
+      position: normalizeTablePosition(api.position) ?? fallbackPosition ?? { x: 50, y: 50 },
+      shape: api.shape,
+      currentOrderId: api.currentOrderId ?? undefined,
+      reservationId: api.reservationId ?? undefined,
+      currentGuests: api.currentGuests,
+      mergedWith: api.mergedWith ?? undefined,
+      qrCode: api.qrCode ?? undefined,
+    }),
+    [],
+  );
 
   const fetchSchemaTables = useCallback(async () => {
     setSchemaTablesLoading(true);
     try {
       const list = await tablesApi.getTables();
-      setSchemaTables(list.map(mapApiTableToTable));
+      setSchemaTables((prev) =>
+        list.map((api) => {
+          const prevPos = prev.find((t) => t.id === api.id)?.position;
+          return mapApiTableToTable(api, prevPos);
+        }),
+      );
     } catch (e) {
       toast({ title: 'Eroare la încărcarea meselor', description: String(e), variant: 'destructive' });
       setSchemaTables([]);
     } finally {
       setSchemaTablesLoading(false);
     }
-  }, [toast]);
+  }, [toast, mapApiTableToTable]);
 
   React.useEffect(() => {
     if (['tables', 'tableMap', 'reservations'].includes(activeView)) fetchSchemaTables();
@@ -133,7 +143,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const handleSaveSchema = useCallback(async () => {
     try {
       for (const table of schemaTables) {
-        await tablesApi.updateTable(table.id, { position: table.position });
+        const pos = sanitizeTablePositionForApi(table.position);
+        if (!pos) continue;
+        await tablesApi.updateTable(table.id, { position: pos });
       }
       toast({ title: 'Schema salvată', description: 'Pozițiile meselor au fost actualizate.' });
     } catch (e) {
@@ -355,7 +367,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
   const avgOrder = todayOrders.length > 0 ? todaySales / todayOrders.length : 0;
 
   // Waiter stats
-  const waiterStats = users.filter(u => u.role === 'waiter').map(waiter => {
+  const waiterStats = directoryUsers.filter(u => u.role === 'waiter').map(waiter => {
     const waiterOrders = orders.filter(o => o.waiterId === waiter.id && o.status === 'completed');
     return {
       ...waiter,
@@ -1393,7 +1405,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
             <h2 className="text-2xl font-bold mb-6">{t('waiters.title')}</h2>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {users.filter(u => u.role === 'waiter').map(waiter => {
+              {directoryUsers.filter(u => u.role === 'waiter').map(waiter => {
                 const stats = waiterStats.find(w => w.id === waiter.id);
                 return (
                   <div key={waiter.id} className="p-4 rounded-xl bg-card border border-border">

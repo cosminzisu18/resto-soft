@@ -238,40 +238,19 @@ export interface DeliveryPlatform {
   apiConnected: boolean;
 }
 
-// Mock Users
+/**
+ * Utilizatori demo (fallback când GET /users eșuează).
+ * ID-uri = aceleași ca în `backend/src/modules/user/user.seed.ts` (seed la DB gol).
+ */
 export const users: User[] = [
-  { id: "1", name: "Maria Popescu", role: "waiter", pin: "1234", avatar: "MP" },
-  { id: "2", name: "Ion Ionescu", role: "waiter", pin: "5678", avatar: "II" },
-  {
-    id: "3",
-    name: "Elena Vasilescu",
-    role: "waiter",
-    pin: "9012",
-    avatar: "EV",
-  },
-  { id: "4", name: "Admin", role: "admin", pin: "0000", avatar: "AD" },
-  { id: "5", name: "Bucătar Supe", role: "kitchen", pin: "1111", avatar: "BS" },
-  {
-    id: "6",
-    name: "Bucătar Pizza",
-    role: "kitchen",
-    pin: "2222",
-    avatar: "BP",
-  },
-  {
-    id: "7",
-    name: "Bucătar Grill",
-    role: "kitchen",
-    pin: "3333",
-    avatar: "BG",
-  },
-  {
-    id: "8",
-    name: "Bucătar Giros",
-    role: "kitchen",
-    pin: "4444",
-    avatar: "BK",
-  },
+  { id: '10000001-0001-4001-8001-000000000001', name: 'Maria Popescu', role: 'waiter', pin: '1234', avatar: 'MP' },
+  { id: '10000001-0001-4001-8001-000000000002', name: 'Ion Ionescu', role: 'waiter', pin: '5678', avatar: 'II' },
+  { id: '10000001-0001-4001-8001-000000000003', name: 'Elena Vasilescu', role: 'waiter', pin: '9012', avatar: 'EV' },
+  { id: '10000001-0001-4001-8001-000000000004', name: 'Admin', role: 'admin', pin: '0000', avatar: 'AD' },
+  { id: '10000001-0001-4001-8001-000000000005', name: 'Bucătar Supe', role: 'kitchen', pin: '1111', avatar: 'BS' },
+  { id: '10000001-0001-4001-8001-000000000006', name: 'Bucătar Pizza', role: 'kitchen', pin: '2222', avatar: 'BP' },
+  { id: '10000001-0001-4001-8001-000000000007', name: 'Bucătar Grill', role: 'kitchen', pin: '3333', avatar: 'BG' },
+  { id: '10000001-0001-4001-8001-000000000008', name: 'Bucătar Giros', role: 'kitchen', pin: '4444', avatar: 'BK' },
 ];
 
 // KDS Stations
@@ -1096,7 +1075,7 @@ export const sampleOrders: Order[] = [
     id: "o1",
     tableId: 3,
     tableNumber: 3,
-    waiterId: "1",
+    waiterId: '10000001-0001-4001-8001-000000000001',
     waiterName: "Maria Popescu",
     items: [
       {
@@ -1163,7 +1142,7 @@ export const sampleOrders: Order[] = [
     id: "o2",
     tableId: 7,
     tableNumber: 7,
-    waiterId: "2",
+    waiterId: '10000001-0001-4001-8001-000000000002',
     waiterName: "Ion Ionescu",
     items: [
       {
@@ -1225,7 +1204,7 @@ export const sampleOrders: Order[] = [
   // Order 3: Delivery Glovo - Multiple pizzas
   {
     id: "o3",
-    waiterId: "1",
+    waiterId: '10000001-0001-4001-8001-000000000001',
     waiterName: "Sistem",
     items: [
       {
@@ -1280,7 +1259,7 @@ export const sampleOrders: Order[] = [
   // Order 4: Delivery Wolt - Giros focus
   {
     id: "o4",
-    waiterId: "1",
+    waiterId: '10000001-0001-4001-8001-000000000001',
     waiterName: "Sistem",
     items: [
       {
@@ -1328,7 +1307,7 @@ export const sampleOrders: Order[] = [
     id: "o5",
     tableId: 4,
     tableNumber: 4,
-    waiterId: "3",
+    waiterId: '10000001-0001-4001-8001-000000000003',
     waiterName: "Elena Vasilescu",
     items: [
       {
@@ -1377,7 +1356,7 @@ export const sampleOrders: Order[] = [
   // Order 6: Phone order - Mixed
   {
     id: "o6",
-    waiterId: "1",
+    waiterId: '10000001-0001-4001-8001-000000000001',
     waiterName: "Sistem",
     items: [
       {
@@ -1421,7 +1400,7 @@ export const sampleOrders: Order[] = [
   // Order 7: URGENT - Bolt delivery overdue
   {
     id: "o7",
-    waiterId: "1",
+    waiterId: '10000001-0001-4001-8001-000000000001',
     waiterName: "Sistem",
     items: [
       {

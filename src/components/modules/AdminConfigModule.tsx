@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
-import { imageSrc, menuApi, normalizeTablePosition, storageApi, tablesApi, type KdsStationApi, type KdsStationType, type StorageZoneApi, type TableApi } from '@/lib/api';
+import { imageSrc, kiosksApi, menuApi, normalizeTablePosition, platformsApi, storageApi, tablesApi, usersApi, type KdsStationApi, type KdsStationType, type KioskApi, type SalesPlatformApi, type StorageZoneApi, type TableApi, type UserApi, type UserRoleApi } from '@/lib/api';
+import { useRestaurant } from '@/context/RestaurantContext';
 import { ImageUploadButton } from '@/components/ui/image-upload-button';
 import {
   Settings,
@@ -40,7 +41,6 @@ import {
   LayoutGrid,
   Monitor,
   Smartphone,
-  Tablet,
   Image,
   Upload,
   Palette,
@@ -72,21 +72,11 @@ const mockMenusPerLocation = [
   { locationId: 2, menuName: 'Meniu Express', items: 15, active: true },
 ];
 
-// Mock data pentru utilizatori
-const mockUsers = [
-  { id: 1, name: 'Admin Principal', email: 'admin@restaurant.ro', role: 'admin', location: 'Toate', status: 'active', lastLogin: '2024-01-15 14:30' },
-  { id: 2, name: 'Maria Ionescu', email: 'maria@restaurant.ro', role: 'manager', location: 'Restaurant Central', status: 'active', lastLogin: '2024-01-15 10:15' },
-  { id: 3, name: 'Ion Popescu', email: 'ion@restaurant.ro', role: 'waiter', location: 'Restaurant Central', status: 'active', lastLogin: '2024-01-14 18:00' },
-  { id: 4, name: 'Ana Dumitrescu', email: 'ana@restaurant.ro', role: 'kitchen', location: 'Restaurant Mall', status: 'active', lastLogin: '2024-01-15 08:00' },
-  { id: 5, name: 'Mihai Stoica', email: 'mihai@restaurant.ro', role: 'waiter', location: 'Restaurant Mall', status: 'inactive', lastLogin: '2024-01-10 12:00' },
-];
-
-const roles = [
-  { id: 'admin', name: 'Administrator', permissions: ['all'] },
-  { id: 'manager', name: 'Manager', permissions: ['pos', 'reports', 'stocks', 'employees'] },
-  { id: 'waiter', name: 'Ospătar', permissions: ['pos'] },
-  { id: 'kitchen', name: 'Bucătărie', permissions: ['kds'] },
-  { id: 'cashier', name: 'Casier', permissions: ['pos', 'reports'] },
+/** Roluri sincronizate cu backend (`users.role`): admin, ospătar, bucătărie. */
+const STAFF_ROLES: { id: UserRoleApi; name: string }[] = [
+  { id: 'admin', name: 'Administrator' },
+  { id: 'waiter', name: 'Ospătar' },
+  { id: 'kitchen', name: 'Bucătărie' },
 ];
 
 const TABLE_ZONE_PRESETS = ['Interior', 'Terasă', 'Bar'] as const;
@@ -110,9 +100,19 @@ const KDS_STATION_TYPES: { value: KdsStationType; label: string }[] = [
 const KDS_ICONS = ['🍲', '🍕', '🔥', '🥙', '🥗', '🍰', '🍹'];
 
 export const AdminConfigModule: React.FC = () => {
+  const { refreshDirectoryUsers } = useRestaurant();
   const [configTab, setConfigTab] = useState('general');
   const [locations, setLocations] = useState(mockLocations);
-  const [users, setUsers] = useState(mockUsers);
+  const [staffList, setStaffList] = useState<UserApi[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<UserApi | null>(null);
+  const [userForm, setUserForm] = useState({
+    name: '',
+    pin: '',
+    role: 'waiter' as UserRoleApi,
+    branchId: '',
+  });
   /** Mese din API (GET /tables) – tab Hartă Mese */
   const [dbTables, setDbTables] = useState<TableApi[]>([]);
   const [dbTablesLoading, setDbTablesLoading] = useState(false);
@@ -126,7 +126,6 @@ export const AdminConfigModule: React.FC = () => {
   const [extraIngredientsLoading, setExtraIngredientsLoading] = useState(false);
   const [searchUser, setSearchUser] = useState('');
   const [showAddLocation, setShowAddLocation] = useState(false);
-  const [showAddUser, setShowAddUser] = useState(false);
   const [showAddTable, setShowAddTable] = useState(false);
   const [editingTableId, setEditingTableId] = useState<number | null>(null);
   const [tableForm, setTableForm] = useState({
@@ -147,7 +146,23 @@ export const AdminConfigModule: React.FC = () => {
   const [editingZone, setEditingZone] = useState<StorageZoneApi | null>(null);
   const [zoneForm, setZoneForm] = useState({ name: '', code: '' });
   const [selectedLocation, setSelectedLocation] = useState<typeof mockLocations[0] | null>(null);
-  const [kioskTab, setKioskTab] = useState<'availability' | 'steps' | 'appearance'>('availability');
+  const [kioskTab, setKioskTab] = useState<'availability' | 'steps' | 'appearance' | 'numbers'>('availability');
+  const [kiosks, setKiosks] = useState<KioskApi[]>([]);
+  const [kiosksLoading, setKiosksLoading] = useState(false);
+  const [showKioskDialog, setShowKioskDialog] = useState(false);
+  const [editingKiosk, setEditingKiosk] = useState<KioskApi | null>(null);
+  const [kioskForm, setKioskForm] = useState({ number: '', name: '', active: true });
+  const [platforms, setPlatforms] = useState<SalesPlatformApi[]>([]);
+  const [platformsLoading, setPlatformsLoading] = useState(false);
+  const [showPlatformDialog, setShowPlatformDialog] = useState(false);
+  const [editingPlatform, setEditingPlatform] = useState<SalesPlatformApi | null>(null);
+  const [platformForm, setPlatformForm] = useState({
+    code: '',
+    name: '',
+    icon: '',
+    active: true,
+    sortOrder: '0',
+  });
 
   // Setări kiosk
   const [kioskSettings, setKioskSettings] = useState({
@@ -203,6 +218,86 @@ export const AdminConfigModule: React.FC = () => {
     if (configTab === 'extras') void fetchExtraIngredients();
   }, [configTab, fetchExtraIngredients]);
 
+  const fetchStaff = useCallback(async () => {
+    setStaffLoading(true);
+    try {
+      const list = await usersApi.list();
+      setStaffList(list);
+    } catch (e) {
+      toast({ title: 'Nu s-au putut încărca utilizatorii', description: (e as Error).message, variant: 'destructive' });
+      setStaffList([]);
+    } finally {
+      setStaffLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchStaff();
+  }, [fetchStaff]);
+
+  const openAddStaff = () => {
+    setEditingStaff(null);
+    setUserForm({ name: '', pin: '', role: 'waiter', branchId: '' });
+    setUserDialogOpen(true);
+  };
+
+  const openEditStaff = (u: UserApi) => {
+    setEditingStaff(u);
+    setUserForm({
+      name: u.name,
+      pin: u.pin,
+      role: u.role,
+      branchId: u.branchId ?? '',
+    });
+    setUserDialogOpen(true);
+  };
+
+  const handleSaveStaff = async () => {
+    const name = userForm.name.trim();
+    const pin = userForm.pin.trim();
+    if (!name || pin.length < 4) {
+      toast({ title: 'Completează numele și un PIN de minim 4 caractere.', variant: 'destructive' });
+      return;
+    }
+    try {
+      if (editingStaff) {
+        await usersApi.update(editingStaff.id, {
+          name,
+          pin,
+          role: userForm.role,
+          branchId: userForm.branchId.trim() || null,
+        });
+        toast({ title: 'Utilizator actualizat', description: 'Datele au fost salvate în baza de date.' });
+      } else {
+        await usersApi.create({
+          name,
+          pin,
+          role: userForm.role,
+          branchId: userForm.branchId.trim() || undefined,
+        });
+        toast({ title: 'Utilizator creat', description: 'Contul poate fi folosit la ecranul de login.' });
+      }
+      setUserDialogOpen(false);
+      setEditingStaff(null);
+      await fetchStaff();
+      await refreshDirectoryUsers();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteStaff = async (u: UserApi) => {
+    if (!confirm(`Ștergi utilizatorul „${u.name}”?`)) return;
+    try {
+      await usersApi.delete(u.id);
+      toast({ title: 'Utilizator șters' });
+      await fetchStaff();
+      await refreshDirectoryUsers();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
   const fetchZones = useCallback(async () => {
     setZonesLoading(true);
     try {
@@ -236,11 +331,49 @@ export const AdminConfigModule: React.FC = () => {
     }
   }, []);
 
+  const fetchKiosks = useCallback(async () => {
+    setKiosksLoading(true);
+    try {
+      const list = await kiosksApi.getAll();
+      setKiosks(list);
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu s-au putut încărca kiosk-urile.', variant: 'destructive' });
+      setKiosks([]);
+    } finally {
+      setKiosksLoading(false);
+    }
+  }, []);
+
+  const fetchPlatforms = useCallback(async () => {
+    setPlatformsLoading(true);
+    try {
+      const list = await platformsApi.getAll();
+      setPlatforms(list);
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu s-au putut încărca platformele.', variant: 'destructive' });
+      setPlatforms([]);
+    } finally {
+      setPlatformsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (configTab === 'tables') {
       fetchDbTables();
     }
   }, [configTab, fetchDbTables]);
+
+  useEffect(() => {
+    if (configTab === 'kiosk') {
+      void fetchKiosks();
+    }
+  }, [configTab, fetchKiosks]);
+
+  useEffect(() => {
+    if (configTab === 'platforms') {
+      void fetchPlatforms();
+    }
+  }, [configTab, fetchPlatforms]);
 
   const tableDisplayName = (t: TableApi) => `M${t.number}`;
 
@@ -294,10 +427,6 @@ export const AdminConfigModule: React.FC = () => {
       toast({ title: 'Eroare', description: 'Numărul de locuri trebuie să fie valid.', variant: 'destructive' });
       return;
     }
-    const px = parseFloat(tableForm.posX);
-    const py = parseFloat(tableForm.posY);
-    const position =
-      !Number.isNaN(px) && !Number.isNaN(py) ? { x: Math.max(0, Math.min(100, px)), y: Math.max(0, Math.min(100, py)) } : undefined;
     try {
       if (editingTableId) {
         await tablesApi.updateTable(editingTableId, {
@@ -306,10 +435,13 @@ export const AdminConfigModule: React.FC = () => {
           zone: tableForm.zone.trim() === 'Fără zonă' ? '' : tableForm.zone.trim(),
           shape: tableForm.shape,
           status: tableForm.status,
-          position,
         });
         toast({ title: 'Masă actualizată', description: 'Modificările au fost salvate.' });
       } else {
+        const px = parseFloat(tableForm.posX);
+        const py = parseFloat(tableForm.posY);
+        const position =
+          !Number.isNaN(px) && !Number.isNaN(py) ? { x: Math.max(0, Math.min(100, px)), y: Math.max(0, Math.min(100, py)) } : undefined;
         await tablesApi.createTable({
           number: num,
           seats,
@@ -500,9 +632,10 @@ export const AdminConfigModule: React.FC = () => {
     }
   };
 
-  const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchUser.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchUser.toLowerCase())
+  const filteredUsers = staffList.filter(
+    (user) =>
+      user.name.toLowerCase().includes(searchUser.toLowerCase()) ||
+      user.role.toLowerCase().includes(searchUser.toLowerCase()),
   );
 
   const handleSaveSettings = () => {
@@ -514,16 +647,120 @@ export const AdminConfigModule: React.FC = () => {
     toast({ title: "Locație ștearsă", description: "Locația a fost eliminată din sistem." });
   };
 
-  const handleToggleUserStatus = (id: number) => {
-    setUsers(prev => prev.map(u => 
-      u.id === id ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' } : u
-    ));
-  };
-
   const toggleMenuChannel = (productId: number, channel: 'restaurant' | 'kiosk' | 'app' | 'delivery') => {
     setMenuAvailability(prev => prev.map(item => 
       item.id === productId ? { ...item, [channel]: !item[channel] } : item
     ));
+  };
+
+  const openAddKioskDialog = () => {
+    setEditingKiosk(null);
+    setKioskForm({ number: '', name: '', active: true });
+    setShowKioskDialog(true);
+  };
+
+  const openEditKioskDialog = (k: KioskApi) => {
+    setEditingKiosk(k);
+    setKioskForm({ number: String(k.number), name: k.name ?? '', active: k.active });
+    setShowKioskDialog(true);
+  };
+
+  const handleSaveKiosk = async () => {
+    const number = parseInt(kioskForm.number, 10);
+    if (Number.isNaN(number) || number < 1) {
+      toast({ title: 'Eroare', description: 'Numărul kiosk trebuie să fie un număr valid.', variant: 'destructive' });
+      return;
+    }
+    try {
+      if (editingKiosk) {
+        await kiosksApi.update(editingKiosk.id, { number, name: kioskForm.name, active: kioskForm.active });
+        toast({ title: 'Kiosk actualizat', description: 'Datele kiosk-ului au fost salvate.' });
+      } else {
+        await kiosksApi.create({ number, name: kioskForm.name, active: kioskForm.active });
+        toast({ title: 'Kiosk adăugat', description: 'Kiosk-ul a fost creat.' });
+      }
+      setShowKioskDialog(false);
+      setEditingKiosk(null);
+      await fetchKiosks();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteKiosk = async (k: KioskApi) => {
+    if (!confirm(`Ștergi kiosk-ul #${k.number}?`)) return;
+    try {
+      await kiosksApi.delete(k.id);
+      toast({ title: 'Kiosk șters', description: 'Kiosk-ul a fost eliminat.' });
+      await fetchKiosks();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const openAddPlatformDialog = () => {
+    setEditingPlatform(null);
+    setPlatformForm({ code: '', name: '', icon: '', active: true, sortOrder: '0' });
+    setShowPlatformDialog(true);
+  };
+
+  const openEditPlatformDialog = (platform: SalesPlatformApi) => {
+    setEditingPlatform(platform);
+    setPlatformForm({
+      code: platform.code,
+      name: platform.name,
+      icon: platform.icon ?? '',
+      active: platform.active,
+      sortOrder: String(platform.sortOrder ?? 0),
+    });
+    setShowPlatformDialog(true);
+  };
+
+  const handleSavePlatform = async () => {
+    const code = platformForm.code.trim().toLowerCase();
+    const name = platformForm.name.trim();
+    const sortOrder = parseInt(platformForm.sortOrder, 10) || 0;
+    if (!code || !name) {
+      toast({ title: 'Eroare', description: 'Codul și numele platformei sunt obligatorii.', variant: 'destructive' });
+      return;
+    }
+    try {
+      if (editingPlatform) {
+        await platformsApi.update(editingPlatform.id, {
+          code,
+          name,
+          icon: platformForm.icon.trim() || undefined,
+          active: platformForm.active,
+          sortOrder,
+        });
+        toast({ title: 'Platformă actualizată' });
+      } else {
+        await platformsApi.create({
+          code,
+          name,
+          icon: platformForm.icon.trim() || undefined,
+          active: platformForm.active,
+          sortOrder,
+        });
+        toast({ title: 'Platformă adăugată' });
+      }
+      setShowPlatformDialog(false);
+      setEditingPlatform(null);
+      await fetchPlatforms();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleDeletePlatform = async (platform: SalesPlatformApi) => {
+    if (!confirm(`Ștergi platforma „${platform.name}”?`)) return;
+    try {
+      await platformsApi.delete(platform.id);
+      toast({ title: 'Platformă ștearsă' });
+      await fetchPlatforms();
+    } catch (e) {
+      toast({ title: 'Eroare', description: (e as Error).message, variant: 'destructive' });
+    }
   };
 
   return (
@@ -562,6 +799,10 @@ export const AdminConfigModule: React.FC = () => {
               <TabsTrigger value="kiosk" className="gap-2">
                 <Monitor className="h-4 w-4" />
                 Kiosk & App
+              </TabsTrigger>
+              <TabsTrigger value="platforms" className="gap-2">
+                <Globe className="h-4 w-4" />
+                Platforme
               </TabsTrigger>
               <TabsTrigger value="kds" className="gap-2">
                 <Flame className="h-4 w-4" />
@@ -913,90 +1154,99 @@ export const AdminConfigModule: React.FC = () => {
 
             {/* Utilizatori & Roluri */}
             <TabsContent value="users" className="mt-6 space-y-6">
-              <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Conturi cu PIN pentru login (RestoSoft). La prima pornire a backend-ului, utilizatorii demo sunt creați automat în DB (aceiași ca în mock). PIN-ul este afișat mai jos pentru suport / formare.
+              </p>
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-4 flex-1">
                   <div className="relative max-w-sm flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      placeholder="Caută utilizator..."
+                    <Input
+                      placeholder="Caută după nume sau rol..."
                       value={searchUser}
                       onChange={(e) => setSearchUser(e.target.value)}
                       className="pl-10"
                     />
                   </div>
                 </div>
-                <Dialog open={showAddUser} onOpenChange={setShowAddUser}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      Adaugă Utilizator
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg">
-                    <DialogHeader>
-                      <DialogTitle>Adaugă Utilizator Nou</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label>Nume Complet</Label>
-                        <Input placeholder="Ex: Ion Popescu" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input type="email" placeholder="email@restaurant.ro" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label>Rol</Label>
-                          <Select>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selectează rol" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {roles.map(role => (
-                                <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Locație</Label>
-                          <Select>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selectează locație" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">Toate locațiile</SelectItem>
-                              {locations.map(loc => (
-                                <SelectItem key={loc.id} value={String(loc.id)}>{loc.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Parolă Temporară</Label>
-                        <Input type="password" placeholder="••••••••" />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowAddUser(false)}>Anulează</Button>
-                      <Button onClick={() => {
-                        setShowAddUser(false);
-                        toast({ title: "Utilizator creat", description: "Un email de invitație a fost trimis." });
-                      }}>
-                        <Check className="h-4 w-4 mr-2" />
-                        Creează Utilizator
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                <Button onClick={openAddStaff}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Adaugă utilizator
+                </Button>
               </div>
 
-              {/* Roles Overview */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {roles.map((role) => {
-                  const count = users.filter(u => u.role === role.id).length;
+              <Dialog
+                open={userDialogOpen}
+                onOpenChange={(open) => {
+                  setUserDialogOpen(open);
+                  if (!open) setEditingStaff(null);
+                }}
+              >
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>{editingStaff ? 'Modifică utilizator' : 'Utilizator nou'}</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Nume afișat</Label>
+                      <Input
+                        placeholder="Ex: Ion Popescu"
+                        value={userForm.name}
+                        onChange={(e) => setUserForm((f) => ({ ...f, name: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>PIN (minim 4 caractere)</Label>
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="••••"
+                        value={userForm.pin}
+                        onChange={(e) => setUserForm((f) => ({ ...f, pin: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Rol</Label>
+                      <Select
+                        value={userForm.role}
+                        onValueChange={(v) => setUserForm((f) => ({ ...f, role: v as UserRoleApi }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Rol" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STAFF_ROLES.map((role) => (
+                            <SelectItem key={role.id} value={role.id}>
+                              {role.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>ID filială (opțional, UUID din baza de date)</Label>
+                      <Input
+                        placeholder="Lasă gol dacă nu folosești filiale"
+                        value={userForm.branchId}
+                        onChange={(e) => setUserForm((f) => ({ ...f, branchId: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setUserDialogOpen(false)}>
+                      Anulează
+                    </Button>
+                    <Button onClick={() => void handleSaveStaff()}>
+                      <Check className="h-4 w-4 mr-2" />
+                      Salvează
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {STAFF_ROLES.map((role) => {
+                  const count = staffList.filter((u) => u.role === role.id).length;
                   return (
                     <Card key={role.id} className="bg-muted/30">
                       <CardContent className="p-4 text-center">
@@ -1008,67 +1258,66 @@ export const AdminConfigModule: React.FC = () => {
                 })}
               </div>
 
-              {/* Users Table */}
               <Card>
                 <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Utilizator</TableHead>
-                        <TableHead>Rol</TableHead>
-                        <TableHead>Locație</TableHead>
-                        <TableHead>Ultima Conectare</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Acțiuni</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredUsers.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium text-foreground">{user.name}</p>
-                              <p className="text-sm text-muted-foreground">{user.email}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {roles.find(r => r.id === user.role)?.name || user.role}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{user.location}</TableCell>
-                          <TableCell className="text-muted-foreground text-sm">{user.lastLogin}</TableCell>
-                          <TableCell>
-                            <Badge variant={user.status === 'active' ? 'default' : 'secondary'}>
-                              {user.status === 'active' ? 'Activ' : 'Inactiv'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-8 w-8"
-                                onClick={() => handleToggleUserStatus(user.id)}
-                              >
-                                {user.status === 'active' ? (
-                                  <EyeOff className="h-4 w-4" />
-                                ) : (
-                                  <Eye className="h-4 w-4" />
-                                )}
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
+                  {staffLoading ? (
+                    <p className="p-8 text-center text-muted-foreground">Se încarcă utilizatorii…</p>
+                  ) : filteredUsers.length === 0 ? (
+                    <p className="p-8 text-center text-muted-foreground">Niciun utilizator. Adaugă primul cont sau verifică backend-ul GET /users.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Utilizator</TableHead>
+                          <TableHead>Rol</TableHead>
+                          <TableHead>PIN</TableHead>
+                          <TableHead>Filială</TableHead>
+                          <TableHead className="text-right">Acțiuni</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredUsers.map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell>
+                              <p className="font-medium text-foreground">{user.name}</p>
+                              <p className="text-xs text-muted-foreground font-mono">{user.id.slice(0, 8)}…</p>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                {STAFF_ROLES.find((r) => r.id === user.role)?.name ?? user.role}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm font-semibold tracking-wide">{user.pin}</TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {user.branch?.name ?? user.branchId ?? '—'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => openEditStaff(user)}
+                                  title="Editează"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive"
+                                  onClick={() => void handleDeleteStaff(user)}
+                                  title="Șterge"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1410,6 +1659,7 @@ export const AdminConfigModule: React.FC = () => {
                       <TabsTrigger value="availability">Disponibilitate Meniu</TabsTrigger>
                       <TabsTrigger value="steps">Pași Kiosk</TabsTrigger>
                       <TabsTrigger value="appearance">Aspect</TabsTrigger>
+                      <TabsTrigger value="numbers">Număr Kiosk</TabsTrigger>
                     </TabsList>
 
                     {/* Menu Availability */}
@@ -1578,7 +1828,266 @@ export const AdminConfigModule: React.FC = () => {
                         </div>
                       </div>
                     </TabsContent>
+
+                    {/* Kiosk Numbers */}
+                    <TabsContent value="numbers" className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">Definești aici kiosk-urile active și numerele indicator.</p>
+                        <Button onClick={openAddKioskDialog}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Adaugă Kiosk
+                        </Button>
+                      </div>
+
+                      <Dialog
+                        open={showKioskDialog}
+                        onOpenChange={(open) => {
+                          setShowKioskDialog(open);
+                          if (!open) setEditingKiosk(null);
+                        }}
+                      >
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>{editingKiosk ? 'Editează Kiosk' : 'Adaugă Kiosk'}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <Label>Număr kiosk</Label>
+                              <Input
+                                inputMode="numeric"
+                                placeholder="Ex: 12"
+                                value={kioskForm.number}
+                                onChange={(e) => setKioskForm((p) => ({ ...p, number: e.target.value }))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Denumire (opțional)</Label>
+                              <Input
+                                placeholder="Ex: Kiosk Intrare"
+                                value={kioskForm.name}
+                                onChange={(e) => setKioskForm((p) => ({ ...p, name: e.target.value }))}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                              <div>
+                                <p className="font-medium text-sm">Activ</p>
+                                <p className="text-xs text-muted-foreground">Disponibil pentru self-order</p>
+                              </div>
+                              <Switch
+                                checked={kioskForm.active}
+                                onCheckedChange={(checked) => setKioskForm((p) => ({ ...p, active: checked }))}
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setShowKioskDialog(false)}>Anulează</Button>
+                            <Button onClick={handleSaveKiosk}>
+                              <Check className="h-4 w-4 mr-2" />
+                              Salvează
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>ID</TableHead>
+                            <TableHead>Număr</TableHead>
+                            <TableHead>Denumire</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Acțiuni</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {kiosksLoading ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                                Se încarcă kiosk-urile...
+                              </TableCell>
+                            </TableRow>
+                          ) : kiosks.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                                Nu există kiosk-uri configurate.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            kiosks.map((k) => (
+                              <TableRow key={k.id}>
+                                <TableCell>{k.id}</TableCell>
+                                <TableCell className="font-semibold">#{k.number}</TableCell>
+                                <TableCell>{k.name || '-'}</TableCell>
+                                <TableCell>
+                                  <Badge variant={k.active ? 'default' : 'secondary'}>
+                                    {k.active ? 'Activ' : 'Inactiv'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditKioskDialog(k)}>
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteKiosk(k)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TabsContent>
                   </Tabs>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="platforms" className="mt-6 space-y-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Globe className="h-5 w-5 text-primary" />
+                      Platforme de vânzare
+                    </CardTitle>
+                    <CardDescription>
+                      Configurezi platformele disponibile pentru prețuri per produs în meniul admin.
+                    </CardDescription>
+                  </div>
+                  <Button onClick={openAddPlatformDialog}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adaugă platformă
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <Dialog
+                    open={showPlatformDialog}
+                    onOpenChange={(open) => {
+                      setShowPlatformDialog(open);
+                      if (!open) setEditingPlatform(null);
+                    }}
+                  >
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>{editingPlatform ? 'Editează platformă' : 'Adaugă platformă'}</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label>Cod intern</Label>
+                          <Input
+                            placeholder="Ex: glovo"
+                            value={platformForm.code}
+                            onChange={(e) => setPlatformForm((p) => ({ ...p, code: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Nume afișat</Label>
+                          <Input
+                            placeholder="Ex: Glovo"
+                            value={platformForm.name}
+                            onChange={(e) => setPlatformForm((p) => ({ ...p, name: e.target.value }))}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label>Icon</Label>
+                            <Input
+                              placeholder="Ex: 🟡"
+                              value={platformForm.icon}
+                              onChange={(e) => setPlatformForm((p) => ({ ...p, icon: e.target.value }))}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Sortare</Label>
+                            <Input
+                              inputMode="numeric"
+                              value={platformForm.sortOrder}
+                              onChange={(e) => setPlatformForm((p) => ({ ...p, sortOrder: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                          <div>
+                            <p className="font-medium text-sm">Activă</p>
+                            <p className="text-xs text-muted-foreground">Va apărea la prețurile pe platforme</p>
+                          </div>
+                          <Switch
+                            checked={platformForm.active}
+                            onCheckedChange={(checked) => setPlatformForm((p) => ({ ...p, active: checked }))}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowPlatformDialog(false)}>Anulează</Button>
+                        <Button onClick={handleSavePlatform}>
+                          <Check className="h-4 w-4 mr-2" />
+                          Salvează
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Cod</TableHead>
+                        <TableHead>Nume</TableHead>
+                        <TableHead>Icon</TableHead>
+                        <TableHead>Sortare</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Acțiuni</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {platformsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                            Se încarcă platformele...
+                          </TableCell>
+                        </TableRow>
+                      ) : platforms.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                            Nu există platforme configurate.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        platforms.map((platform) => (
+                          <TableRow key={platform.id}>
+                            <TableCell>{platform.id}</TableCell>
+                            <TableCell className="font-mono text-xs">{platform.code}</TableCell>
+                            <TableCell className="font-medium">{platform.name}</TableCell>
+                            <TableCell>{platform.icon || '-'}</TableCell>
+                            <TableCell>{platform.sortOrder}</TableCell>
+                            <TableCell>
+                              <Badge variant={platform.active ? 'default' : 'secondary'}>
+                                {platform.active ? 'Activă' : 'Inactivă'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEditPlatformDialog(platform)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive"
+                                onClick={() => handleDeletePlatform(platform)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
                 </CardContent>
               </Card>
             </TabsContent>

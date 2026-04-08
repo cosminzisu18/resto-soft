@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Giurom RestoSoft</string>
+    <string name="title_activity_main">Giurom RestoSoft</string>
+    <string name="package_name">ro.giurom.app</string>
+    <string name="custom_url_scheme">ro.giurom.app</string>
+</resources>

@@ -340,7 +340,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   }, [showModifier]);
 
   const orderTotalForDisplay = useApi && order
-    ? (order as OrderApi).items.reduce((sum, i) => sum + getItemPrice(i.menuItem, i.quantity, i.weightGrams), 0)
+    ? Number((order as OrderApi).totalAmount ?? 0)
     : (order as Order)?.totalAmount ?? 0;
 
   const handleAddItem = (item: MenuItemForModifier) => {

@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { menuCategories, MenuItem, extraIngredients as extraIngredientsData } from '@/data/mockData';
+import { menuCategories, MenuItem, type Table, extraIngredients as extraIngredientsData } from '@/data/mockData';
+import { imageSrc, menuApi, ordersApi, tablesApi, type MenuItemApi, type TableApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { 
   ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight,
@@ -18,10 +19,89 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import AllergenBadges from '@/components/AllergenBadges';
 
+/**
+ * Cod masă = numele mesei: litera M + număr (ex. m2, M9000).
+ * Nu acceptă doar cifre (ex. „2”) — trebuie prefix M.
+ */
+function parseSelfOrderTableCode(
+  raw: string,
+): { ok: true; number: number } | { ok: false; reason: 'empty' | 'format' } {
+  const compact = raw.trim().replace(/\s+/g, '');
+  if (!compact) return { ok: false, reason: 'empty' };
+  const m = /^m(\d+)$/i.exec(compact);
+  if (!m) return { ok: false, reason: 'format' };
+  return { ok: true, number: parseInt(m[1], 10) };
+}
+
+/** Mapare meniu API → model UI (același catalog ca POS / kiosk). */
+function menuItemApiToMenuItem(item: MenuItemApi): MenuItem {
+  const ingredients =
+    item.menuItemIngredients?.map((r) => r.ingredient?.name ?? `Ingredient #${r.ingredientId}`) ??
+    item.ingredients?.map((i) => i.name) ??
+    [];
+  const av = item.availability;
+  return {
+    id: String(item.id),
+    name: item.name,
+    description: item.description ?? '',
+    price: Number(item.price ?? 0),
+    category: item.category,
+    kdsStation: item.kdsStation?.type ?? 'pizza',
+    prepTime: Number(item.prepTime ?? 0),
+    ingredients,
+    allergenIds: item.allergens?.map((a) => String(a.id)),
+    availableExtras: item.availableExtras?.map((e) => String(e.id)) ?? [],
+    image: item.image,
+    unitType: item.unitType,
+    availability: av
+      ? {
+          restaurant: av.restaurant !== false,
+          kiosk: av.kiosk !== false,
+          app: av.app !== false,
+          delivery: av.delivery !== false,
+        }
+      : undefined,
+  };
+}
+
 type SelfOrderStep = 'idle' | 'mode' | 'scan' | 'scanning' | 'delivery-form' | 'menu' | 'cart' | 'customize' | 'upsell' | 'payment' | 'processing' | 'confirm';
 type OrderMode = 'dine-in' | 'delivery';
 type PaymentMethod = 'cash' | 'card' | 'online';
 type CashPaymentType = 'exact' | 'need-change';
+
+const DELIVERY_FEE_UNDER_50 = 10;
+
+function deliveryFinalTotal(productsTotal: number, orderMode: OrderMode): number {
+  if (orderMode !== 'delivery') return productsTotal;
+  if (productsTotal > 0 && productsTotal < 50) return productsTotal + DELIVERY_FEE_UNDER_50;
+  return productsTotal;
+}
+
+/** Note curier + detalii plată cash (vizibile în POS / pe comandă). */
+function buildDeliveryNotesForApi(
+  userNotes: string,
+  paymentMethod: PaymentMethod,
+  cashPaymentType: CashPaymentType,
+  customerCashAmount: string,
+  finalTotal: number,
+): string {
+  const blocks: string[] = [];
+  const u = userNotes.trim();
+  if (u) blocks.push(u);
+  if (paymentMethod === 'cash') {
+    const cash = parseFloat(String(customerCashAmount).replace(',', '.')) || 0;
+    if (cashPaymentType === 'exact') {
+      blocks.push(`[Plată livrare] Cash – sumă exactă: ${finalTotal.toFixed(2)} RON`);
+    } else if (cash >= finalTotal) {
+      blocks.push(
+        `[Plată livrare] Cash – plătește cu ${cash.toFixed(2)} RON, rest de dată: ${(cash - finalTotal).toFixed(2)} RON`,
+      );
+    }
+  } else {
+    blocks.push('[Plată livrare] Card / online');
+  }
+  return blocks.join('\n\n');
+}
 
 interface CartItem {
   id: string;
@@ -148,8 +228,18 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     name: '',
     phone: '',
     address: '',
-    notes: ''
+    city: '',
+    postalCode: '',
+    notes: '',
   });
+
+  const [apiTables, setApiTables] = useState<TableApi[]>([]);
+  const [apiMenuItems, setApiMenuItems] = useState<MenuItemApi[]>([]);
+  const [apiCategoryNames, setApiCategoryNames] = useState<string[]>([]);
+  /** Masă rezolvată din API (validare M1 / GET /tables) — trimisă la POST /orders pentru dine-in. */
+  const [apiTable, setApiTable] = useState<TableApi | null>(null);
+  const [tableValidationError, setTableValidationError] = useState<string | null>(null);
+  const [lastPlacedOrderId, setLastPlacedOrderId] = useState<number | null>(null);
   
   // Customization
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -157,7 +247,54 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
   const [tempExtras, setTempExtras] = useState<{ name: string; quantity: number; price: number }[]>([]);
   const [tempRemovals, setTempRemovals] = useState<string[]>([]);
 
-  const scannedTable = scannedTableId ? tables.find(t => t.id === scannedTableId) : null;
+  const scannedTable: Table | null = useMemo(() => {
+    if (orderMode === 'dine-in' && apiTable) {
+      return {
+        id: apiTable.id,
+        number: apiTable.number,
+        seats: apiTable.seats,
+        status: apiTable.status,
+        position: apiTable.position ?? { x: 50, y: 50 },
+        shape: apiTable.shape,
+        currentOrderId: apiTable.currentOrderId ?? undefined,
+        reservationId: apiTable.reservationId ?? undefined,
+        currentGuests: undefined,
+        mergedWith: apiTable.mergedWith ?? undefined,
+        qrCode: apiTable.qrCode ?? undefined,
+      };
+    }
+    if (scannedTableId != null) {
+      return tables.find((t) => t.id === scannedTableId) ?? null;
+    }
+    return null;
+  }, [orderMode, apiTable, scannedTableId, tables]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [cats, tbls, items] = await Promise.all([
+          menuApi.getCategories(),
+          tablesApi.getTables(),
+          menuApi.getItems(),
+        ]);
+        if (!cancelled) {
+          setApiCategoryNames(cats.map((c) => c.name));
+          setApiTables(tbls);
+          setApiMenuItems(items);
+        }
+      } catch {
+        if (!cancelled) {
+          setApiCategoryNames([]);
+          setApiTables([]);
+          setApiMenuItems([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Auto-rotate promotions
   useEffect(() => {
@@ -202,35 +339,108 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     }
   }, [cart, tableOrder]);
 
+  /** Meniu din API: la masă (cu masă validată) sau livrare — aceleași produse ca în restul aplicației. */
+  const selfOrderUsesApiMenu =
+    apiMenuItems.length > 0 &&
+    ((orderMode === 'dine-in' && apiTable != null) || orderMode === 'delivery');
+
+  const menuForOrder = useMemo((): MenuItem[] => {
+    if (selfOrderUsesApiMenu) {
+      return apiMenuItems.map(menuItemApiToMenuItem);
+    }
+    return menu;
+  }, [selfOrderUsesApiMenu, apiMenuItems, menu]);
+
+  const categoryList = useMemo(() => {
+    if (selfOrderUsesApiMenu && apiCategoryNames.length > 0) {
+      return apiCategoryNames;
+    }
+    return menuCategories;
+  }, [selfOrderUsesApiMenu, apiCategoryNames]);
+
+  useEffect(() => {
+    if (categoryList.length > 0 && !categoryList.includes(activeCategory)) {
+      setActiveCategory(categoryList[0]);
+    }
+  }, [categoryList, activeCategory]);
+
+  const filteredMenu = useMemo(() => {
+    return menuForOrder.filter((m) => {
+      if (m.category !== activeCategory) return false;
+      if (!selfOrderUsesApiMenu) {
+        return m.availability?.app !== false;
+      }
+      if (orderMode === 'delivery') {
+        return m.availability == null || m.availability.delivery !== false;
+      }
+      return m.availability == null || m.availability.restaurant !== false;
+    });
+  }, [menuForOrder, activeCategory, selfOrderUsesApiMenu, orderMode]);
+
   // Upsell suggestions
   const upsellSuggestions = useMemo(() => {
     if (cart.length === 0) return [];
-    const cartCategories = new Set(cart.map(c => c.menuItem.category));
+    const cartCategories = new Set(cart.map((c) => c.menuItem.category));
     const suggestions: MenuItem[] = [];
-    
+
     if (!cartCategories.has('Băuturi')) {
-      suggestions.push(...menu.filter(m => m.category === 'Băuturi').slice(0, 2));
+      suggestions.push(...menuForOrder.filter((m) => m.category === 'Băuturi').slice(0, 2));
     }
     if (cartCategories.has('Grill') || cartCategories.has('Pizza') || cartCategories.has('Giros')) {
       if (!cartCategories.has('Garnituri')) {
-        suggestions.push(...menu.filter(m => m.category === 'Garnituri').slice(0, 2));
+        suggestions.push(...menuForOrder.filter((m) => m.category === 'Garnituri').slice(0, 2));
       }
     }
     return suggestions.slice(0, 4);
-  }, [cart, menu]);
+  }, [cart, menuForOrder]);
 
   const handleScanQR = () => {
     const q = qrInput.trim();
-    const table = tables.find(
-      (t) => t.qrCode === q || String(t.id) === q || t.number.toString() === q
-    );
+    setTableValidationError(null);
+
+    const parsed = parseSelfOrderTableCode(q);
+    if (parsed.ok) {
+      const found = apiTables.find((t) => t.number === parsed.number);
+      if (found) {
+        setApiTable(found);
+        setScannedTableId(found.id);
+        setOrderMode('dine-in');
+        setStep('menu');
+        setQrInput('');
+        toast({ title: `Masa M${found.number} selectată` });
+        return;
+      }
+      setTableValidationError('Masa nu există.');
+      toast({ title: 'Masa nu există.', variant: 'destructive' });
+      return;
+    }
+
+    /** Doar cod QR din bancă (altfel decât M+n); nu acceptăm „2” sau id intern — doar nume tip M2. */
+    const table = tables.find((t) => t.qrCode != null && t.qrCode !== '' && t.qrCode === q);
     if (table) {
+      const match = apiTables.find((t) => t.number === table.number) ?? null;
+      setApiTable(match);
       setScannedTableId(table.id);
       setOrderMode('dine-in');
       setStep('menu');
+      setQrInput('');
       toast({ title: `Masa ${table.number} detectată!` });
-    } else {
-      toast({ title: 'Cod QR invalid', variant: 'destructive' });
+      return;
+    }
+
+    if (parsed.ok === false) {
+      const { reason } = parsed;
+      if (reason === 'empty') {
+        setTableValidationError('Introdu codul mesei.');
+        toast({ title: 'Introdu codul mesei', variant: 'destructive' });
+        return;
+      }
+      setTableValidationError('Scrie numele mesei cu M în față (ex. m2), nu doar cifre. Sau codul QR de pe masă.');
+      toast({
+        title: 'Cod invalid',
+        description: 'Folosește m2 / M2, nu „2” singur.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -315,9 +525,14 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     setActiveCategory(menuCategories[0]);
     setScannedTableId(null);
     setQrInput('');
-    setDeliveryForm({ name: '', phone: '', address: '', notes: '' });
+    setApiTable(null);
+    setTableValidationError(null);
+    setLastPlacedOrderId(null);
+    setDeliveryForm({ name: '', phone: '', address: '', city: '', postalCode: '', notes: '' });
     setTableOrder(null);
     setPaymentMethod('card');
+    setCashPaymentType('exact');
+    setCustomerCashAmount('');
   };
 
   const calculateItemTotal = (item: CartItem) => {
@@ -327,8 +542,10 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
 
   const totalAmount = cart.reduce((sum, item) => sum + calculateItemTotal(item), 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-  const filteredMenu = menu.filter(m => m.category === activeCategory && m.availability?.app !== false);
+  const grandTotalWithDelivery = deliveryFinalTotal(
+    totalAmount,
+    orderMode === 'delivery' ? 'delivery' : 'dine-in',
+  );
 
   const handleExtraQuantity = (ingredientName: string, delta: number, price: number) => {
     setTempExtras(prev => {
@@ -346,32 +563,168 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
     });
   };
 
-  const handleConfirmOrder = () => {
-    if (orderMode === 'dine-in' && scannedTable) {
+  const handleConfirmOrder = async () => {
+    if (orderMode === 'dine-in' && scannedTable && apiTable) {
+      try {
+        const itemsPayload = [];
+        for (const line of cart) {
+          const idFromCart = Number(line.menuItem.id);
+          const apiMi = Number.isInteger(idFromCart)
+            ? apiMenuItems.find((mi) => mi.id === idFromCart)
+            : apiMenuItems.find(
+                (mi) => mi.name === line.menuItem.name && mi.category === line.menuItem.category,
+              );
+          if (!apiMi) {
+            toast({
+              title: 'Produs indisponibil',
+              description: `„${line.menuItem.name}” nu există în meniul din baza de date.`,
+              variant: 'destructive',
+            });
+            setStep('cart');
+            return;
+          }
+          const notesExtra =
+            line.extras.length > 0 ? line.extras.map((e) => `${e.name} x${e.quantity}`).join(', ') : '';
+          itemsPayload.push({
+            menuItemId: apiMi.id,
+            quantity: line.quantity,
+            menuItem: {
+              id: apiMi.id,
+              name: line.menuItem.name,
+              category: line.menuItem.category,
+              kdsStationId: apiMi.kdsStationId,
+              kdsStationType: apiMi.kdsStation?.type,
+              prepTime: apiMi.prepTime,
+              image: line.menuItem.image ?? null,
+            },
+            modifications: {
+              added: line.modifications.added,
+              removed: line.modifications.removed,
+              ...(notesExtra ? { notes: notesExtra } : {}),
+            },
+          });
+        }
+        const created = await ordersApi.create({
+          tableId: apiTable.id,
+          tableNumber: apiTable.number,
+          source: 'restaurant',
+          orderType: 'restaurant',
+          fulfillmentType: 'dine_in',
+          customerName: `Self-order · M${apiTable.number}`,
+          items: itemsPayload,
+        });
+        setLastPlacedOrderId(created.id);
+        if (tableOrder) {
+          setTableOrder({
+            ...tableOrder,
+            items: [],
+            history: [...tableOrder.history, ...cart],
+          });
+        }
+      } catch {
+        toast({
+          title: 'Eroare',
+          description: 'Nu s-a putut trimite comanda. Încearcă din nou.',
+          variant: 'destructive',
+        });
+        setStep('payment');
+        return;
+      }
+    } else if (orderMode === 'dine-in' && scannedTable) {
       const order = createOrder(scannedTable.id, 'restaurant');
-      cart.forEach(item => {
+      cart.forEach((item) => {
         addItemToOrder(order.id, item.menuItem, item.quantity);
       });
-      
-      // Move items to history
+      setLastPlacedOrderId(null);
       if (tableOrder) {
         setTableOrder({
           ...tableOrder,
           items: [],
-          history: [...tableOrder.history, ...cart]
+          history: [...tableOrder.history, ...cart],
         });
       }
-    } else {
+    } else if (orderMode === 'delivery' && selfOrderUsesApiMenu) {
+      try {
+        const itemsPayload = [];
+        for (const line of cart) {
+          const idFromCart = Number(line.menuItem.id);
+          const apiMi = Number.isInteger(idFromCart)
+            ? apiMenuItems.find((mi) => mi.id === idFromCart)
+            : apiMenuItems.find(
+                (mi) => mi.name === line.menuItem.name && mi.category === line.menuItem.category,
+              );
+          if (!apiMi) {
+            toast({
+              title: 'Produs indisponibil',
+              description: `„${line.menuItem.name}” nu există în meniul din baza de date.`,
+              variant: 'destructive',
+            });
+            setStep('cart');
+            return;
+          }
+          const notesExtra =
+            line.extras.length > 0 ? line.extras.map((e) => `${e.name} x${e.quantity}`).join(', ') : '';
+          itemsPayload.push({
+            menuItemId: apiMi.id,
+            quantity: line.quantity,
+            menuItem: {
+              id: apiMi.id,
+              name: line.menuItem.name,
+              category: line.menuItem.category,
+              kdsStationId: apiMi.kdsStationId,
+              kdsStationType: apiMi.kdsStation?.type,
+              prepTime: apiMi.prepTime,
+              image: line.menuItem.image ?? null,
+            },
+            modifications: {
+              added: line.modifications.added,
+              removed: line.modifications.removed,
+              ...(notesExtra ? { notes: notesExtra } : {}),
+            },
+          });
+        }
+        const deliveryFinal = deliveryFinalTotal(totalAmount, 'delivery');
+        const created = await ordersApi.create({
+          source: 'own_website',
+          orderType: 'own_website',
+          fulfillmentType: 'takeaway',
+          customerName: deliveryForm.name.trim(),
+          customerPhone: deliveryForm.phone.trim(),
+          deliveryAddress: deliveryForm.address.trim(),
+          deliveryCity: deliveryForm.city.trim() || undefined,
+          deliveryPostalCode: deliveryForm.postalCode.trim() || undefined,
+          deliveryNotes: buildDeliveryNotesForApi(
+            deliveryForm.notes,
+            paymentMethod,
+            cashPaymentType,
+            customerCashAmount,
+            deliveryFinal,
+          ),
+          paymentMethod: paymentMethod === 'card' ? 'card' : 'cash',
+          items: itemsPayload,
+        });
+        setLastPlacedOrderId(created.id);
+      } catch {
+        toast({
+          title: 'Eroare',
+          description: 'Nu s-a putut trimite comanda. Încearcă din nou.',
+          variant: 'destructive',
+        });
+        setStep('payment');
+        return;
+      }
+    } else if (orderMode === 'delivery') {
       const order = createDeliveryOrder('own_website', {
         name: deliveryForm.name,
         phone: deliveryForm.phone,
         address: deliveryForm.address,
       });
-      cart.forEach(item => {
+      cart.forEach((item) => {
         addItemToOrder(order.id, item.menuItem, item.quantity);
       });
+      setLastPlacedOrderId(null);
     }
-    
+
     toast({ title: 'Comandă plasată cu succes!' });
     setStep('confirm');
   };
@@ -550,11 +903,20 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
       setScanningProgress(prev => {
         if (prev >= 100) {
           clearInterval(interval);
-          // Find a table and redirect
-          const freeTable = tables.find(t => t.status === 'free' || t.status === 'occupied');
+          const fromApi = apiTables.find((t) => t.status === 'free' || t.status === 'occupied');
+          const fromMock = fromApi
+            ? null
+            : tables.find((t) => t.status === 'free' || t.status === 'occupied');
+          const freeTable = fromApi ?? fromMock;
           if (freeTable) {
             setTimeout(() => {
-              setScannedTableId(freeTable.id);
+              if (fromApi) {
+                setApiTable(fromApi);
+                setScannedTableId(fromApi.id);
+              } else if (fromMock) {
+                setApiTable(apiTables.find((t) => t.number === fromMock.number) ?? null);
+                setScannedTableId(fromMock.id);
+              }
               setOrderMode('dine-in');
               setStep('menu');
               toast({ title: `Masa ${freeTable.number} detectată!` });
@@ -592,14 +954,20 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
             <div className="flex gap-2">
               <Input
                 value={qrInput}
-                onChange={e => setQrInput(e.target.value)}
-                placeholder="Introdu numărul mesei..."
+                onChange={(e) => {
+                  setQrInput(e.target.value);
+                  setTableValidationError(null);
+                }}
+                placeholder="Ex: m2, M9000 — cu M în față, nu doar cifre"
                 className="flex-1 h-12"
               />
               <Button onClick={handleScanQR} className="h-12 px-6">
                 Verifică
               </Button>
             </div>
+            {tableValidationError && (
+              <p className="text-sm text-red-600 text-center">{tableValidationError}</p>
+            )}
 
             <Button 
               variant="outline" 
@@ -780,6 +1148,27 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Oraș (opțional)</label>
+                  <Input
+                    value={deliveryForm.city}
+                    onChange={(e) => setDeliveryForm({ ...deliveryForm, city: e.target.value })}
+                    placeholder="București"
+                    className="h-12"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Cod poștal (opțional)</label>
+                  <Input
+                    value={deliveryForm.postalCode}
+                    onChange={(e) => setDeliveryForm({ ...deliveryForm, postalCode: e.target.value })}
+                    placeholder="010101"
+                    className="h-12"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Notă pentru curier (opțional)
@@ -885,7 +1274,7 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
         {/* Categories */}
         <div className="overflow-x-auto bg-white border-b border-slate-200 sticky top-14 z-10">
           <div className="flex gap-2 p-3">
-            {menuCategories.map(cat => (
+            {categoryList.map(cat => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
@@ -915,7 +1304,11 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                 >
                   {item.image && (
                     <div className="aspect-square bg-slate-50 relative">
-                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                      <img
+                        src={selfOrderUsesApiMenu ? imageSrc(item.image) : item.image}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                      />
                     </div>
                   )}
                   <div className="p-3">
@@ -946,13 +1339,21 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
 
   // ============ CUSTOMIZATION ============
   if (step === 'customize' && customizingItem) {
-    const availableExtras = [
-      { name: 'Extra carne', price: 8.00, image: ingredientImages['Carne'] },
-      { name: 'Extra bacon', price: 5.00, image: ingredientImages['Bacon'] },
-      { name: 'Extra brânză', price: 4.00, image: ingredientImages['Brânză'] },
-      { name: 'Extra sos', price: 2.00, image: ingredientImages['Maioneză'] },
-      { name: 'Extra ciuperci', price: 3.00, image: ingredientImages['Ciuperci'] },
-    ];
+    const customizingFromApi = apiMenuItems.find((mi) => mi.id === Number(customizingItem.id));
+    const availableExtrasList =
+      customizingFromApi?.availableExtras && customizingFromApi.availableExtras.length > 0
+        ? customizingFromApi.availableExtras.map((e) => ({
+            name: e.name,
+            price: Number(e.price ?? 0),
+            image: e.image ? imageSrc(e.image) : getIngredientImage(e.name),
+          }))
+        : [
+            { name: 'Extra carne', price: 8.0, image: ingredientImages['Carne'] },
+            { name: 'Extra bacon', price: 5.0, image: ingredientImages['Bacon'] },
+            { name: 'Extra brânză', price: 4.0, image: ingredientImages['Brânză'] },
+            { name: 'Extra sos', price: 2.0, image: ingredientImages['Maioneză'] },
+            { name: 'Extra ciuperci', price: 3.0, image: ingredientImages['Ciuperci'] },
+          ];
 
     return (
       <div className="min-h-screen flex flex-col bg-slate-100">
@@ -969,7 +1370,11 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
         <div className="p-4 bg-white border-b border-slate-200">
           <div className="flex items-start gap-4">
             {customizingItem.image && (
-              <img src={customizingItem.image} alt={customizingItem.name} className="w-20 h-16 object-cover rounded-xl" />
+              <img
+                src={selfOrderUsesApiMenu ? imageSrc(customizingItem.image) : customizingItem.image}
+                alt={customizingItem.name}
+                className="w-20 h-16 object-cover rounded-xl"
+              />
             )}
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold text-slate-800">{customizingItem.name}</h2>
@@ -1011,7 +1416,7 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
               <>
                 <h3 className="text-lg font-bold text-slate-800 mb-4">Alege extras</h3>
                 <div className="space-y-3">
-                  {availableExtras.map((extra) => {
+                  {availableExtrasList.map((extra) => {
                     const currentQty = tempExtras.find(e => e.name === extra.name)?.quantity || 0;
                     return (
                       <div key={extra.name} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200">
@@ -1135,7 +1540,11 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                   className="rounded-xl bg-white border-2 border-slate-200 hover:border-primary hover:shadow-xl transition-all text-left overflow-hidden p-3 flex items-center gap-3"
                 >
                   {item.image && (
-                    <img src={item.image} alt={item.name} className="w-14 h-14 object-cover rounded-xl" />
+                    <img
+                      src={selfOrderUsesApiMenu ? imageSrc(item.image) : item.image}
+                      alt={item.name}
+                      className="w-14 h-14 object-cover rounded-xl"
+                    />
                   )}
                   <div>
                     <h3 className="font-bold text-slate-800 text-sm">{item.name}</h3>
@@ -1188,7 +1597,11 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
               <Card key={item.id} className="p-3">
                 <div className="flex gap-3">
                   {item.menuItem.image && (
-                    <img src={item.menuItem.image} alt={item.menuItem.name} className="w-20 h-20 object-cover rounded-xl flex-shrink-0" />
+                    <img
+                      src={selfOrderUsesApiMenu ? imageSrc(item.menuItem.image) : item.menuItem.image}
+                      alt={item.menuItem.name}
+                      className="w-20 h-20 object-cover rounded-xl flex-shrink-0"
+                    />
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between mb-2">
@@ -1251,9 +1664,17 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
         {cart.length > 0 && (
           <div className="p-3 bg-white border-t border-slate-200">
             <div className="max-w-2xl mx-auto">
+              {orderMode === 'delivery' && totalAmount > 0 && totalAmount < 50 && (
+                <div className="flex justify-between text-sm text-slate-500 mb-2">
+                  <span>Taxă livrare (sub 50 RON)</span>
+                  <span>{DELIVERY_FEE_UNDER_50.toFixed(2)} RON</span>
+                </div>
+              )}
               <div className="flex items-center justify-between mb-4">
-                <span className="text-base text-slate-600">Total comandă:</span>
-                <span className="text-2xl font-black text-slate-800">{totalAmount.toFixed(2)} RON</span>
+                <span className="text-base text-slate-600">Total de plată:</span>
+                <span className="text-2xl font-black text-slate-800">
+                  {grandTotalWithDelivery.toFixed(2)} RON
+                </span>
               </div>
               <Button 
                 className="w-full h-14 text-lg bg-green-600 hover:bg-green-700" 
@@ -1271,8 +1692,11 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
 
   // ============ PAYMENT ============
   if (step === 'payment') {
-    const finalTotal = totalAmount + (orderMode === 'delivery' && totalAmount < 50 ? 10 : 0);
-    const customerCash = parseFloat(customerCashAmount) || 0;
+    const finalTotal = deliveryFinalTotal(
+      totalAmount,
+      orderMode === 'delivery' ? 'delivery' : 'dine-in',
+    );
+    const customerCash = parseFloat(String(customerCashAmount).replace(',', '.')) || 0;
     const changeAmount = customerCash - finalTotal;
     
     const processPayment = () => {
@@ -1315,10 +1739,10 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                   </div>
                 ))}
               </div>
-              {orderMode === 'delivery' && totalAmount < 50 && (
+              {orderMode === 'delivery' && totalAmount > 0 && totalAmount < 50 && (
                 <div className="flex justify-between text-sm text-slate-500 mb-2">
-                  <span>Livrare</span>
-                  <span>10.00 RON</span>
+                  <span>Taxă livrare (sub 50 RON)</span>
+                  <span>{DELIVERY_FEE_UNDER_50.toFixed(2)} RON</span>
                 </div>
               )}
               <div className="border-t border-slate-200 pt-4 flex justify-between text-xl font-bold">
@@ -1405,7 +1829,7 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
                       cashPaymentType === 'need-change' ? "text-amber-600" : "text-slate-400"
                     )} />
                     <span className="text-sm font-bold block">Am nevoie de rest</span>
-                    <span className="text-xs text-slate-500">Introduceți suma</span>
+                    <span className="text-xs text-slate-500">Introduceți cu cât plătiți</span>
                   </button>
                 </div>
 
@@ -1529,6 +1953,20 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
 
   // ============ CONFIRMATION ============
   if (step === 'confirm') {
+    const paidWithCash = parseFloat(String(customerCashAmount).replace(',', '.')) || 0;
+    let confirmPaymentSummary: string;
+    if (paymentMethod !== 'cash') {
+      confirmPaymentSummary = 'Plată card / online';
+    } else if (orderMode === 'dine-in') {
+      confirmPaymentSummary = 'Plată cash la masă';
+    } else if (cashPaymentType === 'exact') {
+      confirmPaymentSummary = 'Cash la livrare – sumă exactă';
+    } else if (paidWithCash > 0) {
+      confirmPaymentSummary = `Cash la livrare – rest ${(paidWithCash - grandTotalWithDelivery).toFixed(2)} RON`;
+    } else {
+      confirmPaymentSummary = 'Cash la livrare';
+    }
+
     return (
       <div 
         className="min-h-screen flex flex-col items-center justify-center bg-green-50 p-4"
@@ -1539,7 +1977,7 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
           </div>
           <h1 className="text-3xl font-bold text-green-800 mb-4">Comandă confirmată!</h1>
           <p className="text-xl font-bold text-green-700 mb-2">
-            #{Date.now().toString().slice(-6)}
+            #{lastPlacedOrderId ?? Date.now().toString().slice(-6)}
           </p>
           <p className="text-green-600 mb-2">
             {orderMode === 'dine-in' 
@@ -1552,13 +1990,11 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
           <div className="bg-white rounded-2xl p-4 mb-6 border border-green-200">
             <div className="flex items-center gap-2 mb-4 text-green-600">
               <Check className="w-5 h-5" />
-              <span className="font-medium">
-                {paymentMethod === 'cash' ? 'Plată la livrare/masă' : 'Plătit online'}
-              </span>
+              <span className="font-medium">{confirmPaymentSummary}</span>
             </div>
             <div className="border-t border-green-100 pt-4 flex justify-between font-bold text-lg">
               <span>Total</span>
-              <span className="text-green-700">{totalAmount.toFixed(2)} RON</span>
+              <span className="text-green-700">{grandTotalWithDelivery.toFixed(2)} RON</span>
             </div>
           </div>
 

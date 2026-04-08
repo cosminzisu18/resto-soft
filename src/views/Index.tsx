@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { RestaurantProvider, useRestaurant } from '@/context/RestaurantContext';
 import { Table, KDSStation, kdsStations } from '@/data/mockData';
 import { tablesApi, ordersApi, menuApi, normalizeTablePosition, type TableApi, type OrderApi } from '@/lib/api';
+import { sanitizeTablePositionForApi } from '@/lib/tablePosition';
 import { kdsStationApiToKdsStation } from '@/lib/kdsUtils';
 import { parsePathname, ROUTES } from '@/lib/appRoutes';
 import LoginScreen from '@/components/LoginScreen';
@@ -12,7 +13,6 @@ import OrderPanel from '@/components/OrderPanel';
 import NotificationCenter from '@/components/NotificationCenter';
 import ReservationManager from '@/components/ReservationManager';
 import DeliveryOrders from '@/components/DeliveryOrders';
-import KioskOrdering from '@/components/KioskOrdering';
 import CustomerSelfOrder from '@/components/CustomerSelfOrder';
 import MainLayout, { ModuleType } from '@/components/layout/MainLayout';
 import DashboardModule from '@/components/modules/DashboardModule';
@@ -134,27 +134,39 @@ const RestaurantApp: React.FC = () => {
   const [dashboardKdsStations, setDashboardKdsStations] = useState<KDSStation[]>(kdsStations);
   const [dashboardKdsLoading, setDashboardKdsLoading] = useState(false);
 
-  const mapApiTableToTable = useCallback((api: TableApi): Table => ({
-    id: api.id,
-    number: api.number,
-    seats: api.seats,
-    status: api.status,
-    position: normalizeTablePosition(api.position) ?? { x: 50, y: 50 },
-    shape: api.shape,
-    currentOrderId: api.currentOrderId ?? undefined,
-    reservationId: api.reservationId ?? undefined,
-    currentGuests: api.currentGuests,
-    mergedWith: api.mergedWith ?? undefined,
-    qrCode: api.qrCode ?? undefined,
-  }), []);
+  const mapApiTableToTable = useCallback(
+    (api: TableApi, fallbackPosition?: { x: number; y: number }): Table => ({
+      id: api.id,
+      number: api.number,
+      seats: api.seats,
+      status: api.status,
+      position: normalizeTablePosition(api.position) ?? fallbackPosition ?? { x: 50, y: 50 },
+      shape: api.shape,
+      currentOrderId: api.currentOrderId ?? undefined,
+      reservationId: api.reservationId ?? undefined,
+      currentGuests: api.currentGuests,
+      mergedWith: api.mergedWith ?? undefined,
+      qrCode: api.qrCode ?? undefined,
+    }),
+    [],
+  );
 
   /** Sincronizare hartă mese (drag/editor) cu state-ul ospătarului și DB. */
   const persistWaiterTableToStateAndApi = useCallback(
     async (t: Table) => {
+      const pos = sanitizeTablePositionForApi(t.position);
+      if (!pos) {
+        toast({
+          title: 'Poziție invalidă',
+          description: 'Coordonatele mesei nu sunt numerice valide.',
+          variant: 'destructive',
+        });
+        return;
+      }
       setWaiterTables((prev) => prev.map((x) => (x.id === t.id ? t : x)));
       try {
         await tablesApi.updateTable(t.id, {
-          position: { x: t.position.x, y: t.position.y },
+          position: pos,
           number: t.number,
           seats: t.seats,
           shape: t.shape,
@@ -206,7 +218,7 @@ const RestaurantApp: React.FC = () => {
     setWaiterTablesLoading(true);
     tablesApi
       .getTables()
-      .then((list) => setWaiterTables(list.map(mapApiTableToTable)))
+      .then((list) => setWaiterTables(list.map((api) => mapApiTableToTable(api))))
       .catch(() => setWaiterTables([]))
       .finally(() => setWaiterTablesLoading(false));
   }, [route.kind, mapApiTableToTable]);
@@ -436,7 +448,7 @@ const RestaurantApp: React.FC = () => {
   if (route.kind === 'kiosk') {
     return (
       <div className="relative">
-        <KioskOrdering />
+        <KioskModule />
         <Button variant="outline" className="fixed top-4 left-4 z-50" asChild>
           <Link href={ROUTES.login} className="flex items-center">
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -450,7 +462,7 @@ const RestaurantApp: React.FC = () => {
   if (route.kind === 'self-order') {
     return (
       <div className="relative">
-        <CustomerSelfOrder initialTableId="t1" />
+        <CustomerSelfOrder />
         <Button variant="outline" className="fixed top-4 left-4 z-50" asChild>
           <Link href={ROUTES.login} className="flex items-center">
             <ArrowLeft className="w-4 h-4 mr-2" />

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { KDSStation, OrderItem, Order, users, MenuItem } from '@/data/mockData';
+import { KDSStation, OrderItem, Order, MenuItem } from '@/data/mockData';
 import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
 import { cn } from '@/lib/utils';
 import { Clock, LogOut, Truck, MessageSquare, MapPin, Monitor, ShoppingBag, ChefHat, CheckCircle2, Timer, Utensils, Book, Play, User, Printer, Plus, Minus, X } from 'lucide-react';
@@ -97,7 +97,7 @@ const ingredientQuantities: Record<string, string> = {
 };
 
 const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogout }) => {
-  const { getOrdersForStation, updateOrderItemStatus, orders } = useRestaurant();
+  const { getOrdersForStation, updateOrderItemStatus, orders, directoryUsers } = useRestaurant();
   const { language, setLanguage, languages } = useLanguage();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeItems, setActiveItems] = useState<ActiveItem[]>([]);
@@ -109,7 +109,7 @@ const KDSModuleOptimized: React.FC<KDSModuleOptimizedProps> = ({ station, onLogo
   const labelRef = useRef<HTMLDivElement>(null);
 
   const stationOrders = getOrdersForStation(station);
-  const kitchenEmployees = users.filter(u => u.role === 'kitchen');
+  const kitchenEmployees = directoryUsers.filter((u) => u.role === 'kitchen');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);

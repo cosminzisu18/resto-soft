@@ -28,6 +28,7 @@ import ReservationManager from '@/components/ReservationManager';
 import { useToast } from '@/hooks/use-toast';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { tablesApi, ordersApi, normalizeTablePosition, type TableApi, type OrderApi } from '@/lib/api';
+import { sanitizeTablePositionForApi } from '@/lib/tablePosition';
 import { orderApiToPosOrder } from '@/lib/posOrderMapper';
 
 type POSView = 'tables' | 'all-orders';
@@ -110,26 +111,38 @@ const POSModule: React.FC = () => {
     void fetchPosOrders();
   }, [fetchPosOrders]);
 
-  const mapApiTableToTable = useCallback((api: TableApi): Table => ({
-    id: api.id,
-    number: api.number,
-    seats: api.seats,
-    status: api.status,
-    position: normalizeTablePosition(api.position) ?? { x: 50, y: 50 },
-    shape: api.shape,
-    currentOrderId: api.currentOrderId ?? undefined,
-    reservationId: api.reservationId ?? undefined,
-    currentGuests: api.currentGuests,
-    mergedWith: api.mergedWith ?? undefined,
-    qrCode: api.qrCode ?? undefined,
-  }), []);
+  const mapApiTableToTable = useCallback(
+    (api: TableApi, fallbackPosition?: { x: number; y: number }): Table => ({
+      id: api.id,
+      number: api.number,
+      seats: api.seats,
+      status: api.status,
+      position: normalizeTablePosition(api.position) ?? fallbackPosition ?? { x: 50, y: 50 },
+      shape: api.shape,
+      currentOrderId: api.currentOrderId ?? undefined,
+      reservationId: api.reservationId ?? undefined,
+      currentGuests: api.currentGuests,
+      mergedWith: api.mergedWith ?? undefined,
+      qrCode: api.qrCode ?? undefined,
+    }),
+    [],
+  );
 
   const persistPosTableToStateAndApi = useCallback(
     async (t: Table) => {
+      const pos = sanitizeTablePositionForApi(t.position);
+      if (!pos) {
+        toast({
+          title: 'Poziție invalidă',
+          description: 'Coordonatele mesei nu sunt numerice valide.',
+          variant: 'destructive',
+        });
+        return;
+      }
       setPosTables((prev) => prev.map((x) => (x.id === t.id ? t : x)));
       try {
         await tablesApi.updateTable(t.id, {
-          position: { x: t.position.x, y: t.position.y },
+          position: pos,
           number: t.number,
           seats: t.seats,
           shape: t.shape,
@@ -174,7 +187,7 @@ const POSModule: React.FC = () => {
     setPosTablesLoading(true);
     try {
       const list = await tablesApi.getTables();
-      setPosTables(list.map(mapApiTableToTable));
+      setPosTables(list.map((api) => mapApiTableToTable(api)));
     } catch {
       setPosTables([]);
       toast({ title: 'Nu s-au putut încărca mesele', description: 'Verifică backend-ul și conexiunea.', variant: 'destructive' });
