@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useRestaurant } from '@/context/RestaurantContext';
+import type { User as StaffUser } from '@/data/mockData';
+import { useTeamChat } from '@/hooks/useTeamChat';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,127 +48,6 @@ import {
   Pin
 } from 'lucide-react';
 
-// Mock data for conversations
-const mockConversations = [
-  {
-    id: '1',
-    name: 'Bucătărie',
-    type: 'department',
-    avatar: null,
-    lastMessage: 'Comanda 45 e gata pentru pickup',
-    timestamp: new Date(Date.now() - 5 * 60000),
-    unread: 3,
-    online: true,
-    pinned: true,
-  },
-  {
-    id: '2',
-    name: 'Maria Popescu',
-    type: 'person',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100',
-    lastMessage: 'Poți să verifici stocul de vinuri?',
-    timestamp: new Date(Date.now() - 15 * 60000),
-    unread: 1,
-    online: true,
-    pinned: false,
-  },
-  {
-    id: '3',
-    name: 'Andrei Ionescu',
-    type: 'person',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-    lastMessage: 'Schimbul de mâine e confirmat',
-    timestamp: new Date(Date.now() - 2 * 3600000),
-    unread: 0,
-    online: false,
-    pinned: false,
-  },
-  {
-    id: '4',
-    name: 'Bar',
-    type: 'department',
-    avatar: null,
-    lastMessage: 'Avem nevoie de gheață',
-    timestamp: new Date(Date.now() - 4 * 3600000),
-    unread: 0,
-    online: true,
-    pinned: false,
-  },
-  {
-    id: '5',
-    name: 'Management',
-    type: 'department',
-    avatar: null,
-    lastMessage: 'Meeting la ora 16:00',
-    timestamp: new Date(Date.now() - 24 * 3600000),
-    unread: 0,
-    online: false,
-    pinned: true,
-  },
-];
-
-const mockMessages = [
-  {
-    id: '1',
-    sender: 'Bucătărie',
-    senderId: 'kitchen',
-    content: 'Bună! Avem o problemă cu comanda 42',
-    timestamp: new Date(Date.now() - 30 * 60000),
-    status: 'read',
-    isOwn: false,
-  },
-  {
-    id: '2',
-    sender: 'Eu',
-    senderId: 'me',
-    content: 'Ce s-a întâmplat?',
-    timestamp: new Date(Date.now() - 28 * 60000),
-    status: 'read',
-    isOwn: true,
-  },
-  {
-    id: '3',
-    sender: 'Bucătărie',
-    senderId: 'kitchen',
-    content: 'Clientul a cerut fără ceapă dar am primit comanda cu ceapă. Refacem?',
-    timestamp: new Date(Date.now() - 25 * 60000),
-    status: 'read',
-    isOwn: false,
-  },
-  {
-    id: '4',
-    sender: 'Eu',
-    senderId: 'me',
-    content: 'Da, vă rog refaceți. Verific cu ospătarul.',
-    timestamp: new Date(Date.now() - 20 * 60000),
-    status: 'read',
-    isOwn: true,
-  },
-  {
-    id: '5',
-    sender: 'Bucătărie',
-    senderId: 'kitchen',
-    content: 'Perfect, în 5 minute e gata!',
-    timestamp: new Date(Date.now() - 15 * 60000),
-    status: 'read',
-    isOwn: false,
-  },
-  {
-    id: '6',
-    sender: 'Bucătărie',
-    senderId: 'kitchen',
-    content: 'Comanda 45 e gata pentru pickup',
-    timestamp: new Date(Date.now() - 5 * 60000),
-    status: 'delivered',
-    isOwn: false,
-    attachment: {
-      type: 'image',
-      name: 'comanda_45.jpg',
-      url: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=300',
-    },
-  },
-];
-
 const mockTickets = [
   {
     id: 'TKT-001',
@@ -204,22 +86,96 @@ const departments = [
   { id: 'delivery', name: 'Livrări', icon: '🛵' },
 ];
 
-const employees = [
-  { id: '1', name: 'Maria Popescu', role: 'Ospătar', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100', online: true },
-  { id: '2', name: 'Andrei Ionescu', role: 'Bucătar Șef', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100', online: true },
-  { id: '3', name: 'Elena Vasile', role: 'Barman', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100', online: false },
-  { id: '4', name: 'Ion Gheorghe', role: 'Manager', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100', online: true },
-];
+function userRoleLabel(role: StaffUser['role']): string {
+  switch (role) {
+    case 'waiter':
+      return 'Ospătar';
+    case 'kitchen':
+      return 'Bucătărie';
+    case 'admin':
+      return 'Admin';
+    default:
+      return role;
+  }
+}
+
+type ChatListItem = {
+  id: string;
+  name: string;
+  type: 'department' | 'person';
+  avatar: string | null;
+  lastMessage: string;
+  timestamp: Date;
+  unread: number;
+  online: boolean;
+  pinned: boolean;
+};
 
 export const CommunicationModule: React.FC = () => {
+  const { currentUser, directoryUsers } = useRestaurant();
+  const tenantId =
+    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_TENANT_ID?.trim() : undefined;
+
+  const { messages, presence, onlineIds, status, lastError, sendChat, isConnected } = useTeamChat(
+    currentUser,
+    { tenantId: tenantId || undefined },
+  );
+
   const [activeTab, setActiveTab] = useState('chat');
-  const [selectedConversation, setSelectedConversation] = useState(mockConversations[0]);
+  const [selectedId, setSelectedId] = useState<string>('team');
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewChat, setShowNewChat] = useState(false);
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [newTicket, setNewTicket] = useState({ subject: '', priority: 'medium', description: '' });
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  const teamConversation: ChatListItem = useMemo(() => {
+    const last = messages[messages.length - 1];
+    const ts = last ? new Date(last.timestamp) : new Date();
+    let lastMessage = last?.content ?? 'Niciun mesaj încă';
+    if (status === 'connecting') lastMessage = 'Se conectează…';
+    if (status === 'closed' && currentUser) lastMessage = 'Reconectare…';
+    if (status === 'error') lastMessage = lastError ?? 'Eroare conexiune';
+    return {
+      id: 'team',
+      name: 'Canal echipă',
+      type: 'department',
+      avatar: null,
+      lastMessage,
+      timestamp: ts,
+      unread: 0,
+      online: isConnected,
+      pinned: true,
+    };
+  }, [messages, status, lastError, isConnected, currentUser]);
+
+  const colleagueConversations: ChatListItem[] = useMemo(() => {
+    if (!currentUser) return [];
+    return directoryUsers
+      .filter((u) => u.id !== currentUser.id)
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        type: 'person' as const,
+        avatar: u.avatar,
+        lastMessage: 'Canal comun — mesajele sunt partajate',
+        timestamp: new Date(),
+        unread: 0,
+        online: onlineIds.has(u.id),
+        pinned: false,
+      }));
+  }, [currentUser, directoryUsers, onlineIds]);
+
+  const allConversations = useMemo(
+    () => [teamConversation, ...colleagueConversations],
+    [teamConversation, colleagueConversations],
+  );
+
+  const selectedConversation = useMemo(
+    () => allConversations.find((c) => c.id === selectedId) ?? teamConversation,
+    [allConversations, selectedId, teamConversation],
+  );
 
   const formatTime = (date: Date) => {
     const now = new Date();
@@ -276,8 +232,16 @@ export const CommunicationModule: React.FC = () => {
   };
 
   const handleSendMessage = () => {
-    if (!messageInput.trim()) return;
-    toast({ title: 'Mesaj trimis', description: messageInput });
+    if (!messageInput.trim() || !currentUser) return;
+    if (!isConnected) {
+      toast({
+        title: 'Fără conexiune',
+        description: 'Așteaptă reconectarea la chat.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    sendChat(messageInput);
     setMessageInput('');
   };
 
@@ -291,12 +255,12 @@ export const CommunicationModule: React.FC = () => {
     setNewTicket({ subject: '', priority: 'medium', description: '' });
   };
 
-  const filteredConversations = mockConversations.filter(c =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredConversations = allConversations.filter((c) =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const pinnedConversations = filteredConversations.filter(c => c.pinned);
-  const regularConversations = filteredConversations.filter(c => !c.pinned);
+  const pinnedConversations = filteredConversations.filter((c) => c.pinned);
+  const regularConversations = filteredConversations.filter((c) => !c.pinned);
 
   return (
     <div className="h-full flex flex-col">
@@ -309,7 +273,18 @@ export const CommunicationModule: React.FC = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">Comunicare</h1>
-              <p className="text-muted-foreground">Chat intern și suport tehnic</p>
+              <p className="text-muted-foreground flex items-center gap-2 flex-wrap">
+                Chat intern și suport tehnic
+                {activeTab === 'chat' && currentUser && (
+                  <span className="inline-flex items-center gap-1 text-xs">
+                    <Users className="h-3.5 w-3.5" />
+                    {presence.length} online
+                    {status === 'connecting' && (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" />
+                    )}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -325,7 +300,7 @@ export const CommunicationModule: React.FC = () => {
               )}
             </Button>
             <Badge variant="secondary" className="bg-primary/10 text-primary">
-              {mockConversations.reduce((acc, c) => acc + c.unread, 0)} necitite
+              0 necitite
             </Badge>
           </div>
         </div>
@@ -382,7 +357,11 @@ export const CommunicationModule: React.FC = () => {
                               variant="outline"
                               className="justify-start gap-2"
                               onClick={() => {
-                                toast({ title: `Chat deschis cu ${dept.name}` });
+                                toast({
+                                  title: 'Canal echipă',
+                                  description: `Mesajele către ${dept.name} se trimit pe canalul comun.`,
+                                });
+                                setSelectedId('team');
                                 setShowNewChat(false);
                               }}
                             >
@@ -395,12 +374,16 @@ export const CommunicationModule: React.FC = () => {
                       <div>
                         <Label className="text-sm font-medium mb-3 block">Angajați</Label>
                         <div className="space-y-2">
-                          {employees.map((emp) => (
+                          {directoryUsers.map((emp) => (
                             <button
                               key={emp.id}
                               className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors"
                               onClick={() => {
-                                toast({ title: `Chat deschis cu ${emp.name}` });
+                                toast({
+                                  title: emp.name,
+                                  description: 'Mesajele sunt pe canalul comun, vizibile pentru echipă.',
+                                });
+                                setSelectedId(emp.id);
                                 setShowNewChat(false);
                               }}
                             >
@@ -409,13 +392,13 @@ export const CommunicationModule: React.FC = () => {
                                   <AvatarImage src={emp.avatar} />
                                   <AvatarFallback>{emp.name[0]}</AvatarFallback>
                                 </Avatar>
-                                {emp.online && (
+                                {onlineIds.has(emp.id) && (
                                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
                                 )}
                               </div>
                               <div className="flex-1 text-left">
                                 <p className="font-medium text-sm">{emp.name}</p>
-                                <p className="text-xs text-muted-foreground">{emp.role}</p>
+                                <p className="text-xs text-muted-foreground">{userRoleLabel(emp.role)}</p>
                               </div>
                               <ChevronRight className="h-4 w-4 text-muted-foreground" />
                             </button>
@@ -439,7 +422,7 @@ export const CommunicationModule: React.FC = () => {
                       {pinnedConversations.map((conv) => (
                         <button
                           key={conv.id}
-                          onClick={() => setSelectedConversation(conv)}
+                          onClick={() => setSelectedId(conv.id)}
                           className={cn(
                             "w-full flex items-center gap-3 p-3 rounded-xl transition-all",
                             selectedConversation?.id === conv.id
@@ -491,7 +474,7 @@ export const CommunicationModule: React.FC = () => {
                       {regularConversations.map((conv) => (
                         <button
                           key={conv.id}
-                          onClick={() => setSelectedConversation(conv)}
+                          onClick={() => setSelectedId(conv.id)}
                           className={cn(
                             "w-full flex items-center gap-3 p-3 rounded-xl transition-all",
                             selectedConversation?.id === conv.id
@@ -538,7 +521,17 @@ export const CommunicationModule: React.FC = () => {
 
             {/* Chat Panel */}
             <div className="flex-1 flex flex-col">
-              {selectedConversation ? (
+              {!currentUser ? (
+                <div className="flex-1 flex items-center justify-center text-muted-foreground p-6">
+                  <div className="text-center max-w-sm">
+                    <User className="h-16 w-16 mx-auto mb-4 opacity-20" />
+                    <p className="font-medium text-foreground">Autentificare necesară</p>
+                    <p className="text-sm mt-2">
+                      Conectează-te cu un cont de angajat pentru a folosi chat-ul în timp real pe canalul echipei.
+                    </p>
+                  </div>
+                </div>
+              ) : selectedConversation ? (
                 <>
                   {/* Chat Header */}
                   <div className="flex-shrink-0 p-4 border-b border-border flex items-center justify-between">
@@ -554,14 +547,24 @@ export const CommunicationModule: React.FC = () => {
                             <AvatarFallback>{selectedConversation.name[0]}</AvatarFallback>
                           </Avatar>
                         )}
-                        {selectedConversation.online && (
+                        {(selectedConversation.id === 'team'
+                          ? isConnected
+                          : onlineIds.has(selectedConversation.id)) && (
                           <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-background" />
                         )}
                       </div>
                       <div>
                         <h3 className="font-semibold">{selectedConversation.name}</h3>
                         <p className="text-xs text-muted-foreground">
-                          {selectedConversation.online ? 'Online' : 'Offline'}
+                          {selectedConversation.id === 'team'
+                            ? isConnected
+                              ? 'Canal live — toți angajații conectați'
+                              : status === 'connecting'
+                                ? 'Se conectează…'
+                                : 'Deconectat — reconectare automată'
+                            : onlineIds.has(selectedConversation.id)
+                              ? 'Online · mesaje pe canal comun'
+                              : 'Offline · mesaje pe canal comun'}
                         </p>
                       </div>
                     </div>
@@ -581,72 +584,91 @@ export const CommunicationModule: React.FC = () => {
                   {/* Messages */}
                   <ScrollArea className="flex-1 p-4">
                     <div className="space-y-4">
-                      {mockMessages.map((msg) => (
-                        <div
-                          key={msg.id}
-                          className={cn(
-                            "flex",
-                            msg.isOwn ? "justify-end" : "justify-start"
-                          )}
-                        >
+                      {messages.length === 0 && (
+                        <p className="text-center text-sm text-muted-foreground py-8 px-4">
+                          {isConnected
+                            ? 'Începe conversația — mesajele sunt vizibile pentru toată echipa conectată la același canal.'
+                            : 'Se conectează la server…'}
+                        </p>
+                      )}
+                      {messages.map((msg) => {
+                        const isOwn = msg.senderId === currentUser.id;
+                        const ts = new Date(msg.timestamp);
+                        return (
                           <div
-                            className={cn(
-                              "max-w-[70%] rounded-2xl p-3",
-                              msg.isOwn
-                                ? "bg-primary text-primary-foreground rounded-br-md"
-                                : "bg-muted rounded-bl-md"
-                            )}
+                            key={msg.id}
+                            className={cn('flex', isOwn ? 'justify-end' : 'justify-start')}
                           >
-                            {msg.attachment && (
-                              <div className="mb-2">
-                                {msg.attachment.type === 'image' && (
-                                  <img
-                                    src={msg.attachment.url}
-                                    alt={msg.attachment.name}
-                                    className="rounded-lg max-w-full"
-                                  />
+                            <div
+                              className={cn(
+                                'max-w-[70%] rounded-2xl p-3',
+                                isOwn
+                                  ? 'bg-primary text-primary-foreground rounded-br-md'
+                                  : 'bg-muted rounded-bl-md',
+                              )}
+                            >
+                              {!isOwn && (
+                                <p className="text-xs font-medium text-muted-foreground mb-1">
+                                  {msg.senderName}
+                                </p>
+                              )}
+                              <p className="text-sm">{msg.content}</p>
+                              <div
+                                className={cn(
+                                  'flex items-center gap-1 mt-1',
+                                  isOwn ? 'justify-end' : 'justify-start',
                                 )}
+                              >
+                                <span
+                                  className={cn(
+                                    'text-xs',
+                                    isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground',
+                                  )}
+                                >
+                                  {formatTime(ts)}
+                                </span>
+                                {isOwn && getStatusIcon('read')}
                               </div>
-                            )}
-                            <p className="text-sm">{msg.content}</p>
-                            <div className={cn(
-                              "flex items-center gap-1 mt-1",
-                              msg.isOwn ? "justify-end" : "justify-start"
-                            )}>
-                              <span className={cn(
-                                "text-xs",
-                                msg.isOwn ? "text-primary-foreground/70" : "text-muted-foreground"
-                              )}>
-                                {formatTime(msg.timestamp)}
-                              </span>
-                              {msg.isOwn && getStatusIcon(msg.status)}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </ScrollArea>
 
                   {/* Input */}
-                  <div className="flex-shrink-0 p-4 border-t border-border">
+                  <div className="flex-shrink-0 p-4 border-t border-border space-y-2">
+                    {lastError && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        {lastError}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" type="button" disabled={!isConnected}>
                         <Paperclip className="h-5 w-5" />
                       </Button>
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" type="button" disabled={!isConnected}>
                         <Image className="h-5 w-5" />
                       </Button>
                       <Input
-                        placeholder="Scrie un mesaj..."
+                        placeholder={
+                          isConnected ? 'Scrie un mesaj…' : 'Așteaptă conexiunea…'
+                        }
                         value={messageInput}
                         onChange={(e) => setMessageInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                         className="flex-1"
+                        disabled={!isConnected}
                       />
-                      <Button variant="ghost" size="icon">
+                      <Button variant="ghost" size="icon" type="button" disabled={!isConnected}>
                         <Smile className="h-5 w-5" />
                       </Button>
-                      <Button onClick={handleSendMessage} disabled={!messageInput.trim()}>
+                      <Button
+                        type="button"
+                        onClick={handleSendMessage}
+                        disabled={!messageInput.trim() || !isConnected}
+                      >
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>

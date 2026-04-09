@@ -21,6 +21,13 @@ export function imageSrc(path: string | null | undefined): string {
   return path.startsWith('/') ? `${base}${path}` : `${base}/${path}`;
 }
 
+/** Header opțional când backend-ul are `BILLING_API_KEY` (vezi docs). */
+function billingAuthHeaders(): HeadersInit | undefined {
+  const k =
+    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_BILLING_API_KEY?.trim() : undefined;
+  return k ? { 'X-Billing-Key': k } : undefined;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -678,4 +685,84 @@ export const recipesApi = {
   delete: (id: number) => request<void>(`/recipes/${id}`, { method: 'DELETE' }),
   syncFromMenuItem: (menuItemId: number, body: { name?: string; category?: string; prepTimeMinutes?: number; allergenIds?: number[]; image?: string | null }) =>
     request<number>(`/recipes/sync-from-menu-item/${menuItemId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+};
+
+// --- Billing / multi-tenant (abonamente, facturi) ---
+export interface SubscriptionPlanApi {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  priceMonthRon: string;
+  maxLocations: number | null;
+  maxUsers: number | null;
+  features: string[];
+  modulesEnabled: string[];
+  supportLevel: string | null;
+  badge: string | null;
+  sortOrder: number;
+  marketingActiveClients: number;
+  isActive: boolean;
+}
+
+export interface TenantApi {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TenantSubscriptionApi {
+  id: string;
+  tenantId: string;
+  planId: string;
+  status: string;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+export interface TenantWithSubscriptionRowApi {
+  tenant: TenantApi;
+  subscription: TenantSubscriptionApi | null;
+  plan: SubscriptionPlanApi | null;
+}
+
+export interface InvoiceApi {
+  id: string;
+  tenantId: string;
+  tenantSubscriptionId: string | null;
+  invoiceNumber: string | null;
+  amount: string;
+  currency: string;
+  status: string;
+  description: string | null;
+  issuedAt: string | null;
+  dueAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+const billingReq = <T>(path: string, init?: RequestInit) =>
+  request<T>(path, { ...init, headers: { ...billingAuthHeaders(), ...init?.headers } });
+
+export const billingApi = {
+  getPlans: () => billingReq<SubscriptionPlanApi[]>('/billing/plans'),
+  getTenants: () => billingReq<TenantWithSubscriptionRowApi[]>('/billing/tenants'),
+  getInvoices: (tenantId: string) =>
+    billingReq<InvoiceApi[]>(`/billing/tenants/${encodeURIComponent(tenantId)}/invoices`),
+  createInvoice: (body: {
+    tenantId: string;
+    tenantSubscriptionId?: string;
+    invoiceNumber?: string;
+    amount: number;
+    currency?: string;
+    status?: string;
+    description?: string;
+    issuedAt?: string;
+    dueAt?: string;
+  }) =>
+    billingReq<InvoiceApi>('/billing/invoices', { method: 'POST', body: JSON.stringify(body) }),
 };
