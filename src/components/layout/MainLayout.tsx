@@ -99,11 +99,14 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
 
   const { activeModule, navBase } = useMemo(() => {
     const r = parsePathname(pathname);
-    if (r.kind !== 'dashboard') {
-      return { activeModule: 'dashboard' as ModuleType, navBase: '/dashboard' as const };
+    if (r.kind === 'dashboard') {
+      const base = pathname.startsWith('/admin') ? ('/admin' as const) : ('/dashboard' as const);
+      return { activeModule: r.module, navBase: base };
     }
-    const base = pathname.startsWith('/admin') ? ('/admin' as const) : ('/dashboard' as const);
-    return { activeModule: r.module, navBase: base };
+    if (r.kind === 'kitchenDesk') {
+      return { activeModule: r.module, navBase: '/kitchen' as const };
+    }
+    return { activeModule: 'dashboard' as ModuleType, navBase: '/dashboard' as const };
   }, [pathname]);
 
   return (

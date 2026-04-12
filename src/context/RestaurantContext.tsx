@@ -15,6 +15,8 @@ interface RestaurantContextType {
   refreshDirectoryUsers: () => Promise<void>;
   login: (userId: string, pin: string) => boolean;
   logout: () => void;
+  /** `true` după ce s-a citit sesiunea din storage (pentru guard-uri la rute, fără flash). */
+  staffSessionHydrated: boolean;
   
   // Tables
   tables: Table[];
@@ -62,11 +64,36 @@ interface RestaurantContextType {
   getPhoneOrders: () => Order[];
 }
 
+const STAFF_USER_STORAGE_KEY = 'giurom_staff_user';
+
+const readStoredStaffUser = (): User | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STAFF_USER_STORAGE_KEY);
+    if (!raw) return null;
+    const u = JSON.parse(raw) as User;
+    return u?.id ? u : null;
+  } catch {
+    return null;
+  }
+};
+
+const persistStaffUser = (user: User | null) => {
+  if (typeof window === 'undefined') return;
+  if (!user) {
+    localStorage.removeItem(STAFF_USER_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(STAFF_USER_STORAGE_KEY, JSON.stringify(user));
+};
+
 const RestaurantContext = createContext<RestaurantContextType | undefined>(undefined);
 
 export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [directoryUsers, setDirectoryUsers] = useState<User[]>(defaultDirectoryUsers);
+  const [directoryUsersFetchDone, setDirectoryUsersFetchDone] = useState(false);
+  const [staffSessionHydrated, setStaffSessionHydrated] = useState(false);
 
   useEffect(() => {
     usersApi
@@ -76,8 +103,31 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       })
       .catch(() => {
         /* rămân utilizatorii mock din defaultDirectoryUsers dacă API indisponibil */
-      });
+      })
+      .finally(() => setDirectoryUsersFetchDone(true));
   }, []);
+
+  /** Restaurare sesiune după refresh — înainte ca GET /users să termine, chat-ul poate folosi snapshot-ul salvat. */
+  useEffect(() => {
+    const stored = readStoredStaffUser();
+    if (stored) setCurrentUser(stored);
+    setStaffSessionHydrated(true);
+  }, []);
+
+  /** După ce lista de utilizatori e stabilă (mock sau API), aliniază contul curent la sursa canonică sau deloghează dacă nu mai există. */
+  useEffect(() => {
+    if (!directoryUsersFetchDone) return;
+    setCurrentUser((prev) => {
+      if (!prev) return null;
+      const canonical = directoryUsers.find((u) => String(u.id) === String(prev.id));
+      if (canonical) {
+        persistStaffUser(canonical);
+        return canonical;
+      }
+      persistStaffUser(null);
+      return null;
+    });
+  }, [directoryUsers, directoryUsersFetchDone]);
 
   const refreshDirectoryUsers = useCallback(async () => {
     try {
@@ -97,9 +147,12 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Auth
   const login = useCallback((userId: string, pin: string): boolean => {
-    const user = directoryUsers.find((u) => u.id === userId && u.pin === pin);
+    const user = directoryUsers.find(
+      (u) => String(u.id) === String(userId) && u.pin === pin,
+    );
     if (user) {
       setCurrentUser(user);
+      persistStaffUser(user);
       return true;
     }
     return false;
@@ -107,6 +160,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const logout = useCallback(() => {
     setCurrentUser(null);
+    persistStaffUser(null);
   }, []);
 
   // Tables
@@ -405,6 +459,7 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       refreshDirectoryUsers,
       login,
       logout,
+      staffSessionHydrated,
       tables,
       updateTable,
       addTable,

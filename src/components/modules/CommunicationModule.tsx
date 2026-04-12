@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRestaurant } from '@/context/RestaurantContext';
 import type { User as StaffUser } from '@/data/mockData';
 import { useTeamChat } from '@/hooks/useTeamChat';
@@ -104,6 +104,8 @@ type ChatListItem = {
   name: string;
   type: 'department' | 'person';
   avatar: string | null;
+  /** Emoji afișat pentru thread-uri de departament (conversație „nouă”). */
+  deptEmoji?: string;
   lastMessage: string;
   timestamp: Date;
   unread: number;
@@ -150,32 +152,60 @@ export const CommunicationModule: React.FC = () => {
     };
   }, [messages, status, lastError, isConnected, currentUser]);
 
+  /** Thread-uri per departament (mesajele sunt tot pe canalul comun, dar UI-ul arată conversație dedicată). */
+  const departmentThreads: ChatListItem[] = useMemo(
+    () =>
+      departments.map((d) => ({
+        id: `dept:${d.id}`,
+        name: d.name,
+        type: 'department' as const,
+        avatar: null,
+        deptEmoji: d.icon,
+        lastMessage: 'Apasă pentru a scrie echipei',
+        timestamp: new Date(),
+        unread: 0,
+        online: isConnected,
+        pinned: false,
+      })),
+    [isConnected],
+  );
+
   const colleagueConversations: ChatListItem[] = useMemo(() => {
     if (!currentUser) return [];
+    const selfId = String(currentUser.id);
     return directoryUsers
-      .filter((u) => u.id !== currentUser.id)
+      .filter((u) => String(u.id) !== selfId)
       .map((u) => ({
-        id: u.id,
+        id: String(u.id),
         name: u.name,
         type: 'person' as const,
         avatar: u.avatar,
         lastMessage: 'Canal comun — mesajele sunt partajate',
         timestamp: new Date(),
         unread: 0,
-        online: onlineIds.has(u.id),
+        online: onlineIds.has(String(u.id)),
         pinned: false,
       }));
   }, [currentUser, directoryUsers, onlineIds]);
 
   const allConversations = useMemo(
-    () => [teamConversation, ...colleagueConversations],
-    [teamConversation, colleagueConversations],
+    () => [teamConversation, ...departmentThreads, ...colleagueConversations],
+    [teamConversation, departmentThreads, colleagueConversations],
   );
 
-  const selectedConversation = useMemo(
-    () => allConversations.find((c) => c.id === selectedId) ?? teamConversation,
-    [allConversations, selectedId, teamConversation],
-  );
+  const chatThreadPanelRef = useRef<HTMLDivElement>(null);
+
+  /** După „Conversație nouă”, lista nu mai e filtrată ascuns; pe mobil derulăm la zona de mesaje. */
+  useEffect(() => {
+    chatThreadPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedId]);
+
+  const selectedConversation = useMemo(() => {
+    const sid = String(selectedId);
+    return (
+      allConversations.find((c) => String(c.id) === sid) ?? teamConversation
+    );
+  }, [allConversations, selectedId, teamConversation]);
 
   const formatTime = (date: Date) => {
     const now = new Date();
@@ -322,10 +352,10 @@ export const CommunicationModule: React.FC = () => {
         </div>
 
         {/* Chat Tab */}
-        <TabsContent value="chat" className="flex-1 min-h-0 mt-0">
-          <div className="h-full flex">
+        <TabsContent value="chat" forceMount className="flex-1 min-h-0 mt-0">
+          <div className="h-full flex min-h-0 min-w-0 flex-col lg:flex-row">
             {/* Conversations List */}
-            <div className="w-80 border-r border-border flex flex-col">
+            <div className="w-full lg:w-80 shrink-0 border-r border-border flex flex-col min-h-0">
               <div className="p-4 space-y-3">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -337,13 +367,15 @@ export const CommunicationModule: React.FC = () => {
                   />
                 </div>
                 <Dialog open={showNewChat} onOpenChange={setShowNewChat}>
-                  <DialogTrigger asChild>
-                    <Button className="w-full gap-2">
-                      <Plus className="h-4 w-4" />
-                      Conversație Nouă
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
+                  <Button
+                    type="button"
+                    className="w-full gap-2"
+                    onClick={() => setShowNewChat(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Conversație Nouă
+                  </Button>
+                  <DialogContent className="max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>Conversație Nouă</DialogTitle>
                     </DialogHeader>
@@ -354,15 +386,17 @@ export const CommunicationModule: React.FC = () => {
                           {departments.map((dept) => (
                             <Button
                               key={dept.id}
+                              type="button"
                               variant="outline"
                               className="justify-start gap-2"
                               onClick={() => {
-                                toast({
-                                  title: 'Canal echipă',
-                                  description: `Mesajele către ${dept.name} se trimit pe canalul comun.`,
-                                });
-                                setSelectedId('team');
+                                setSelectedId(`dept:${dept.id}`);
+                                setSearchQuery('');
                                 setShowNewChat(false);
+                                toast({
+                                  title: `Conversație — ${dept.name}`,
+                                  description: 'Mesajele merg pe canalul comun al echipei.',
+                                });
                               }}
                             >
                               <span>{dept.icon}</span>
@@ -374,17 +408,22 @@ export const CommunicationModule: React.FC = () => {
                       <div>
                         <Label className="text-sm font-medium mb-3 block">Angajați</Label>
                         <div className="space-y-2">
-                          {directoryUsers.map((emp) => (
+                          {(currentUser
+                            ? directoryUsers.filter((u) => String(u.id) !== String(currentUser.id))
+                            : directoryUsers
+                          ).map((emp) => (
                             <button
-                              key={emp.id}
+                              key={String(emp.id)}
+                              type="button"
                               className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors"
                               onClick={() => {
+                                setSelectedId(String(emp.id));
+                                setSearchQuery('');
+                                setShowNewChat(false);
                                 toast({
                                   title: emp.name,
-                                  description: 'Mesajele sunt pe canalul comun, vizibile pentru echipă.',
+                                  description: 'Conversația e deschisă. Mesajele sunt pe canalul comun.',
                                 });
-                                setSelectedId(emp.id);
-                                setShowNewChat(false);
                               }}
                             >
                               <div className="relative">
@@ -392,7 +431,7 @@ export const CommunicationModule: React.FC = () => {
                                   <AvatarImage src={emp.avatar} />
                                   <AvatarFallback>{emp.name[0]}</AvatarFallback>
                                 </Avatar>
-                                {onlineIds.has(emp.id) && (
+                                {onlineIds.has(String(emp.id)) && (
                                   <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
                                 )}
                               </div>
@@ -425,15 +464,29 @@ export const CommunicationModule: React.FC = () => {
                           onClick={() => setSelectedId(conv.id)}
                           className={cn(
                             "w-full flex items-center gap-3 p-3 rounded-xl transition-all",
-                            selectedConversation?.id === conv.id
+                            String(selectedConversation?.id) === String(conv.id)
                               ? "bg-primary/10"
                               : "hover:bg-muted"
                           )}
                         >
                           <div className="relative">
                             {conv.type === 'department' ? (
-                              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                                <Building2 className="h-5 w-5 text-primary" />
+                              <div
+                                className={cn(
+                                  'w-12 h-12 rounded-full flex items-center justify-center text-xl',
+                                  conv.id === 'team' ? 'bg-primary/10' : 'bg-muted',
+                                )}
+                              >
+                                {conv.deptEmoji ? (
+                                  <span aria-hidden>{conv.deptEmoji}</span>
+                                ) : (
+                                  <Building2
+                                    className={cn(
+                                      'h-5 w-5',
+                                      conv.id === 'team' ? 'text-primary' : 'text-muted-foreground',
+                                    )}
+                                  />
+                                )}
                               </div>
                             ) : (
                               <Avatar className="h-12 w-12">
@@ -477,15 +530,29 @@ export const CommunicationModule: React.FC = () => {
                           onClick={() => setSelectedId(conv.id)}
                           className={cn(
                             "w-full flex items-center gap-3 p-3 rounded-xl transition-all",
-                            selectedConversation?.id === conv.id
+                            String(selectedConversation?.id) === String(conv.id)
                               ? "bg-primary/10"
                               : "hover:bg-muted"
                           )}
                         >
                           <div className="relative">
                             {conv.type === 'department' ? (
-                              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                                <Building2 className="h-5 w-5 text-muted-foreground" />
+                              <div
+                                className={cn(
+                                  'w-12 h-12 rounded-full flex items-center justify-center text-xl',
+                                  conv.id === 'team' ? 'bg-primary/10' : 'bg-muted',
+                                )}
+                              >
+                                {conv.deptEmoji ? (
+                                  <span aria-hidden>{conv.deptEmoji}</span>
+                                ) : (
+                                  <Building2
+                                    className={cn(
+                                      'h-5 w-5',
+                                      conv.id === 'team' ? 'text-primary' : 'text-muted-foreground',
+                                    )}
+                                  />
+                                )}
                               </div>
                             ) : (
                               <Avatar className="h-12 w-12">
@@ -520,7 +587,11 @@ export const CommunicationModule: React.FC = () => {
             </div>
 
             {/* Chat Panel */}
-            <div className="flex-1 flex flex-col">
+            <div
+              ref={chatThreadPanelRef}
+              id="chat-thread-panel"
+              className="flex-1 flex flex-col min-w-0 min-h-0"
+            >
               {!currentUser ? (
                 <div className="flex-1 flex items-center justify-center text-muted-foreground p-6">
                   <div className="text-center max-w-sm">
@@ -538,8 +609,12 @@ export const CommunicationModule: React.FC = () => {
                     <div className="flex items-center gap-3">
                       <div className="relative">
                         {selectedConversation.type === 'department' ? (
-                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                            <Building2 className="h-5 w-5 text-primary" />
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-lg">
+                            {selectedConversation.deptEmoji ? (
+                              <span aria-hidden>{selectedConversation.deptEmoji}</span>
+                            ) : (
+                              <Building2 className="h-5 w-5 text-primary" />
+                            )}
                           </div>
                         ) : (
                           <Avatar className="h-10 w-10">
@@ -547,24 +622,31 @@ export const CommunicationModule: React.FC = () => {
                             <AvatarFallback>{selectedConversation.name[0]}</AvatarFallback>
                           </Avatar>
                         )}
-                        {(selectedConversation.id === 'team'
+                        {(String(selectedConversation.id) === 'team' ||
+                        String(selectedConversation.id).startsWith('dept:')
                           ? isConnected
-                          : onlineIds.has(selectedConversation.id)) && (
+                          : onlineIds.has(String(selectedConversation.id))) && (
                           <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-background" />
                         )}
                       </div>
                       <div>
                         <h3 className="font-semibold">{selectedConversation.name}</h3>
                         <p className="text-xs text-muted-foreground">
-                          {selectedConversation.id === 'team'
+                          {String(selectedConversation.id) === 'team'
                             ? isConnected
                               ? 'Canal live — toți angajații conectați'
                               : status === 'connecting'
                                 ? 'Se conectează…'
                                 : 'Deconectat — reconectare automată'
-                            : onlineIds.has(selectedConversation.id)
-                              ? 'Online · mesaje pe canal comun'
-                              : 'Offline · mesaje pe canal comun'}
+                            : String(selectedConversation.id).startsWith('dept:')
+                              ? isConnected
+                                ? 'Grup departament · mesaje pe canalul comun'
+                                : status === 'connecting'
+                                  ? 'Se conectează…'
+                                  : 'Deconectat'
+                              : onlineIds.has(String(selectedConversation.id))
+                                ? 'Online · mesaje pe canal comun'
+                                : 'Offline · mesaje pe canal comun'}
                         </p>
                       </div>
                     </div>
@@ -584,6 +666,11 @@ export const CommunicationModule: React.FC = () => {
                   {/* Messages */}
                   <ScrollArea className="flex-1 p-4">
                     <div className="space-y-4">
+                      {String(selectedConversation.id) !== 'team' && (
+                        <p className="text-xs text-center text-muted-foreground bg-muted/40 rounded-lg py-2 px-3 border border-border/60">
+                          Mesajele se publică pe canalul comun al echipei — toți angajații conectați le văd.
+                        </p>
+                      )}
                       {messages.length === 0 && (
                         <p className="text-center text-sm text-muted-foreground py-8 px-4">
                           {isConnected
@@ -592,7 +679,7 @@ export const CommunicationModule: React.FC = () => {
                         </p>
                       )}
                       {messages.map((msg) => {
-                        const isOwn = msg.senderId === currentUser.id;
+                        const isOwn = String(msg.senderId) === String(currentUser.id);
                         const ts = new Date(msg.timestamp);
                         return (
                           <div

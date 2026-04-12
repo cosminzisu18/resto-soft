@@ -7,6 +7,7 @@ import { tablesApi, ordersApi, menuApi, normalizeTablePosition, type TableApi, t
 import { sanitizeTablePositionForApi } from '@/lib/tablePosition';
 import { kdsStationApiToKdsStation } from '@/lib/kdsUtils';
 import { parsePathname, ROUTES } from '@/lib/appRoutes';
+import { canAccessDashboardShell, canAccessKitchenDesk } from '@/lib/dashboardAccess';
 import LoginScreen from '@/components/LoginScreen';
 import TableMap from '@/components/TableMap';
 import OrderPanel from '@/components/OrderPanel';
@@ -101,6 +102,7 @@ const RestaurantApp: React.FC = () => {
   const {
     currentUser,
     logout,
+    staffSessionHydrated,
     notifications,
     markNotificationRead,
     clearNotifications,
@@ -114,7 +116,7 @@ const RestaurantApp: React.FC = () => {
   } = useRestaurant();
 
   const activeModule: ModuleType =
-    route.kind === 'dashboard' ? route.module : 'dashboard';
+    route.kind === 'dashboard' || route.kind === 'kitchenDesk' ? route.module : 'dashboard';
 
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [kdsModuleStation, setKdsModuleStation] = useState<KDSStation | null>(null);
@@ -224,7 +226,7 @@ const RestaurantApp: React.FC = () => {
   }, [route.kind, mapApiTableToTable]);
 
   useEffect(() => {
-    if (route.kind !== 'dashboard') return;
+    if (route.kind !== 'dashboard' && route.kind !== 'kitchenDesk') return;
     setDashboardKdsLoading(true);
     menuApi
       .getKdsStations()
@@ -236,6 +238,38 @@ const RestaurantApp: React.FC = () => {
       .catch(() => setDashboardKdsStations(kdsStations))
       .finally(() => setDashboardKdsLoading(false));
   }, [route.kind]);
+
+  /** Protecție `/dashboard` și `/admin`: doar Administrator cu PIN 0000. */
+  useEffect(() => {
+    if (!staffSessionHydrated) return;
+    if (route.kind !== 'dashboard') return;
+    if (canAccessDashboardShell(currentUser)) return;
+    if (currentUser) {
+      toast({
+        title: 'Acces refuzat',
+        description: 'Zona Dashboard este disponibilă doar pentru Administrator (PIN 0000).',
+        variant: 'destructive',
+      });
+    }
+    logout();
+    router.replace(ROUTES.login);
+  }, [staffSessionHydrated, route.kind, currentUser, router, logout, toast]);
+
+  /** Protecție `/kitchen`: bucătărie sau același admin ca la dashboard. */
+  useEffect(() => {
+    if (!staffSessionHydrated) return;
+    if (route.kind !== 'kitchenDesk') return;
+    if (canAccessKitchenDesk(currentUser)) return;
+    if (currentUser) {
+      toast({
+        title: 'Acces refuzat',
+        description: 'Zona bucătărie necesită cont de bucătărie sau administrator.',
+        variant: 'destructive',
+      });
+    }
+    logout();
+    router.replace(ROUTES.login);
+  }, [staffSessionHydrated, route.kind, currentUser, router, logout, toast]);
 
   useEffect(() => {
     if (route.kind !== 'order') {
@@ -300,7 +334,7 @@ const RestaurantApp: React.FC = () => {
     if (role === 'admin') {
       router.push(ROUTES.dashboard('dashboard'));
     } else if (role === 'kitchen') {
-      router.push(ROUTES.dashboard('kds'));
+      router.push(ROUTES.kitchen('kds'));
     } else {
       router.push(ROUTES.waiter);
     }
@@ -473,7 +507,25 @@ const RestaurantApp: React.FC = () => {
     );
   }
 
-  if (route.kind === 'dashboard') {
+  if (route.kind === 'dashboard' || route.kind === 'kitchenDesk') {
+    if (!staffSessionHydrated) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
+          Se încarcă sesiunea…
+        </div>
+      );
+    }
+    const shellAllowed =
+      route.kind === 'dashboard'
+        ? canAccessDashboardShell(currentUser)
+        : canAccessKitchenDesk(currentUser);
+    if (!shellAllowed) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
+          Redirecționare la autentificare…
+        </div>
+      );
+    }
     return (
       <MainLayout
         isOnline={true}

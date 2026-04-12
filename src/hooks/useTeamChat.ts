@@ -176,7 +176,7 @@ export function useTeamChat(
     };
   }, [user, tenantId]);
 
-  const onlineIds = new Set(presence.map((p) => p.userId));
+  const onlineIds = new Set(presence.map((p) => String(p.userId)));
 
   return {
     messages,

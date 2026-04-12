@@ -213,7 +213,7 @@ export function userApiToUser(api: UserApi): {
   avatar: string;
 } {
   return {
-    id: api.id,
+    id: String(api.id),
     name: api.name,
     role: api.role,
     pin: api.pin,
