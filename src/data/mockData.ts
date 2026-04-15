@@ -14,6 +14,7 @@ export interface Table {
   status: "free" | "occupied" | "reserved";
   position: { x: number; y: number };
   shape: 'round' | 'square' | 'rectangle';
+  zone?: string;
   /** Culoare opțională pe hartă (editor) */
   color?: string;
   /** Mock: string; API masă: number (orders.id INT) */
@@ -54,6 +55,8 @@ export interface MenuItem {
   price: number;
   category: string;
   kdsStation: string;
+  /** Când vine din API – potrivire directă cu stația KDS (id numeric). */
+  kdsStationId?: number;
   prepTime: number;
   ingredients: string[];
   allergenIds?: string[];

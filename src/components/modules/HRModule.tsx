@@ -18,7 +18,7 @@ import {
   Play, Pause, AlertTriangle, Award, TrendingUp, TrendingDown,
   Calendar, CheckCircle2, XCircle, AlertCircle, Star, Target,
   Euro, Timer, RotateCcw, Package, FileText, ThumbsUp, ThumbsDown,
-  Bell, Settings, BarChart3, Wallet
+  Bell, Settings, BarChart3, Wallet, Pencil
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -41,7 +41,7 @@ interface Employee {
   kpiScore: number;
 }
 
-const employees: Employee[] = [
+const employeesDataSeed: Employee[] = [
   { id: '1', name: 'Maria Popescu', role: 'waiter', avatar: 'MP', status: 'online', phone: '0721 234 567', email: 'maria.p@resto.ro', startDate: '2023-05-15', schedule: '08:00 - 16:00', breaksTaken: 2, totalBreakTime: 45, kpiScore: 92 },
   { id: '2', name: 'Ion Ionescu', role: 'waiter', avatar: 'II', status: 'break', phone: '0722 345 678', email: 'ion.i@resto.ro', startDate: '2023-08-20', schedule: '16:00 - 00:00', breaksTaken: 1, totalBreakTime: 15, kpiScore: 87 },
   { id: '3', name: 'Elena Vasilescu', role: 'waiter', avatar: 'EV', status: 'offline', phone: '0723 456 789', email: 'elena.v@resto.ro', startDate: '2024-01-10', schedule: 'Liber', breaksTaken: 0, totalBreakTime: 0, kpiScore: 78 },
@@ -49,6 +49,16 @@ const employees: Employee[] = [
   { id: '5', name: 'Cristina Popa', role: 'kitchen', avatar: 'CP', status: 'busy', phone: '0725 678 901', email: 'cristina.p@resto.ro', startDate: '2023-11-05', schedule: '14:00 - 22:00', breaksTaken: 2, totalBreakTime: 35, kpiScore: 88 },
   { id: '6', name: 'Florin Dumitrescu', role: 'cashier', avatar: 'FD', status: 'online', phone: '0726 789 012', email: 'florin.d@resto.ro', startDate: '2024-02-15', schedule: '10:00 - 18:00', breaksTaken: 1, totalBreakTime: 20, kpiScore: 91 },
 ];
+
+const defaultEmployeeForm = {
+  name: '',
+  role: 'waiter' as Employee['role'],
+  phone: '',
+  email: '',
+  startDate: '',
+  schedule: '',
+  status: 'offline' as Employee['status'],
+};
 
 const performanceData = [
   { name: 'Lun', performanta: 85, media: 80 },
@@ -68,6 +78,7 @@ const breakHistory = [
 ];
 
 export const HRModule: React.FC = () => {
+  const [employees, setEmployees] = useState<Employee[]>(employeesDataSeed);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -76,6 +87,10 @@ export const HRModule: React.FC = () => {
   const [incidentType, setIncidentType] = useState<'incident' | 'praise' | 'warning'>('incident');
   const [isBreakActive, setIsBreakActive] = useState(false);
   const [breakTimer, setBreakTimer] = useState(0);
+  const [showAddEmployeeDialog, setShowAddEmployeeDialog] = useState(false);
+  const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [employeeForm, setEmployeeForm] = useState(defaultEmployeeForm);
 
   const filteredEmployees = employees.filter(e => 
     e.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -140,6 +155,115 @@ export const HRModule: React.FC = () => {
     setShowIncidentDialog(true);
   };
 
+  const openAddEmployeeDialog = () => {
+    setEmployeeForm(defaultEmployeeForm);
+    setShowAddEmployeeDialog(true);
+  };
+
+  const openEditEmployeeDialog = (employee: Employee) => {
+    setEditingEmployeeId(employee.id);
+    setEmployeeForm({
+      name: employee.name,
+      role: employee.role,
+      phone: employee.phone,
+      email: employee.email,
+      startDate: employee.startDate,
+      schedule: employee.schedule,
+      status: employee.status,
+    });
+    setShowEditEmployeeDialog(true);
+  };
+
+  const getAvatarFromName = (name: string): string => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return name.trim().slice(0, 2).toUpperCase() || 'NA';
+  };
+
+  const validateEmployeeForm = (): boolean => {
+    if (!employeeForm.name.trim()) {
+      toast({ title: 'Nume invalid', description: 'Completează numele angajatului.', variant: 'destructive' });
+      return false;
+    }
+    if (!employeeForm.phone.trim()) {
+      toast({ title: 'Telefon invalid', description: 'Completează numărul de telefon.', variant: 'destructive' });
+      return false;
+    }
+    if (!employeeForm.schedule.trim()) {
+      toast({ title: 'Program invalid', description: 'Completează programul angajatului.', variant: 'destructive' });
+      return false;
+    }
+    if (!employeeForm.startDate.trim()) {
+      toast({ title: 'Dată invalidă', description: 'Completează data angajării.', variant: 'destructive' });
+      return false;
+    }
+    return true;
+  };
+
+  const handleAddEmployee = () => {
+    if (!validateEmployeeForm()) return;
+    const newEmployee: Employee = {
+      id: String(Date.now()),
+      name: employeeForm.name.trim(),
+      role: employeeForm.role,
+      avatar: getAvatarFromName(employeeForm.name),
+      status: employeeForm.status,
+      phone: employeeForm.phone.trim(),
+      email: employeeForm.email.trim(),
+      startDate: employeeForm.startDate,
+      schedule: employeeForm.schedule.trim(),
+      breaksTaken: 0,
+      totalBreakTime: 0,
+      kpiScore: 80,
+    };
+    setEmployees((prev) => [newEmployee, ...prev]);
+    setShowAddEmployeeDialog(false);
+    setEmployeeForm(defaultEmployeeForm);
+    toast({ title: 'Angajat adăugat', description: `${newEmployee.name} a fost adăugat.` });
+  };
+
+  const handleEditEmployee = () => {
+    if (!editingEmployeeId) return;
+    if (!validateEmployeeForm()) return;
+    setEmployees((prev) =>
+      prev.map((employee) =>
+        employee.id === editingEmployeeId
+          ? {
+              ...employee,
+              name: employeeForm.name.trim(),
+              role: employeeForm.role,
+              avatar: getAvatarFromName(employeeForm.name),
+              status: employeeForm.status,
+              phone: employeeForm.phone.trim(),
+              email: employeeForm.email.trim(),
+              startDate: employeeForm.startDate,
+              schedule: employeeForm.schedule.trim(),
+            }
+          : employee,
+      ),
+    );
+    if (selectedEmployee?.id === editingEmployeeId) {
+      setSelectedEmployee((prev) =>
+        prev
+          ? {
+              ...prev,
+              name: employeeForm.name.trim(),
+              role: employeeForm.role,
+              avatar: getAvatarFromName(employeeForm.name),
+              status: employeeForm.status,
+              phone: employeeForm.phone.trim(),
+              email: employeeForm.email.trim(),
+              startDate: employeeForm.startDate,
+              schedule: employeeForm.schedule.trim(),
+            }
+          : null,
+      );
+    }
+    setShowEditEmployeeDialog(false);
+    setEditingEmployeeId(null);
+    toast({ title: 'Angajat modificat', description: 'Datele au fost actualizate.' });
+  };
+
   return (
     <div className="p-6 space-y-6">
       <PageHeader 
@@ -150,12 +274,51 @@ export const HRModule: React.FC = () => {
       <Tabs defaultValue="dashboard" className="space-y-6">
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="employees-admin">Adaugă angajat</TabsTrigger>
           <TabsTrigger value="breaks">Pauze</TabsTrigger>
           <TabsTrigger value="kpi-waiter">KPI Ospătari</TabsTrigger>
           <TabsTrigger value="kpi-kitchen">KPI Bucătari</TabsTrigger>
           <TabsTrigger value="kpi-cashier">KPI Casieri</TabsTrigger>
           <TabsTrigger value="manager">Manager</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="employees-admin" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Administrare Angajați
+                </span>
+                <Button onClick={openAddEmployeeDialog}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adaugă angajat
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {employees.map((employee) => (
+                  <div key={employee.id} className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl border">
+                    <div className="min-w-[220px]">
+                      <p className="font-semibold">{employee.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {getRoleLabel(employee.role)} • {employee.phone} • {employee.schedule}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{getStatusLabel(employee.status)}</Badge>
+                      <Button variant="outline" size="sm" onClick={() => openEditEmployeeDialog(employee)}>
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Modifică
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Dashboard Tab */}
         <TabsContent value="dashboard" className="space-y-6">
@@ -1038,6 +1201,170 @@ export const HRModule: React.FC = () => {
             >
               Salvează
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddEmployeeDialog} onOpenChange={setShowAddEmployeeDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Adaugă angajat</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Nume complet</Label>
+              <Input
+                value={employeeForm.name}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Ex: Andrei Popescu"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Rol</Label>
+              <Select
+                value={employeeForm.role}
+                onValueChange={(v: Employee['role']) => setEmployeeForm((prev) => ({ ...prev, role: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="waiter">Ospătar</SelectItem>
+                  <SelectItem value="kitchen">Bucătar</SelectItem>
+                  <SelectItem value="cashier">Casier</SelectItem>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={employeeForm.status}
+                onValueChange={(v: Employee['status']) => setEmployeeForm((prev) => ({ ...prev, status: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="offline">Offline</SelectItem>
+                  <SelectItem value="break">Pauză</SelectItem>
+                  <SelectItem value="busy">Ocupat</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Telefon</Label>
+              <Input
+                value={employeeForm.phone}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, phone: e.target.value }))}
+                placeholder="07xx xxx xxx"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                value={employeeForm.email}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="nume@restaurant.ro"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Data angajării</Label>
+              <Input
+                type="date"
+                value={employeeForm.startDate}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, startDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Program</Label>
+              <Input
+                value={employeeForm.schedule}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, schedule: e.target.value }))}
+                placeholder="08:00 - 16:00"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddEmployeeDialog(false)}>Anulează</Button>
+            <Button onClick={handleAddEmployee}>Salvează</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditEmployeeDialog} onOpenChange={setShowEditEmployeeDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Modifică angajat</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Nume complet</Label>
+              <Input
+                value={employeeForm.name}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Rol</Label>
+              <Select
+                value={employeeForm.role}
+                onValueChange={(v: Employee['role']) => setEmployeeForm((prev) => ({ ...prev, role: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="waiter">Ospătar</SelectItem>
+                  <SelectItem value="kitchen">Bucătar</SelectItem>
+                  <SelectItem value="cashier">Casier</SelectItem>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={employeeForm.status}
+                onValueChange={(v: Employee['status']) => setEmployeeForm((prev) => ({ ...prev, status: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="offline">Offline</SelectItem>
+                  <SelectItem value="break">Pauză</SelectItem>
+                  <SelectItem value="busy">Ocupat</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Telefon</Label>
+              <Input
+                value={employeeForm.phone}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, phone: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                value={employeeForm.email}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, email: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Data angajării</Label>
+              <Input
+                type="date"
+                value={employeeForm.startDate}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, startDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Program</Label>
+              <Input
+                value={employeeForm.schedule}
+                onChange={(e) => setEmployeeForm((prev) => ({ ...prev, schedule: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditEmployeeDialog(false)}>Anulează</Button>
+            <Button onClick={handleEditEmployee}>Salvează modificările</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

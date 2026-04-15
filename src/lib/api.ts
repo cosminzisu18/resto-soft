@@ -1,3 +1,5 @@
+import { clearAccessToken, getAccessToken } from '@/lib/authSession';
+
 const DEFAULT_API_BASE = 'http://localhost:3001';
 
 function resolveRuntimeApiBase(): string {
@@ -28,11 +30,27 @@ function billingAuthHeaders(): HeadersInit | undefined {
   return k ? { 'X-Billing-Key': k } : undefined;
 }
 
+function staffAuthHeaders(): Record<string, string> {
+  const t = getAccessToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...staffAuthHeaders(),
+      ...billingAuthHeaders(),
+      ...options?.headers,
+    },
     ...options,
   });
+  if (res.status === 401) {
+    clearAccessToken();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('giurom-auth-expired'));
+    }
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
@@ -180,7 +198,8 @@ export interface UserApi {
   id: string;
   name: string;
   role: UserRoleApi;
-  pin: string;
+  /** Lipsă la `/users/directory` și după login JWT. */
+  pin?: string;
   avatar: string | null;
   branchId?: string | null;
   branch?: { id: string; name?: string } | null;
@@ -216,12 +235,23 @@ export function userApiToUser(api: UserApi): {
     id: String(api.id),
     name: api.name,
     role: api.role,
-    pin: api.pin,
+    pin: api.pin ?? '',
     avatar: (api.avatar && api.avatar.trim()) || initialsFromName(api.name),
   };
 }
 
+export const authApi = {
+  login: (body: { userId: string; pin: string }) =>
+    request<{ access_token: string; user: UserApi }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  me: () => request<UserApi | null>('/auth/me'),
+};
+
 export const usersApi = {
+  /** Conturi fără PIN (ecran login). */
+  listDirectory: () => request<UserApi[]>('/users/directory'),
   list: () => request<UserApi[]>('/users'),
   get: (id: string) => request<UserApi | null>(`/users/${encodeURIComponent(id)}`),
   create: (body: CreateUserBody) =>
@@ -280,6 +310,9 @@ export interface UpdateTableBody {
   seats?: number;
   zone?: string;
   shape?: 'round' | 'square' | 'rectangle';
+  currentOrderId?: number | null;
+  reservationId?: string | null;
+  currentGuests?: number;
 }
 
 export interface CreateTableBody {
@@ -313,8 +346,9 @@ export interface OrderItemApi {
   menuItemId: number;
   menuItem: Record<string, unknown> | null;
   quantity: number;
-  unitPrice: number;
-  lineTotal: number;
+  /** Opțional pentru draft-uri locale (OrderPanel). */
+  unitPrice?: number;
+  lineTotal?: number;
   weightGrams?: number | null;
   modifications: { added?: string[]; removed?: string[]; notes?: string } | null;
   status: OrderItemStatusApi;
@@ -390,6 +424,8 @@ export interface CreateOrderBody {
   deliveryNotes?: string;
   kioskId?: number;
   paymentMethod?: 'cash' | 'card' | 'usage_card';
+  platformOrderId?: string;
+  priority?: number;
   items: CreateOrderItemBody[];
 }
 
@@ -461,13 +497,57 @@ export interface CreateReservationBody {
 
 export type UpdateReservationBody = Partial<CreateReservationBody>;
 
+export type NotificationTypeApi =
+  | 'order_ready'
+  | 'new_order'
+  | 'reservation'
+  | 'delivery'
+  | 'urgent';
+
+export interface NotificationApi {
+  id: string;
+  type: NotificationTypeApi;
+  title: string;
+  message: string | null;
+  orderId: number | null;
+  tableNumber: number | null;
+  read: boolean;
+  createdAt: string;
+  targetRole?: 'waiter' | 'kitchen' | 'admin' | null;
+  targetUserId?: string | null;
+}
+
+export interface CreateNotificationBody {
+  type: NotificationTypeApi;
+  title: string;
+  message?: string;
+  orderId?: number;
+  tableNumber?: number;
+  read?: boolean;
+  targetRole?: 'waiter' | 'kitchen' | 'admin';
+  targetUserId?: string;
+}
+
+export const notificationsApi = {
+  getAll: () => request<NotificationApi[]>('/notifications'),
+  create: (body: CreateNotificationBody) =>
+    request<NotificationApi>('/notifications', { method: 'POST', body: JSON.stringify(body) }),
+  markRead: (id: string) =>
+    request<NotificationApi | null>(`/notifications/${encodeURIComponent(id)}/read`, {
+      method: 'PATCH',
+    }),
+};
+
 export const ordersApi = {
   getByTableId: (tableId: number, date?: string) => {
     const params = new URLSearchParams({ tableId: String(tableId) });
     if (date) params.set('date', date);
     return request<OrderApi[]>(`/orders?${params.toString()}`);
   },
-  getAll: () => request<OrderApi[]>('/orders'),
+  getAll: (status?: 'active' | 'completed' | 'cancelled') => {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return request<OrderApi[]>(`/orders${q}`);
+  },
   getOne: (id: number) => request<OrderApi | null>(`/orders/${id}`),
   create: (body: CreateOrderBody) =>
     request<OrderApi>('/orders', { method: 'POST', body: JSON.stringify(body) }),

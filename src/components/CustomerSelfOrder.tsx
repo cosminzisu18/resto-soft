@@ -631,10 +631,10 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
         return;
       }
     } else if (orderMode === 'dine-in' && scannedTable) {
-      const order = createOrder(scannedTable.id, 'restaurant');
-      cart.forEach((item) => {
-        addItemToOrder(order.id, item.menuItem, item.quantity);
-      });
+      const order = await createOrder(scannedTable.id, 'restaurant');
+      for (const item of cart) {
+        await addItemToOrder(order.id, item.menuItem, item.quantity);
+      }
       setLastPlacedOrderId(null);
       if (tableOrder) {
         setTableOrder({
@@ -714,14 +714,14 @@ const CustomerSelfOrder: React.FC<CustomerSelfOrderProps> = ({ initialTableId })
         return;
       }
     } else if (orderMode === 'delivery') {
-      const order = createDeliveryOrder('own_website', {
+      const order = await createDeliveryOrder('own_website', {
         name: deliveryForm.name,
         phone: deliveryForm.phone,
         address: deliveryForm.address,
       });
-      cart.forEach((item) => {
-        addItemToOrder(order.id, item.menuItem, item.quantity);
-      });
+      for (const item of cart) {
+        await addItemToOrder(order.id, item.menuItem, item.quantity);
+      }
       setLastPlacedOrderId(null);
     }
 

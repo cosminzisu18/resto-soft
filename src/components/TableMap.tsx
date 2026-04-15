@@ -83,7 +83,7 @@ const TableMap: React.FC<TableMapProps> = ({
         });
         return;
       }
-      updateTable(t);
+      void updateTable(t);
       onTableUpdated?.(t);
     },
     [isApiControlled, updateTable, onTableUpdated],

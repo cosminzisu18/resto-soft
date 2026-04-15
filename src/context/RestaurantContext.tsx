@@ -1,65 +1,94 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { 
-  User, Table, MenuItem, Order, OrderItem, KDSStation, Reservation, Notification, OrderSource,
+import {
+  User,
+  Table,
+  MenuItem,
+  Order,
+  OrderItem,
+  KDSStation,
+  Reservation,
+  Notification,
+  OrderSource,
   users as defaultDirectoryUsers,
-  initialTables, menuItems, kdsStations, sampleOrders, sampleNotifications, deliveryPlatforms
+  initialTables,
+  menuItems,
+  kdsStations,
 } from '@/data/mockData';
-import { orderItemMatchesKdsStation } from '@/lib/kdsUtils';
-import { usersApi, userApiToUser } from '@/lib/api';
+import { orderItemMatchesKdsStation, kdsStationApiToKdsStation } from '@/lib/kdsUtils';
+import {
+  authApi,
+  usersApi,
+  userApiToUser,
+  tablesApi,
+  menuApi,
+  ordersApi,
+  reservationsApi,
+  notificationsApi,
+  type CreateMenuItemBody,
+  type CreateNotificationBody,
+  type CreateOrderBody,
+  type CreateOrderItemBody,
+} from '@/lib/api';
+import { orderApiToPosOrder } from '@/lib/posOrderMapper';
+import {
+  menuItemApiToMenuItem,
+  tableApiToTable,
+  reservationApiToReservation,
+  notificationApiToNotification,
+} from '@/lib/restaurantMappers';
+import { setAccessToken, clearAccessToken, getAccessToken } from '@/lib/authSession';
 
 interface RestaurantContextType {
-  // Auth
   currentUser: User | null;
-  /** Conturi pentru login și liste (ospătari/bucătărie); sincronizat cu GET /users când API-ul răspunde. */
   directoryUsers: User[];
   refreshDirectoryUsers: () => Promise<void>;
-  login: (userId: string, pin: string) => boolean;
+  login: (userId: string, pin: string) => Promise<boolean>;
   logout: () => void;
-  /** `true` după ce s-a citit sesiunea din storage (pentru guard-uri la rute, fără flash). */
   staffSessionHydrated: boolean;
-  
-  // Tables
+
   tables: Table[];
-  updateTable: (table: Table) => void;
-  addTable: (table: Omit<Table, 'id'>) => void;
-  deleteTable: (tableId: number) => void;
-  
-  // Menu
+  updateTable: (table: Table) => Promise<void>;
+  addTable: (table: Omit<Table, 'id'>) => Promise<void>;
+  deleteTable: (tableId: number) => Promise<void>;
+
   menu: MenuItem[];
-  updateMenuItem: (item: MenuItem) => void;
-  addMenuItem: (item: Omit<MenuItem, 'id'>) => void;
-  deleteMenuItem: (itemId: string) => void;
-  
-  // Orders
+  updateMenuItem: (item: MenuItem) => Promise<void>;
+  addMenuItem: (item: Omit<MenuItem, 'id'>) => Promise<void>;
+  deleteMenuItem: (itemId: string) => Promise<void>;
+
   orders: Order[];
-  createOrder: (tableId?: number, source?: OrderSource) => Order;
+  createOrder: (tableId?: number, source?: OrderSource) => Promise<Order>;
   updateOrder: (order: Order) => void;
-  addItemToOrder: (orderId: string, menuItem: MenuItem, quantity: number, modifications?: OrderItem['modifications']) => void;
-  updateOrderItemStatus: (orderId: string, itemId: string, status: OrderItem['status']) => void;
-  completeOrder: (orderId: string, tip?: number, cui?: string) => void;
+  addItemToOrder: (
+    orderId: string,
+    menuItem: MenuItem,
+    quantity: number,
+    modifications?: OrderItem['modifications'],
+  ) => Promise<void>;
+  updateOrderItemStatus: (orderId: string, itemId: string, status: OrderItem['status']) => Promise<void>;
+  completeOrder: (orderId: string, tip?: number, cui?: string) => Promise<void>;
   getActiveOrderForTable: (tableId: number) => Order | undefined;
-  createDeliveryOrder: (source: OrderSource, customerInfo: { name: string; phone: string; address?: string; platformOrderId?: string }) => Order;
-  
-  // Reservations
+  createDeliveryOrder: (
+    source: OrderSource,
+    customerInfo: { name: string; phone: string; address?: string; platformOrderId?: string },
+  ) => Promise<Order>;
+
   reservations: Reservation[];
-  createReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'>) => void;
-  updateReservation: (reservation: Reservation) => void;
-  deleteReservation: (id: number) => void;
-  
-  // Notifications
+  createReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'>) => Promise<void>;
+  updateReservation: (reservation: Reservation) => Promise<void>;
+  deleteReservation: (id: number) => Promise<void>;
+
   notifications: Notification[];
   addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => void;
-  markNotificationRead: (id: string) => void;
+  markNotificationRead: (id: string) => Promise<void>;
   clearNotifications: () => void;
-  
-// KDS
+
   kdsStations: KDSStation[];
-  addKdsStation: (station: Omit<KDSStation, 'id'>) => void;
-  updateKdsStation: (station: KDSStation) => void;
-  deleteKdsStation: (stationId: string) => void;
+  addKdsStation: (station: Omit<KDSStation, 'id'>) => Promise<void>;
+  updateKdsStation: (station: KDSStation) => Promise<void>;
+  deleteKdsStation: (stationId: string) => Promise<void>;
   getOrdersForStation: (station: KDSStation) => { order: Order; items: OrderItem[] }[];
-  
-  // Delivery
+
   getDeliveryOrders: () => Order[];
   getPhoneOrders: () => Order[];
 }
@@ -84,7 +113,8 @@ const persistStaffUser = (user: User | null) => {
     localStorage.removeItem(STAFF_USER_STORAGE_KEY);
     return;
   }
-  localStorage.setItem(STAFF_USER_STORAGE_KEY, JSON.stringify(user));
+  const { pin: _p, ...rest } = user;
+  localStorage.setItem(STAFF_USER_STORAGE_KEY, JSON.stringify(rest));
 };
 
 const RestaurantContext = createContext<RestaurantContextType | undefined>(undefined);
@@ -95,34 +125,128 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [directoryUsersFetchDone, setDirectoryUsersFetchDone] = useState(false);
   const [staffSessionHydrated, setStaffSessionHydrated] = useState(false);
 
+  const [tables, setTables] = useState<Table[]>(initialTables);
+  const [menu, setMenu] = useState<MenuItem[]>(menuItems);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [kdsStationsList, setKdsStationsList] = useState<KDSStation[]>(kdsStations);
+
+  const loadPublicLayout = useCallback(async () => {
+    try {
+      const [tb, items, stations] = await Promise.all([
+        tablesApi.getTables(),
+        menuApi.getItems(),
+        menuApi.getKdsStations(),
+      ]);
+      setTables(tb.map(tableApiToTable));
+      setMenu(items.map(menuItemApiToMenuItem));
+      setKdsStationsList(stations.map(kdsStationApiToKdsStation));
+    } catch {
+      setTables(initialTables);
+      setMenu(menuItems);
+      setKdsStationsList(kdsStations);
+    }
+  }, []);
+
+  const loadStaffData = useCallback(async () => {
+    if (!getAccessToken()) {
+      setOrders([]);
+      setReservations([]);
+      setNotifications([]);
+      return;
+    }
+    try {
+      const [ordersData, reservationsData, notificationsData] = await Promise.all([
+        ordersApi.getAll(),
+        reservationsApi.getAll(),
+        notificationsApi.getAll(),
+      ]);
+      setOrders(ordersData.map(orderApiToPosOrder));
+      setReservations(reservationsData.map(reservationApiToReservation));
+      setNotifications(notificationsData.map(notificationApiToNotification));
+    } catch {
+      setOrders([]);
+      setReservations([]);
+      setNotifications([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPublicLayout();
+  }, [loadPublicLayout]);
+
   useEffect(() => {
     usersApi
-      .list()
+      .listDirectory()
       .then((list) => {
         setDirectoryUsers(list.map(userApiToUser));
       })
       .catch(() => {
-        /* rămân utilizatorii mock din defaultDirectoryUsers dacă API indisponibil */
+        setDirectoryUsers(defaultDirectoryUsers);
       })
       .finally(() => setDirectoryUsersFetchDone(true));
   }, []);
 
-  /** Restaurare sesiune după refresh — înainte ca GET /users să termine, chat-ul poate folosi snapshot-ul salvat. */
   useEffect(() => {
     const stored = readStoredStaffUser();
     if (stored) setCurrentUser(stored);
     setStaffSessionHydrated(true);
   }, []);
 
-  /** După ce lista de utilizatori e stabilă (mock sau API), aliniază contul curent la sursa canonică sau deloghează dacă nu mai există. */
+  useEffect(() => {
+    const onExpired = () => {
+      setCurrentUser(null);
+      persistStaffUser(null);
+      void loadStaffData();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('giurom-auth-expired', onExpired);
+      return () => window.removeEventListener('giurom-auth-expired', onExpired);
+    }
+    return undefined;
+  }, [loadStaffData]);
+
+  useEffect(() => {
+    if (!staffSessionHydrated) return;
+    const token = getAccessToken();
+    if (!token) {
+      void loadStaffData();
+      return;
+    }
+    authApi
+      .me()
+      .then((u) => {
+        if (u) {
+          const mapped = userApiToUser(u);
+          setCurrentUser(mapped);
+          persistStaffUser(mapped);
+        }
+      })
+      .catch(() => {
+        clearAccessToken();
+        setCurrentUser(null);
+        persistStaffUser(null);
+      })
+      .finally(() => {
+        void loadStaffData();
+      });
+  }, [staffSessionHydrated, loadStaffData]);
+
   useEffect(() => {
     if (!directoryUsersFetchDone) return;
     setCurrentUser((prev) => {
       if (!prev) return null;
       const canonical = directoryUsers.find((u) => String(u.id) === String(prev.id));
       if (canonical) {
-        persistStaffUser(canonical);
-        return canonical;
+        const merged = {
+          ...canonical,
+          ...prev,
+          // În demo păstrăm PIN-ul pentru guard-urile existente; dacă lipsește în sesiune, luăm din directory.
+          pin: (prev.pin && prev.pin.trim()) || canonical.pin,
+        };
+        persistStaffUser(merged);
+        return merged;
       }
       persistStaffUser(null);
       return null;
@@ -131,367 +255,645 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const refreshDirectoryUsers = useCallback(async () => {
     try {
-      const list = await usersApi.list();
+      const list = await usersApi.listDirectory();
       setDirectoryUsers(list.map(userApiToUser));
     } catch {
       /* ignoră */
     }
   }, []);
 
-  const [tables, setTables] = useState<Table[]>(initialTables);
-  const [menu, setMenu] = useState<MenuItem[]>(menuItems);
-  const [orders, setOrders] = useState<Order[]>(sampleOrders);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>(sampleNotifications);
-  const [kdsStationsList, setKdsStationsList] = useState<KDSStation[]>(kdsStations);
+  const resolveKdsStationId = useCallback(
+    (kdsStation?: string): number => {
+      const slug = kdsStation ?? 'grill';
+      const hit =
+        kdsStationsList.find((s) => s.type === slug) ??
+        kdsStationsList.find((s) => String(s.id) === slug) ??
+        kdsStationsList[0];
+      const n = parseInt(String(hit?.id), 10);
+      return Number.isFinite(n) ? n : 1;
+    },
+    [kdsStationsList],
+  );
 
-  // Auth
-  const login = useCallback((userId: string, pin: string): boolean => {
-    const user = directoryUsers.find(
-      (u) => String(u.id) === String(userId) && u.pin === pin,
-    );
-    if (user) {
-      setCurrentUser(user);
-      persistStaffUser(user);
+  const login = useCallback(async (userId: string, pin: string): Promise<boolean> => {
+    try {
+      const { access_token, user } = await authApi.login({ userId, pin });
+      setAccessToken(access_token);
+      const mapped = { ...userApiToUser(user), pin };
+      setCurrentUser(mapped);
+      persistStaffUser(mapped);
+      await loadPublicLayout();
+      await loadStaffData();
       return true;
+    } catch {
+      return false;
     }
-    return false;
-  }, [directoryUsers]);
+  }, [loadPublicLayout, loadStaffData]);
 
   const logout = useCallback(() => {
+    clearAccessToken();
     setCurrentUser(null);
     persistStaffUser(null);
-  }, []);
+    void loadStaffData();
+  }, [loadStaffData]);
 
-  // Tables
-  const updateTable = useCallback((table: Table) => {
-    setTables(prev => prev.map(t => t.id === table.id ? table : t));
-  }, []);
-
-  const addTable = useCallback((table: Omit<Table, 'id'>) => {
-    setTables((prev) => {
-      const nextId = Math.max(0, ...prev.map((t) => t.id)) + 1;
-      const newTable: Table = { ...table, id: nextId };
-      return [...prev, newTable];
-    });
-  }, []);
-
-  const deleteTable = useCallback((tableId: number) => {
-    setTables(prev => prev.filter(t => t.id !== tableId));
-  }, []);
-
-  // Menu
-  const updateMenuItem = useCallback((item: MenuItem) => {
-    setMenu(prev => prev.map(m => m.id === item.id ? item : m));
-  }, []);
-
-  const addMenuItem = useCallback((item: Omit<MenuItem, 'id'>) => {
-    const newItem: MenuItem = { ...item, id: `m${Date.now()}` };
-    setMenu(prev => [...prev, newItem]);
-  }, []);
-
-  const deleteMenuItem = useCallback((itemId: string) => {
-    setMenu(prev => prev.filter(m => m.id !== itemId));
-  }, []);
-
-  // Orders
-  const createOrder = useCallback((tableId?: number, source: OrderSource = 'restaurant'): Order => {
-    const table = tableId !== undefined ? tables.find(t => t.id === tableId) : undefined;
-    const newOrder: Order = {
-      id: `o${Date.now()}`,
-      tableId,
-      tableNumber: table?.number,
-      waiterId: currentUser?.id || '',
-      waiterName: currentUser?.name || 'Sistem',
-      items: [],
-      status: 'active',
-      createdAt: new Date(),
-      syncTiming: source === 'restaurant',
-      totalAmount: 0,
-      source,
-    };
-    setOrders(prev => [...prev, newOrder]);
-    if (tableId) {
-      setTables(prev => prev.map(t => 
-        t.id === tableId ? { ...t, status: 'occupied' as const, currentOrderId: newOrder.id } : t
-      ));
-    }
-    return newOrder;
-  }, [currentUser, tables]);
-
-  const createDeliveryOrder = useCallback((
-    source: OrderSource, 
-    customerInfo: { name: string; phone: string; address?: string; platformOrderId?: string }
-  ): Order => {
-    const newOrder: Order = {
-      id: `o${Date.now()}`,
-      waiterId: currentUser?.id || '',
-      waiterName: 'Sistem',
-      items: [],
-      status: 'active',
-      createdAt: new Date(),
-      syncTiming: false,
-      totalAmount: 0,
-      source,
-      customerName: customerInfo.name,
-      customerPhone: customerInfo.phone,
-      deliveryAddress: customerInfo.address,
-      platformOrderId: customerInfo.platformOrderId,
-      priority: orders.filter(o => o.source !== 'restaurant' && o.status === 'active').length + 1,
-    };
-    setOrders(prev => [...prev, newOrder]);
-    
-    // Add notification
-    addNotification({
-      type: 'new_order',
-      title: `Comandă nouă ${source}`,
-      message: `Comandă de la ${customerInfo.name} - ${customerInfo.phone}`,
-      targetRole: 'admin',
-    });
-    
-    return newOrder;
-  }, [currentUser, orders]);
-
-  const updateOrder = useCallback((order: Order) => {
-    setOrders(prev => prev.map(o => o.id === order.id ? order : o));
-  }, []);
-
-  const addItemToOrder = useCallback((
-    orderId: string, 
-    menuItem: MenuItem, 
-    quantity: number,
-    modifications?: OrderItem['modifications']
-  ) => {
-    setOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-      
-      const newItem: OrderItem = {
-        id: `oi${Date.now()}`,
-        menuItemId: menuItem.id,
-        menuItem,
-        quantity,
-        modifications: modifications || { added: [], removed: [], notes: '' },
-        status: 'pending',
-      };
-
-      const updatedItems = [...order.items, newItem];
-      const totalAmount = updatedItems.reduce((sum, item) => 
-        sum + (item.menuItem.price * item.quantity), 0
-      );
-
-      return { ...order, items: updatedItems, totalAmount };
-    }));
-  }, []);
-
-  const updateOrderItemStatus = useCallback((orderId: string, itemId: string, status: OrderItem['status']) => {
-    setOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-      
-      const updatedItems = order.items.map(item => {
-        if (item.id !== itemId) return item;
-        return {
-          ...item,
-          status,
-          startedAt: status === 'cooking' ? new Date() : item.startedAt,
-          readyAt: status === 'ready' ? new Date() : item.readyAt,
-        };
+  const updateTable = useCallback(async (table: Table) => {
+    try {
+      await tablesApi.updateTable(table.id, {
+        position: table.position,
+        mergedWith: table.mergedWith,
+        status: table.status,
+        number: table.number,
+        seats: table.seats,
+        shape: table.shape,
+        zone: table.zone,
+        currentOrderId:
+          table.currentOrderId === undefined
+            ? undefined
+            : typeof table.currentOrderId === 'number'
+              ? table.currentOrderId
+              : parseInt(String(table.currentOrderId), 10) || null,
+        reservationId: table.reservationId ?? null,
+        currentGuests: table.currentGuests,
       });
+      const tb = await tablesApi.getTable(table.id);
+      if (tb) {
+        setTables((prev) => prev.map((t) => (t.id === table.id ? tableApiToTable(tb) : t)));
+      }
+    } catch {
+      setTables((prev) => prev.map((t) => (t.id === table.id ? table : t)));
+    }
+  }, []);
 
-      // Add notification when item is ready
-      if (status === 'ready') {
-        const item = order.items.find(i => i.id === itemId);
-        if (item) {
-          addNotification({
-            type: 'order_ready',
-            title: 'Preparat gata',
-            message: `${item.menuItem.name} pentru ${order.tableNumber ? `Masa ${order.tableNumber}` : order.customerName || 'Livrare'} este gata`,
-            orderId: order.id,
-            tableNumber: order.tableNumber,
-            targetRole: 'waiter',
-            targetUserId: order.waiterId,
-          });
+  const addTable = useCallback(async (table: Omit<Table, 'id'>) => {
+    try {
+      const created = await tablesApi.createTable({
+        number: table.number,
+        seats: table.seats,
+        shape: table.shape,
+        zone: table.zone,
+        status: table.status ?? 'free',
+        position: table.position,
+      });
+      setTables((prev) => [...prev, tableApiToTable(created)]);
+    } catch {
+      setTables((prev) => {
+        const nextId = Math.max(0, ...prev.map((t) => t.id)) + 1;
+        return [...prev, { ...table, id: nextId }];
+      });
+    }
+  }, []);
+
+  const deleteTable = useCallback(async (tableId: number) => {
+    try {
+      await tablesApi.deleteTable(tableId);
+      setTables((prev) => prev.filter((t) => t.id !== tableId));
+    } catch {
+      setTables((prev) => prev.filter((t) => t.id !== tableId));
+    }
+  }, []);
+
+  const updateMenuItem = useCallback(async (item: MenuItem) => {
+    const id = parseInt(String(item.id), 10);
+    if (Number.isNaN(id)) return;
+    try {
+      const body: Partial<CreateMenuItemBody> = {
+        name: item.name,
+        description: item.description,
+        price: item.price,
+        category: item.category,
+        kdsStationId: item.kdsStationId ?? resolveKdsStationId(item.kdsStation),
+        prepTime: item.prepTime,
+        availability: item.availability,
+        platformPricing: item.platformPricing,
+        allergenIds: (item.allergenIds ?? []).map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n)),
+        availableExtrasIds: (item.availableExtras ?? [])
+          .map((x) => parseInt(x, 10))
+          .filter((n) => Number.isFinite(n)),
+        image: item.image,
+      };
+      const updated = await menuApi.updateItem(id, body);
+      const mapped = menuItemApiToMenuItem(updated);
+      setMenu((prev) => prev.map((m) => (m.id === item.id ? mapped : m)));
+    } catch {
+      setMenu((prev) => prev.map((m) => (m.id === item.id ? item : m)));
+    }
+  }, [resolveKdsStationId]);
+
+  const addMenuItem = useCallback(
+    async (item: Omit<MenuItem, 'id'>) => {
+      const kdsStationId = resolveKdsStationId(item.kdsStation);
+      try {
+        const body: CreateMenuItemBody = {
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          category: item.category,
+          kdsStationId,
+          prepTime: item.prepTime,
+          availability: item.availability,
+          platformPricing: item.platformPricing,
+          allergenIds: (item.allergenIds ?? []).map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n)),
+          availableExtrasIds: (item.availableExtras ?? [])
+            .map((x) => parseInt(x, 10))
+            .filter((n) => Number.isFinite(n)),
+          image: item.image,
+        };
+        const created = await menuApi.createItem(body);
+        setMenu((prev) => [...prev, menuItemApiToMenuItem(created)]);
+      } catch {
+        const newItem: MenuItem = { ...item, id: `m${Date.now()}` };
+        setMenu((prev) => [...prev, newItem]);
+      }
+    },
+    [resolveKdsStationId],
+  );
+
+  const deleteMenuItem = useCallback(async (itemId: string) => {
+    setMenu((prev) => prev.filter((m) => m.id !== itemId));
+  }, []);
+
+  const createOrder = useCallback(
+    async (tableId?: number, source: OrderSource = 'restaurant'): Promise<Order> => {
+      const table = tableId !== undefined ? tables.find((t) => t.id === tableId) : undefined;
+      const body: CreateOrderBody = {
+        tableId,
+        tableNumber: table?.number,
+        waiterId: currentUser?.id,
+        waiterName: currentUser?.name,
+        source,
+        orderType:
+          source === 'kiosk'
+            ? 'kiosk'
+            : source === 'phone'
+              ? 'phone'
+              : source === 'restaurant'
+                ? 'restaurant'
+                : source,
+        fulfillmentType: source === 'restaurant' ? 'dine_in' : 'takeaway',
+        items: [],
+      };
+      const created = await ordersApi.create(body);
+      if (tableId != null) {
+        await tablesApi.updateTable(tableId, {
+          status: 'occupied',
+          currentOrderId: created.id,
+        });
+        const tb = await tablesApi.getTable(tableId);
+        if (tb) {
+          setTables((prev) => prev.map((t) => (t.id === tableId ? tableApiToTable(tb) : t)));
         }
       }
+      const pos = orderApiToPosOrder(created);
+      setOrders((prev) => [...prev.filter((o) => String(o.id) !== String(pos.id)), pos]);
+      return { ...pos, syncTiming: source === 'restaurant' };
+    },
+    [currentUser, tables],
+  );
 
-      return { ...order, items: updatedItems };
-    }));
+  const createDeliveryOrder = useCallback(
+    async (
+      source: OrderSource,
+      customerInfo: { name: string; phone: string; address?: string; platformOrderId?: string },
+    ): Promise<Order> => {
+      const activeNonRestaurant = orders.filter((o) => o.source !== 'restaurant' && o.status === 'active').length;
+      const body: CreateOrderBody = {
+        waiterId: currentUser?.id,
+        waiterName: currentUser?.name ?? 'Sistem',
+        source,
+        orderType: source as CreateOrderBody['orderType'],
+        customerName: customerInfo.name,
+        customerPhone: customerInfo.phone,
+        deliveryAddress: customerInfo.address ?? undefined,
+        platformOrderId: customerInfo.platformOrderId,
+        items: [],
+        priority: activeNonRestaurant + 1,
+      };
+      const created = await ordersApi.create(body);
+      const pos = orderApiToPosOrder(created);
+      setOrders((prev) => [...prev, pos]);
+      try {
+        const dto: CreateNotificationBody = {
+          type: 'new_order',
+          title: `Comandă nouă ${source}`,
+          message: `Comandă de la ${customerInfo.name} - ${customerInfo.phone}`,
+          targetRole: 'admin',
+        };
+        const n = await notificationsApi.create(dto);
+        setNotifications((p) => [notificationApiToNotification(n), ...p]);
+      } catch {
+        const local: Notification = {
+          id: `n${Date.now()}`,
+          type: 'new_order',
+          title: `Comandă nouă ${source}`,
+          message: `Comandă de la ${customerInfo.name} - ${customerInfo.phone}`,
+          read: false,
+          createdAt: new Date(),
+          targetRole: 'admin',
+        };
+        setNotifications((p) => [local, ...p]);
+      }
+      return pos;
+    },
+    [currentUser, orders],
+  );
+
+  const updateOrder = useCallback((order: Order) => {
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? order : o)));
   }, []);
 
-  const completeOrder = useCallback((orderId: string, tip?: number, cui?: string) => {
-    setOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-      return { ...order, status: 'completed', tip, cui, paidAt: new Date() };
-    }));
+  const addItemToOrder = useCallback(
+    async (
+      orderId: string,
+      menuItem: MenuItem,
+      quantity: number,
+      modifications?: OrderItem['modifications'],
+    ) => {
+      const oid = parseInt(orderId, 10);
+      const menuItemId = parseInt(String(menuItem.id), 10);
+      if (Number.isNaN(oid) || Number.isNaN(menuItemId)) {
+        setOrders((prev) =>
+          prev.map((order) => {
+            if (order.id !== orderId) return order;
+            const newItem: OrderItem = {
+              id: `oi${Date.now()}`,
+              menuItemId: String(menuItem.id),
+              menuItem,
+              quantity,
+              modifications: modifications || { added: [], removed: [], notes: '' },
+              status: 'pending',
+            };
+            const updatedItems = [...order.items, newItem];
+            const totalAmount = updatedItems.reduce((sum, item) => sum + item.menuItem.price * item.quantity, 0);
+            return { ...order, items: updatedItems, totalAmount };
+          }),
+        );
+        return;
+      }
+      const line: CreateOrderItemBody = {
+        menuItemId,
+        quantity,
+        modifications: modifications ?? { added: [], removed: [], notes: '' },
+      };
+      const updated = await ordersApi.addItems(oid, [line]);
+      setOrders((prev) => prev.map((o) => (String(o.id) === String(updated.id) ? orderApiToPosOrder(updated) : o)));
+    },
+    [],
+  );
 
-    const order = orders.find(o => o.id === orderId);
-    if (order?.tableId) {
-      setTables(prev => prev.map(t =>
-        t.id === order.tableId ? { ...t, status: 'free' as const, currentOrderId: undefined } : t
-      ));
+  const persistReadyNotification = useCallback(async (order: Order, item: OrderItem) => {
+    try {
+      const dto: CreateNotificationBody = {
+        type: 'order_ready',
+        title: 'Preparat gata',
+        message: `${item.menuItem.name} pentru ${order.tableNumber ? `Masa ${order.tableNumber}` : order.customerName || 'Livrare'} este gata`,
+        orderId: parseInt(String(order.id), 10),
+        tableNumber: order.tableNumber,
+        targetRole: 'waiter',
+        targetUserId: order.waiterId,
+      };
+      const n = await notificationsApi.create(dto);
+      setNotifications((p) => [notificationApiToNotification(n), ...p]);
+    } catch {
+      const local: Notification = {
+        id: `n${Date.now()}`,
+        type: 'order_ready',
+        title: 'Preparat gata',
+        message: `${item.menuItem.name} pentru ${order.tableNumber ? `Masa ${order.tableNumber}` : order.customerName || 'Livrare'} este gata`,
+        read: false,
+        createdAt: new Date(),
+        orderId: order.id,
+        tableNumber: order.tableNumber,
+        targetRole: 'waiter',
+        targetUserId: order.waiterId,
+      };
+      setNotifications((p) => [local, ...p]);
     }
-  }, [orders]);
-
-  const getActiveOrderForTable = useCallback((tableId: number): Order | undefined => {
-    return orders.find(o => o.tableId === tableId && o.status === 'active');
-  }, [orders]);
-
-  // Reservations
-  const createReservation = useCallback((reservation: Omit<Reservation, 'id' | 'createdAt'>) => {
-    const newReservation: Reservation = {
-      ...reservation,
-      id: Date.now(),
-      createdAt: new Date(),
-    };
-    setReservations(prev => [...prev, newReservation]);
-    
-    // Update tables status
-    reservation.tableIds.forEach(tableId => {
-      setTables(prev => prev.map(t =>
-        t.id === tableId ? { ...t, status: 'reserved' as const, reservationId: newReservation.id } : t
-      ));
-    });
-
-    addNotification({
-      type: 'reservation',
-      title: 'Rezervare nouă',
-      message: `${reservation.customerName} - ${reservation.partySize} pers. la ${reservation.time}`,
-      targetRole: 'admin',
-    });
   }, []);
 
-  const updateReservation = useCallback((reservation: Reservation) => {
-    setReservations(prev => prev.map(r => r.id === reservation.id ? reservation : r));
-  }, []);
+  const updateOrderItemStatus = useCallback(
+    async (orderId: string, itemId: string, status: OrderItem['status']) => {
+      const oid = parseInt(orderId, 10);
+      const iid = parseInt(itemId, 10);
+      if (!Number.isNaN(oid) && !Number.isNaN(iid)) {
+        const updated = await ordersApi.updateItemStatus(oid, iid, status, {
+          employeeId: currentUser?.id,
+          employeeName: currentUser?.name,
+        });
+        const mappedOrder = orderApiToPosOrder(updated);
+        setOrders((prev) => prev.map((o) => (String(o.id) === String(mappedOrder.id) ? mappedOrder : o)));
+        if (status === 'ready') {
+          const oi = mappedOrder.items.find((it) => String(it.id) === String(iid));
+          if (oi) void persistReadyNotification(mappedOrder, oi);
+        }
+        return;
+      }
+      setOrders((prev) =>
+        prev.map((order) => {
+          if (order.id !== orderId) return order;
+          const updatedItems = order.items.map((item) => {
+            if (item.id !== itemId) return item;
+            return {
+              ...item,
+              status,
+              startedAt: status === 'cooking' ? new Date() : item.startedAt,
+              readyAt: status === 'ready' ? new Date() : item.readyAt,
+            };
+          });
+          if (status === 'ready') {
+            const item = order.items.find((i) => i.id === itemId);
+            if (item) {
+              void persistReadyNotification(order, item);
+            }
+          }
+          return { ...order, items: updatedItems };
+        }),
+      );
+    },
+    [currentUser, persistReadyNotification],
+  );
 
-  const deleteReservation = useCallback((id: number) => {
-    const reservation = reservations.find(r => r.id === id);
-    if (reservation) {
-      reservation.tableIds.forEach(tableId => {
-        setTables(prev => prev.map(t =>
-          t.id === tableId ? { ...t, status: 'free' as const, reservationId: undefined } : t
-        ));
+  const completeOrder = useCallback(async (orderId: string, tip?: number, cui?: string) => {
+    const id = parseInt(orderId, 10);
+    if (!Number.isNaN(id)) {
+      await ordersApi.update(id, {
+        status: 'completed',
+        tip,
+        cui,
+        paidAt: new Date().toISOString(),
       });
+      const updated = await ordersApi.getOne(id);
+      if (updated) {
+        const pos = orderApiToPosOrder(updated);
+        setOrders((prev) => prev.map((o) => (String(o.id) === orderId ? pos : o)));
+        if (pos.tableId) {
+          await tablesApi.updateTable(pos.tableId, { status: 'free', currentOrderId: null });
+          const tb = await tablesApi.getTable(pos.tableId);
+          if (tb) {
+            setTables((prev) => prev.map((t) => (t.id === pos.tableId ? tableApiToTable(tb) : t)));
+          }
+        }
+      }
+      return;
     }
-    setReservations(prev => prev.filter(r => r.id !== id));
+    setOrders((prev) =>
+      prev.map((order) => (order.id === orderId ? { ...order, status: 'completed', tip, cui, paidAt: new Date() } : order)),
+    );
+  }, []);
+
+  const getActiveOrderForTable = useCallback(
+    (tableId: number): Order | undefined => orders.find((o) => o.tableId === tableId && o.status === 'active'),
+    [orders],
+  );
+
+  const createReservation = useCallback(async (reservation: Omit<Reservation, 'id' | 'createdAt'>) => {
+    const body = {
+      customerName: reservation.customerName,
+      customerPhone: reservation.customerPhone,
+      customerEmail: reservation.customerEmail,
+      date: reservation.date.toISOString().slice(0, 10),
+      time: reservation.time,
+      partySize: reservation.partySize,
+      status: reservation.status,
+      notes: reservation.notes,
+      source: reservation.source,
+      tableIds: reservation.tableIds,
+    };
+    const r = await reservationsApi.create(body);
+    const mapped = reservationApiToReservation(r);
+    setReservations((prev) => [...prev, mapped]);
+    for (const tableId of mapped.tableIds) {
+      await tablesApi.updateTable(tableId, {
+        status: 'reserved',
+        reservationId: String(mapped.id),
+      });
+      const tb = await tablesApi.getTable(tableId);
+      if (tb) {
+        setTables((prev) => prev.map((t) => (t.id === tableId ? tableApiToTable(tb) : t)));
+      }
+    }
+    try {
+      const n = await notificationsApi.create({
+        type: 'reservation',
+        title: 'Rezervare nouă',
+        message: `${reservation.customerName} - ${reservation.partySize} pers. la ${reservation.time}`,
+        targetRole: 'admin',
+      });
+      setNotifications((p) => [notificationApiToNotification(n), ...p]);
+    } catch {
+      setNotifications((p) => [
+        {
+          id: `n${Date.now()}`,
+          type: 'reservation',
+          title: 'Rezervare nouă',
+          message: `${reservation.customerName} - ${reservation.partySize} pers. la ${reservation.time}`,
+          read: false,
+          createdAt: new Date(),
+          targetRole: 'admin',
+        },
+        ...p,
+      ]);
+    }
+  }, []);
+
+  const updateReservation = useCallback(async (reservation: Reservation) => {
+    const body = {
+      customerName: reservation.customerName,
+      customerPhone: reservation.customerPhone,
+      customerEmail: reservation.customerEmail,
+      date: reservation.date.toISOString().slice(0, 10),
+      time: reservation.time,
+      partySize: reservation.partySize,
+      status: reservation.status,
+      notes: reservation.notes,
+      source: reservation.source,
+      tableIds: reservation.tableIds,
+    };
+    const r = await reservationsApi.update(reservation.id, body);
+    if (r) {
+      setReservations((prev) => prev.map((x) => (x.id === reservation.id ? reservationApiToReservation(r) : x)));
+    }
+  }, []);
+
+  const deleteReservation = useCallback(async (id: number) => {
+    const reservation = reservations.find((r) => r.id === id);
+    await reservationsApi.delete(id);
+    setReservations((prev) => prev.filter((r) => r.id !== id));
+    if (reservation) {
+      for (const tableId of reservation.tableIds) {
+        await tablesApi.updateTable(tableId, { status: 'free', reservationId: null });
+        const tb = await tablesApi.getTable(tableId);
+        if (tb) {
+          setTables((prev) => prev.map((t) => (t.id === tableId ? tableApiToTable(tb) : t)));
+        }
+      }
+    }
   }, [reservations]);
 
-  // Notifications
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: `n${Date.now()}`,
-      createdAt: new Date(),
-      read: false,
-    };
-    setNotifications(prev => [newNotification, ...prev]);
+    void (async () => {
+      try {
+        const dto: CreateNotificationBody = {
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          orderId: notification.orderId ? parseInt(notification.orderId, 10) : undefined,
+          tableNumber: notification.tableNumber,
+          targetRole: notification.targetRole,
+          targetUserId: notification.targetUserId,
+        };
+        const n = await notificationsApi.create(dto);
+        setNotifications((p) => [notificationApiToNotification(n), ...p]);
+      } catch {
+        const local: Notification = {
+          ...notification,
+          id: `n${Date.now()}`,
+          createdAt: new Date(),
+          read: false,
+        };
+        setNotifications((p) => [local, ...p]);
+      }
+    })();
   }, []);
 
-  const markNotificationRead = useCallback((id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markNotificationRead = useCallback(async (id: string) => {
+    try {
+      await notificationsApi.markRead(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    } catch {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    }
   }, []);
 
   const clearNotifications = useCallback(() => {
     setNotifications([]);
   }, []);
 
-// KDS
-  const addKdsStation = useCallback((station: Omit<KDSStation, 'id'>) => {
-    const newStation: KDSStation = { ...station, id: `kds${Date.now()}` };
-    setKdsStationsList(prev => [...prev, newStation]);
+  const addKdsStation = useCallback(async (station: Omit<KDSStation, 'id'>) => {
+    try {
+      const created = await menuApi.createKdsStation({
+        name: station.name,
+        type: station.type,
+        color: station.color,
+        icon: station.icon,
+      });
+      setKdsStationsList((prev) => [...prev, kdsStationApiToKdsStation(created)]);
+    } catch {
+      setKdsStationsList((prev) => [...prev, { ...station, id: `kds${Date.now()}` }]);
+    }
   }, []);
 
-  const updateKdsStation = useCallback((station: KDSStation) => {
-    setKdsStationsList(prev => prev.map(s => s.id === station.id ? station : s));
+  const updateKdsStation = useCallback(async (station: KDSStation) => {
+    const id = parseInt(String(station.id), 10);
+    if (Number.isNaN(id)) {
+      setKdsStationsList((prev) => prev.map((s) => (s.id === station.id ? station : s)));
+      return;
+    }
+    try {
+      const updated = await menuApi.updateKdsStation(id, {
+        name: station.name,
+        type: station.type,
+        color: station.color,
+        icon: station.icon,
+      });
+      setKdsStationsList((prev) => prev.map((s) => (String(s.id) === String(station.id) ? kdsStationApiToKdsStation(updated) : s)));
+    } catch {
+      setKdsStationsList((prev) => prev.map((s) => (s.id === station.id ? station : s)));
+    }
   }, []);
 
-  const deleteKdsStation = useCallback((stationId: string) => {
-    setKdsStationsList(prev => prev.filter(s => s.id !== stationId));
+  const deleteKdsStation = useCallback(async (stationId: string) => {
+    const id = parseInt(stationId, 10);
+    if (!Number.isNaN(id)) {
+      try {
+        await menuApi.deleteKdsStation(id);
+      } catch {
+        /* */
+      }
+    }
+    setKdsStationsList((prev) => prev.filter((s) => s.id !== stationId));
   }, []);
 
   const getOrdersForStation = useCallback(
     (station: KDSStation): { order: Order; items: OrderItem[] }[] => {
       const result: { order: Order; items: OrderItem[] }[] = [];
-
       const activeOrders = orders.filter((o) => o.status === 'active');
       const restaurantOrders = activeOrders.filter((o) => o.source === 'restaurant');
       const deliveryOrders = activeOrders.filter((o) => o.source !== 'restaurant');
-
       const interleavedOrders: Order[] = [];
       const maxLen = Math.max(restaurantOrders.length, deliveryOrders.length);
-      for (let i = 0; i < maxLen; i++) {
+      for (let i = 0; i < maxLen; i += 1) {
         if (i < restaurantOrders.length) interleavedOrders.push(restaurantOrders[i]);
         if (i < deliveryOrders.length) interleavedOrders.push(deliveryOrders[i]);
       }
-
       interleavedOrders.forEach((order) => {
         const stationItems = order.items.filter(
           (item) =>
             orderItemMatchesKdsStation(item, station) &&
             (item.status === 'pending' || item.status === 'cooking'),
         );
-
         if (stationItems.length > 0) {
           result.push({ order, items: stationItems });
         }
       });
-
       return result;
     },
     [orders],
   );
 
-  // Delivery
-  const getDeliveryOrders = useCallback((): Order[] => {
-    return orders.filter(o => 
-      ['glovo', 'wolt', 'bolt', 'own_website'].includes(o.source) && 
-      o.status === 'active'
-    );
-  }, [orders]);
+  const getDeliveryOrders = useCallback(
+    (): Order[] =>
+      orders.filter((o) => ['glovo', 'wolt', 'bolt', 'own_website'].includes(o.source) && o.status === 'active'),
+    [orders],
+  );
 
-  const getPhoneOrders = useCallback((): Order[] => {
-    return orders.filter(o => o.source === 'phone' && o.status === 'active');
-  }, [orders]);
+  const getPhoneOrders = useCallback(
+    (): Order[] => orders.filter((o) => o.source === 'phone' && o.status === 'active'),
+    [orders],
+  );
 
   return (
-    <RestaurantContext.Provider value={{
-      currentUser,
-      directoryUsers,
-      refreshDirectoryUsers,
-      login,
-      logout,
-      staffSessionHydrated,
-      tables,
-      updateTable,
-      addTable,
-      deleteTable,
-      menu,
-      updateMenuItem,
-      addMenuItem,
-      deleteMenuItem,
-      orders,
-      createOrder,
-      updateOrder,
-      addItemToOrder,
-      updateOrderItemStatus,
-      completeOrder,
-      getActiveOrderForTable,
-      createDeliveryOrder,
-      reservations,
-      createReservation,
-      updateReservation,
-      deleteReservation,
-      notifications,
-      addNotification,
-      markNotificationRead,
-      clearNotifications,
-      kdsStations: kdsStationsList,
-      addKdsStation,
-      updateKdsStation,
-      deleteKdsStation,
-      getOrdersForStation,
-      getDeliveryOrders,
-      getPhoneOrders,
-    }}>
+    <RestaurantContext.Provider
+      value={{
+        currentUser,
+        directoryUsers,
+        refreshDirectoryUsers,
+        login,
+        logout,
+        staffSessionHydrated,
+        tables,
+        updateTable,
+        addTable,
+        deleteTable,
+        menu,
+        updateMenuItem,
+        addMenuItem,
+        deleteMenuItem,
+        orders,
+        createOrder,
+        updateOrder,
+        addItemToOrder,
+        updateOrderItemStatus,
+        completeOrder,
+        getActiveOrderForTable,
+        createDeliveryOrder,
+        reservations,
+        createReservation,
+        updateReservation,
+        deleteReservation,
+        notifications,
+        addNotification,
+        markNotificationRead,
+        clearNotifications,
+        kdsStations: kdsStationsList,
+        addKdsStation,
+        updateKdsStation,
+        deleteKdsStation,
+        getOrdersForStation,
+        getDeliveryOrders,
+        getPhoneOrders,
+      }}
+    >
       {children}
     </RestaurantContext.Provider>
   );

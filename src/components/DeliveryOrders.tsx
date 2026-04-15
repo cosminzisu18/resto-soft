@@ -155,7 +155,7 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
     toast({ title: 'Client creat' });
   };
 
-  const handleCreateOrder = () => {
+  const handleCreateOrder = async () => {
     if (!selectedCustomer) {
       toast({ title: 'Selectează un client', variant: 'destructive' });
       return;
@@ -163,7 +163,7 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
 
     const selectedAddress = selectedCustomer.addresses.find(a => a.id === selectedAddressId);
 
-    const order = createDeliveryOrder(activeTab === 'phone' ? 'phone' : selectedPlatform, {
+    const order = await createDeliveryOrder(activeTab === 'phone' ? 'phone' : selectedPlatform, {
       name: selectedCustomer.name,
       phone: selectedCustomer.phone,
       address: selectedAddress ? `${selectedAddress.street}, ${selectedAddress.city}` : undefined,
@@ -263,19 +263,18 @@ const DeliveryOrders: React.FC<DeliveryOrdersProps> = ({ onClose }) => {
     setOrderItems(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleSendToKitchen = () => {
+  const handleSendToKitchen = async () => {
     if (!newOrderId) return;
 
-    // Add all items to the actual order
-    orderItems.forEach(item => {
-      addItemToOrder(newOrderId, item.menuItem, item.quantity);
-    });
+    for (const item of orderItems) {
+      await addItemToOrder(newOrderId, item.menuItem, item.quantity);
+    }
 
     const order = orders.find(o => o.id === newOrderId);
     if (order) {
-      order.items.filter(i => i.status === 'pending').forEach(item => {
-        updateOrderItemStatus(newOrderId, item.id, 'cooking');
-      });
+      for (const item of order.items.filter(i => i.status === 'pending')) {
+        await updateOrderItemStatus(newOrderId, item.id, 'cooking');
+      }
     }
 
     toast({ title: 'Comandă trimisă la bucătărie' });

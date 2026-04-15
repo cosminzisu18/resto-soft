@@ -20,12 +20,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const { login, directoryUsers } = useRestaurant();
   const { toast } = useToast();
 
-  const handlePinSubmit = () => {
+  const handlePinSubmit = async () => {
     if (!selectedUserId) return;
-    
-    const success = login(selectedUserId, pin);
-    const user = directoryUsers.find(u => u.id === selectedUserId);
-    
+
+    const success = await login(selectedUserId, pin);
+    const user = directoryUsers.find((u) => u.id === selectedUserId);
+
     if (success) {
       toast({
         title: 'Conectat cu succes',
@@ -48,9 +48,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       setPin(newPin);
       if (newPin.length === 4) {
         setTimeout(() => {
-          if (selectedUserId) {
-            const success = login(selectedUserId, newPin);
-            const user = directoryUsers.find(u => u.id === selectedUserId);
+          void (async () => {
+            if (!selectedUserId) return;
+            const success = await login(selectedUserId, newPin);
+            const user = directoryUsers.find((u) => u.id === selectedUserId);
             if (success) {
               toast({ title: 'Conectat cu succes', description: `Bine ai venit, ${user?.name}!` });
               onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
@@ -61,7 +62,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               });
               setPin('');
             }
-          }
+          })();
         }, 100);
       }
     }
@@ -72,10 +73,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setTimeout(() => {
       setIsBiometricScanning(false);
       if (selectedUserId) {
-        const user = directoryUsers.find(u => u.id === selectedUserId);
-        login(selectedUserId, user?.pin || '');
-        toast({ title: 'Autentificare biometrică reușită', description: `Bine ai venit, ${user?.name}!` });
-        onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
+        toast({
+          title: 'PIN necesar',
+          description:
+            'Autentificarea biometrică demo nu poate emite JWT. Introdu PIN-ul sau folosește autentificarea clasică.',
+          variant: 'destructive',
+        });
       }
     }, 2000);
   };
@@ -85,10 +88,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setTimeout(() => {
       setIsNfcScanning(false);
       if (selectedUserId) {
-        const user = directoryUsers.find(u => u.id === selectedUserId);
-        login(selectedUserId, user?.pin || '');
-        toast({ title: 'Card NFC detectat', description: `Bine ai venit, ${user?.name}!` });
-        onLoginSuccess(user?.role as 'admin' | 'kitchen' | 'waiter');
+        toast({
+          title: 'PIN necesar',
+          description: 'NFC demo: folosește tastatura PIN pentru autentificare securizată (JWT).',
+          variant: 'destructive',
+        });
       }
     }, 1500);
   };

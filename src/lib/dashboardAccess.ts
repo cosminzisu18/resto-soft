@@ -1,8 +1,8 @@
 import type { User } from '@/data/mockData';
 
-/** Acces la shell-ul `/dashboard` și `/admin`: doar Administrator cu PIN 0000. */
+/** Acces la shell-ul `/dashboard` și `/admin`: orice utilizator cu rol `admin`. */
 export function canAccessDashboardShell(user: User | null): boolean {
-  return !!user && user.role === 'admin' && user.pin === '0000';
+  return !!user && user.role === 'admin';
 }
 
 /** Zona `/kitchen` (bucătărie): rol kitchen sau același admin ca la dashboard. */

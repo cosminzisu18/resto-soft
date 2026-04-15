@@ -355,20 +355,20 @@ const KioskOrdering: React.FC = () => {
     });
   };
 
-  const handleConfirmOrder = () => {
+  const handleConfirmOrder = async () => {
     const orderName = orderMode === 'dine-in' 
       ? `Kiosk - Masă #${tableNumber || 'N/A'}` 
       : 'Kiosk - La pachet';
     
-    const order = createDeliveryOrder('kiosk', {
+    const order = await createDeliveryOrder('kiosk', {
       name: orderName,
       phone: 'Kiosk',
       platformOrderId: selectedKiosk ? `kiosk:${selectedKiosk.id}` : undefined,
     });
     
-    cart.forEach(item => {
-      addItemToOrder(order.id, item.menuItem, item.quantity);
-    });
+    for (const item of cart) {
+      await addItemToOrder(order.id, item.menuItem, item.quantity);
+    }
 
     toast({ title: 'Comandă plasată cu succes!' });
     setStep('confirm');

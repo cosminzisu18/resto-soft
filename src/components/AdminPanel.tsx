@@ -153,6 +153,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
     }
   }, [schemaTables, toast]);
 
+  const persistSchemaTablePosition = useCallback(
+    async (table: Table) => {
+      const pos = sanitizeTablePositionForApi(table.position);
+      if (!pos) {
+        throw new Error('Poziție invalidă pentru persist');
+      }
+      await tablesApi.updateTable(table.id, { position: pos });
+    },
+    [],
+  );
+
   const handleConfirmMerge = useCallback(async (selectedIds: number[]) => {
     if (selectedIds.length < 2) return;
     const [mainId, ...otherIds] = selectedIds;
@@ -675,6 +686,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
               <AdminTableMap
                 tables={schemaTables}
                 onUpdateTable={(table) => setSchemaTables((prev) => prev.map((t) => (t.id === table.id ? table : t)))}
+                onPersistTable={persistSchemaTablePosition}
                 onSaveSchema={handleSaveSchema}
                 onConfirmMerge={handleConfirmMerge}
               />
@@ -921,11 +933,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onLogout }) => {
                   </div>
                   <div className="flex gap-2 mt-3">
                     {res.status === 'pending' && (
-                      <Button size="sm" className="flex-1" onClick={() => updateReservation({ ...res, status: 'confirmed' })}>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => void updateReservation({ ...res, status: 'confirmed' })}
+                      >
                         {t('app.confirm')}
                       </Button>
                     )}
-                    <Button variant="destructive" size="sm" onClick={() => deleteReservation(res.id)}>
+                    <Button variant="destructive" size="sm" onClick={() => void deleteReservation(res.id)}>
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   </div>

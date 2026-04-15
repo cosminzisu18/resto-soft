@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 
 interface NotificationCenterProps {
   notifications: Notification[];
-  onMarkRead: (id: string) => void;
+  onMarkRead: (id: string) => void | Promise<void>;
   onClearAll: () => void;
 }
 

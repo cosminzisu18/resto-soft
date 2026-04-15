@@ -9,11 +9,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 interface AdminTableMapProps {
   tables: Table[];
   onUpdateTable: (table: Table) => void;
+  onPersistTable?: (table: Table) => Promise<void> | void;
   onSaveSchema?: () => void;
   onConfirmMerge?: (selectedIds: number[]) => void;
 }
 
-const AdminTableMap: React.FC<AdminTableMapProps> = ({ tables, onUpdateTable, onSaveSchema, onConfirmMerge }) => {
+const AdminTableMap: React.FC<AdminTableMapProps> = ({
+  tables,
+  onUpdateTable,
+  onPersistTable,
+  onSaveSchema,
+  onConfirmMerge,
+}) => {
   const { toast } = useToast();
   const containerRef = useRef<HTMLDivElement>(null);
   const [draggingTable, setDraggingTable] = useState<number | null>(null);
@@ -68,9 +75,23 @@ const AdminTableMap: React.FC<AdminTableMapProps> = ({ tables, onUpdateTable, on
     }
   }, [draggingTable, tables, onUpdateTable]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = async () => {
     if (draggingTable) {
-      toast({ title: 'Poziție actualizată' });
+      const updatedTable = tables.find((t) => t.id === draggingTable);
+      if (updatedTable && onPersistTable) {
+        try {
+          await onPersistTable(updatedTable);
+          toast({ title: 'Poziție actualizată și salvată' });
+        } catch {
+          toast({
+            title: 'Poziție actualizată local',
+            description: 'Salvarea în baza de date a eșuat. Încearcă din nou.',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        toast({ title: 'Poziție actualizată' });
+      }
     }
     setDraggingTable(null);
   };

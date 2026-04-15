@@ -239,7 +239,7 @@ const RestaurantApp: React.FC = () => {
       .finally(() => setDashboardKdsLoading(false));
   }, [route.kind]);
 
-  /** Protecție `/dashboard` și `/admin`: doar Administrator cu PIN 0000. */
+  /** Protecție `/dashboard` și `/admin`: doar rolul Administrator. */
   useEffect(() => {
     if (!staffSessionHydrated) return;
     if (route.kind !== 'dashboard') return;
@@ -247,7 +247,7 @@ const RestaurantApp: React.FC = () => {
     if (currentUser) {
       toast({
         title: 'Acces refuzat',
-        description: 'Zona Dashboard este disponibilă doar pentru Administrator (PIN 0000).',
+        description: 'Zona Dashboard este disponibilă doar pentru Administrator.',
         variant: 'destructive',
       });
     }

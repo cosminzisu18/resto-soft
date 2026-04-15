@@ -146,7 +146,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({
     if (onTableUpdated) {
       onTableUpdated(updated);
     } else {
-      updateTable(updated);
+      void updateTable(updated);
     }
     toast({ title: `Masa ${editNumber} actualizată` });
     setShowSaveConfirm(false);
@@ -159,7 +159,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({
   const confirmDelete = () => {
     if (!selectedTable) return;
     const num = selectedTable.number;
-    deleteTable(selectedTable.id);
+    void deleteTable(selectedTable.id);
     onSelectTable(null);
     toast({ title: `Masa ${num} ștearsă` });
     setShowDeleteConfirm(false);
@@ -178,7 +178,7 @@ const TableEditPanel: React.FC<TableEditPanelProps> = ({
     if (onTableCreated) {
       await onTableCreated(draft);
     } else {
-      addTable(draft);
+      void addTable(draft);
     }
     toast({ title: `Masa ${maxNumber + 1} adăugată` });
   };

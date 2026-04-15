@@ -187,7 +187,12 @@ const POSModule: React.FC = () => {
     setPosTablesLoading(true);
     try {
       const list = await tablesApi.getTables();
-      setPosTables(list.map((api) => mapApiTableToTable(api)));
+      setPosTables((prev) =>
+        list.map((api) => {
+          const prevPos = prev.find((t) => t.id === api.id)?.position;
+          return mapApiTableToTable(api, prevPos);
+        }),
+      );
     } catch {
       setPosTables([]);
       toast({ title: 'Nu s-au putut încărca mesele', description: 'Verifică backend-ul și conexiunea.', variant: 'destructive' });

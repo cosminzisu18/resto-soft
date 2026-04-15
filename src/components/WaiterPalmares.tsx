@@ -494,20 +494,34 @@ const WaiterPalmares: React.FC<WaiterPalmaresProps> = ({ onLogout }) => {
               className="w-full" 
               disabled={!reservationForm.customerName || !reservationForm.customerPhone || reservationForm.tableIds.length === 0}
               onClick={() => {
-                createReservation({
-                  customerName: reservationForm.customerName,
-                  customerPhone: reservationForm.customerPhone,
-                  date: new Date(reservationForm.date),
-                  time: reservationForm.time,
-                  partySize: parseInt(reservationForm.partySize),
-                  tableIds: reservationForm.tableIds,
-                  status: 'confirmed',
-                  notes: reservationForm.notes,
-                  source: 'walk-in',
-                });
-                toast({ title: 'Rezervare creată cu succes' });
-                setShowAddReservation(false);
-                setReservationForm({ customerName: '', customerPhone: '', date: new Date().toISOString().split('T')[0], time: '19:00', partySize: '2', tableIds: [], notes: '' });
+                void (async () => {
+                  try {
+                    await createReservation({
+                      customerName: reservationForm.customerName,
+                      customerPhone: reservationForm.customerPhone,
+                      date: new Date(reservationForm.date),
+                      time: reservationForm.time,
+                      partySize: parseInt(reservationForm.partySize),
+                      tableIds: reservationForm.tableIds,
+                      status: 'confirmed',
+                      notes: reservationForm.notes,
+                      source: 'walk-in',
+                    });
+                    toast({ title: 'Rezervare creată cu succes' });
+                    setShowAddReservation(false);
+                    setReservationForm({
+                      customerName: '',
+                      customerPhone: '',
+                      date: new Date().toISOString().split('T')[0],
+                      time: '19:00',
+                      partySize: '2',
+                      tableIds: [],
+                      notes: '',
+                    });
+                  } catch {
+                    toast({ title: 'Eroare la rezervare', variant: 'destructive' });
+                  }
+                })();
               }}
             >
               Creează rezervarea

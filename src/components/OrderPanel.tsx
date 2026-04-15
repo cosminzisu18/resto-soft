@@ -6,6 +6,7 @@ import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { menuApi, ordersApi, imageSrc, type CreateOrderItemBody, type MenuItemApi, type OrderApi, type OrderItemApi } from '@/lib/api';
 import { orderApiToPosOrder } from '@/lib/posOrderMapper';
+import { menuItemApiToMenuItem } from '@/lib/restaurantMappers';
 import { 
   X, Plus, Minus, ChefHat, Clock, Check, 
   CreditCard, ArrowLeft, Send, Edit2,
@@ -22,27 +23,6 @@ import UpsellQuestionsDialog from './UpsellQuestionsDialog';
 import OrderHistoryDialog from './OrderHistoryDialog';
 
 type MenuItemForModifier = MenuItem | MenuItemApi;
-
-/** Mapare pentru comenzile din context (mock Order) – id-uri string ca în mockData. */
-function menuItemApiToMenuItem(api: MenuItemApi): MenuItem {
-  return {
-    id: String(api.id),
-    name: api.name,
-    description: api.description ?? '',
-    price: typeof api.price === 'number' ? api.price : Number(api.price),
-    category: api.category,
-    kdsStation: api.kdsStation?.name ?? String(api.kdsStationId),
-    prepTime: api.prepTime,
-    ingredients:
-      api.menuItemIngredients?.map((mi) => mi.ingredient?.name ?? `Ingredient ${mi.ingredientId}`) ?? [],
-    allergenIds: api.allergens?.map((a) => String(a.id)),
-    availableExtras: api.availableExtras?.map((e) => String(e.id)),
-    image: api.image,
-    unitType: api.unitType,
-    availability: api.availability as MenuItem['availability'],
-    platformPricing: api.platformPricing as MenuItem['platformPricing'],
-  };
-}
 
 interface OrderPanelProps {
   table: Table;
@@ -269,7 +249,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   useLayoutEffect(() => {
     if (useApi) return;
     if (orders.some((o) => o.tableId === table.id && o.status === 'active')) return;
-    createOrder(table.id);
+    void createOrder(table.id).catch(() => {
+      /* API indisponibil sau fără sesiune */
+    });
   }, [useApi, table.id, orders, createOrder]);
 
   useEffect(() => {
@@ -746,7 +728,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     return tipType === 'percent' ? (base * val / 100) : val;
   };
 
-  const handleCompletePayment = () => {
+  const handleCompletePayment = async () => {
     if (!order) return;
     if (useApi) {
       toast({
@@ -775,7 +757,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     }
     
     // Full/final payment
-    completeOrder(String(order.id), tip, cui || undefined);
+    await completeOrder(String(order.id), tip, cui || undefined);
     toast({ 
       title: 'Plată procesată',
       description: `Total: ${(amount + tip).toFixed(2)} RON`,

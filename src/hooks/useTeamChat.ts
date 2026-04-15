@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '@/lib/api';
+import { getAccessToken } from '@/lib/authSession';
 import type { User } from '@/data/mockData';
 
 export type TeamChatMessage = {
@@ -100,9 +101,11 @@ export function useTeamChat(
       wsRef.current = ws;
 
       ws.onopen = () => {
+        const accessToken = getAccessToken();
         ws.send(
           JSON.stringify({
             type: 'join',
+            accessToken: accessToken ?? '',
             userId: user.id,
             userName: user.name,
             role: roleLabel(user.role),

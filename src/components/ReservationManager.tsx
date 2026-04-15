@@ -15,9 +15,9 @@ import { reservationsApi, type ReservationApi } from '@/lib/api';
 interface ReservationManagerProps {
   reservations: Reservation[];
   tables: Table[];
-  onCreateReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'>) => void;
-  onUpdateReservation: (reservation: Reservation) => void;
-  onDeleteReservation: (id: number) => void;
+  onCreateReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'>) => void | Promise<void>;
+  onUpdateReservation: (reservation: Reservation) => void | Promise<void>;
+  onDeleteReservation: (id: number) => void | Promise<void>;
 }
 
 const ReservationManager: React.FC<ReservationManagerProps> = ({
@@ -144,61 +144,47 @@ const ReservationManager: React.FC<ReservationManagerProps> = ({
     );
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.customerName || !form.customerPhone || selectedTableIds.length === 0) {
       toast({ title: 'Completează toate câmpurile', variant: 'destructive' });
       return;
     }
 
-    reservationsApi
-      .create({
+    try {
+      await onCreateReservation({
         customerName: form.customerName,
         customerPhone: form.customerPhone,
         customerEmail: form.customerEmail || undefined,
-        date: form.date,
+        date: new Date(form.date),
         time: form.time,
         partySize: parseInt(form.partySize, 10),
         tableIds: selectedTableIds,
         status: 'pending',
         notes: form.notes || undefined,
         source: form.source,
-      })
-      .then(async () => {
-        onCreateReservation({
-          customerName: form.customerName,
-          customerPhone: form.customerPhone,
-          customerEmail: form.customerEmail || undefined,
-          date: new Date(form.date),
-          time: form.time,
-          partySize: parseInt(form.partySize, 10),
-          tableIds: selectedTableIds,
-          status: 'pending',
-          notes: form.notes || undefined,
-          source: form.source,
-        });
-        await loadReservations(selectedDate);
-        toast({ title: 'Rezervare creată cu succes' });
-        setShowAddDialog(false);
-        setForm({
-          customerName: '',
-          customerPhone: '',
-          customerEmail: '',
-          date: new Date().toISOString().split('T')[0],
-          time: '19:00',
-          partySize: '2',
-          notes: '',
-          source: 'phone',
-        });
-        setSuggestedTableIds([]);
-        setSelectedTableIds([]);
-      })
-      .catch((e) =>
-        toast({
-          title: 'Eroare la crearea rezervării',
-          description: String(e),
-          variant: 'destructive',
-        }),
-      );
+      });
+      await loadReservations(selectedDate);
+      toast({ title: 'Rezervare creată cu succes' });
+      setShowAddDialog(false);
+      setForm({
+        customerName: '',
+        customerPhone: '',
+        customerEmail: '',
+        date: new Date().toISOString().split('T')[0],
+        time: '19:00',
+        partySize: '2',
+        notes: '',
+        source: 'phone',
+      });
+      setSuggestedTableIds([]);
+      setSelectedTableIds([]);
+    } catch (e) {
+      toast({
+        title: 'Eroare la crearea rezervării',
+        description: String(e),
+        variant: 'destructive',
+      });
+    }
   };
 
   const todayReservations = reservationsList.filter(r => 
