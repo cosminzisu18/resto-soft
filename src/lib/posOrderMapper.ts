@@ -42,6 +42,14 @@ export function orderItemApiToOrderItem(i: OrderItemApi): OrderItem {
     id: String(i.id),
     menuItemId: String(i.menuItemId),
     menuItem: menuItemFromSnapshot(i.menuItemId, snapshotWithPrice),
+    priority: i.priority
+      ? {
+          id: i.priority.id,
+          orderId: i.priority.orderId,
+          priorityLevel: i.priority.priorityLevel,
+          delayAfterMinutes: i.priority.delayAfterMinutes,
+        }
+      : undefined,
     quantity: i.quantity,
     weightGrams: i.weightGrams ?? undefined,
     modifications: {

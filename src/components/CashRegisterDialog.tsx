@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Order } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { cashRegisterApi } from '@/lib/api';
 import { 
   Banknote, ArrowDownToLine, ArrowUpFromLine, Calculator, 
   FileText, Printer, Download, Clock, TrendingUp, CreditCard,
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 
 interface CashOperation {
-  id: string;
+  id: number;
   type: 'deposit' | 'withdrawal';
   amount: number;
   reason: string;
@@ -36,6 +37,7 @@ const CashRegisterDialog: React.FC<CashRegisterDialogProps> = ({ open, onClose, 
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [operations, setOperations] = useState<CashOperation[]>([]);
+  const [operationsLoading, setOperationsLoading] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [depositReason, setDepositReason] = useState('');
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
@@ -44,6 +46,38 @@ const CashRegisterDialog: React.FC<CashRegisterDialogProps> = ({ open, onClose, 
 
   const today = new Date();
   const todayStr = today.toDateString();
+  const currentDateParam = today.toISOString().slice(0, 10);
+
+  const fetchOperations = useCallback(async () => {
+    setOperationsLoading(true);
+    try {
+      const rows = await cashRegisterApi.getOperations(currentDateParam);
+      setOperations(
+        rows.map((row) => ({
+          id: Number(row.id),
+          type: row.type,
+          amount: Number(row.amount),
+          reason: row.reason?.trim() || (row.type === 'deposit' ? 'Depunere numerar' : 'Retragere numerar'),
+          timestamp: new Date(row.operationAt),
+          operator: row.operatorName,
+        })),
+      );
+    } catch {
+      setOperations([]);
+      toast({
+        title: 'Casieria nu a putut fi încărcată',
+        description: 'Verifică API-ul GET /cash-register/operations.',
+        variant: 'destructive',
+      });
+    } finally {
+      setOperationsLoading(false);
+    }
+  }, [currentDateParam, toast]);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchOperations();
+  }, [open, fetchOperations]);
 
   // Today's completed orders
   const todayCompleted = useMemo(() => 
@@ -73,26 +107,43 @@ const CashRegisterDialog: React.FC<CashRegisterDialogProps> = ({ open, onClose, 
   // Expected cash in register
   const expectedCash = cashFromOrders + cashTips + totalDeposits - totalWithdrawals;
 
-  const handleDeposit = () => {
+  const handleDeposit = async () => {
     const amount = parseFloat(depositAmount);
     if (!amount || amount <= 0) {
       toast({ title: 'Introduceți o sumă validă', variant: 'destructive' });
       return;
     }
-    setOperations(prev => [...prev, {
-      id: Date.now().toString(),
-      type: 'deposit',
-      amount,
-      reason: depositReason || 'Depunere numerar',
-      timestamp: new Date(),
-      operator: operatorName,
-    }]);
-    toast({ title: 'Depunere înregistrată', description: `+${amount.toFixed(2)} RON` });
-    setDepositAmount('');
-    setDepositReason('');
+    try {
+      const created = await cashRegisterApi.createOperation({
+        type: 'deposit',
+        amount,
+        reason: depositReason || 'Depunere numerar',
+        operatorName,
+      });
+      setOperations((prev) => [
+        {
+          id: Number(created.id),
+          type: created.type,
+          amount: Number(created.amount),
+          reason: created.reason?.trim() || 'Depunere numerar',
+          timestamp: new Date(created.operationAt),
+          operator: created.operatorName,
+        },
+        ...prev,
+      ]);
+      toast({ title: 'Depunere înregistrată', description: `+${amount.toFixed(2)} RON` });
+      setDepositAmount('');
+      setDepositReason('');
+    } catch {
+      toast({
+        title: 'Eroare la depunere',
+        description: 'Nu s-a putut salva operațiunea în baza de date.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleWithdrawal = () => {
+  const handleWithdrawal = async () => {
     const amount = parseFloat(withdrawalAmount);
     if (!amount || amount <= 0) {
       toast({ title: 'Introduceți o sumă validă', variant: 'destructive' });
@@ -102,17 +153,34 @@ const CashRegisterDialog: React.FC<CashRegisterDialogProps> = ({ open, onClose, 
       toast({ title: 'Sumă insuficientă în casierie', description: `Disponibil: ${expectedCash.toFixed(2)} RON`, variant: 'destructive' });
       return;
     }
-    setOperations(prev => [...prev, {
-      id: Date.now().toString(),
-      type: 'withdrawal',
-      amount,
-      reason: withdrawalReason || 'Retragere numerar',
-      timestamp: new Date(),
-      operator: operatorName,
-    }]);
-    toast({ title: 'Retragere înregistrată', description: `-${amount.toFixed(2)} RON` });
-    setWithdrawalAmount('');
-    setWithdrawalReason('');
+    try {
+      const created = await cashRegisterApi.createOperation({
+        type: 'withdrawal',
+        amount,
+        reason: withdrawalReason || 'Retragere numerar',
+        operatorName,
+      });
+      setOperations((prev) => [
+        {
+          id: Number(created.id),
+          type: created.type,
+          amount: Number(created.amount),
+          reason: created.reason?.trim() || 'Retragere numerar',
+          timestamp: new Date(created.operationAt),
+          operator: created.operatorName,
+        },
+        ...prev,
+      ]);
+      toast({ title: 'Retragere înregistrată', description: `-${amount.toFixed(2)} RON` });
+      setWithdrawalAmount('');
+      setWithdrawalReason('');
+    } catch {
+      toast({
+        title: 'Eroare la retragere',
+        description: 'Nu s-a putut salva operațiunea în baza de date.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleExportXReport = () => {
@@ -283,6 +351,11 @@ const CashRegisterDialog: React.FC<CashRegisterDialogProps> = ({ open, onClose, 
                       ))}
                     </div>
                   </div>
+                )}
+                {!operationsLoading && todayOperations.length === 0 && (
+                  <Card className="p-3 text-sm text-muted-foreground">
+                    Nu există operațiuni de casierie înregistrate pentru azi.
+                  </Card>
                 )}
               </div>
             </ScrollArea>

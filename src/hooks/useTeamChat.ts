@@ -48,7 +48,7 @@ function roleLabel(role: User['role']): string {
 
 export function useTeamChat(
   user: User | null,
-  options?: { tenantId?: string },
+  options?: { tenantId?: string; channelId?: string },
 ) {
   const [messages, setMessages] = useState<TeamChatMessage[]>([]);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
@@ -61,6 +61,7 @@ export function useTeamChat(
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intentionalClose = useRef(false);
   const tenantId = options?.tenantId;
+  const channelId = options?.channelId;
 
   const sendChat = useCallback(
     (content: string) => {
@@ -110,6 +111,7 @@ export function useTeamChat(
             userName: user.name,
             role: roleLabel(user.role),
             ...(tenantId ? { tenantId } : {}),
+            ...(channelId ? { channelId } : {}),
           }),
         );
       };
@@ -177,7 +179,7 @@ export function useTeamChat(
       setPresence([]);
       setStatus('idle');
     };
-  }, [user, tenantId]);
+  }, [user, tenantId, channelId]);
 
   const onlineIds = new Set(presence.map((p) => String(p.userId)));
 

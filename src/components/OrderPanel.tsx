@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, MenuItem, Order, OrderItem, UnitType } from '@/data/mockData';
+import { Badge } from '@/components/ui/badge';
+import { Table, MenuItem, Order, OrderItem, UnitType, PaymentMethod } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
 import { cn } from '@/lib/utils';
 import { menuApi, ordersApi, imageSrc, type CreateOrderItemBody, type MenuItemApi, type OrderApi, type OrderItemApi } from '@/lib/api';
@@ -103,6 +104,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const [tableHistoryOrders, setTableHistoryOrders] = useState<Order[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [lastKitchenDispatch, setLastKitchenDispatch] = useState<{ count: number; at: Date } | null>(null);
+  const [priorityLevels, setPriorityLevels] = useState<number[]>([1]);
+  const [delayByPriorityLevel, setDelayByPriorityLevel] = useState<Record<number, number>>({ 1: 0 });
   
   // Payment state
   const [tipType, setTipType] = useState<'percent' | 'value'>('percent');
@@ -291,6 +295,30 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 
   const order = (useApi ? apiOrder ?? apiDraftOrder : contextOrder) as (Order | OrderApi) | null;
 
+  useEffect(() => {
+    if (!order) {
+      setPriorityLevels([1]);
+      setDelayByPriorityLevel({ 1: 0 });
+      return;
+    }
+    const levels = new Set<number>([1]);
+    const delays: Record<number, number> = { 1: 0 };
+    order.items.forEach((it) => {
+      const api = it as OrderItemApi;
+      const level = api.priority?.priorityLevel ?? 1;
+      const delay = api.priority?.delayAfterMinutes ?? 0;
+      levels.add(level);
+      delays[level] = delay;
+    });
+    const sorted = [...levels].sort((a, b) => a - b);
+    setPriorityLevels(sorted);
+    setDelayByPriorityLevel((prev) => ({ ...prev, ...delays }));
+  }, [order?.id, order?.items]);
+
+  useEffect(() => {
+    setLastKitchenDispatch(null);
+  }, [table.id, order?.id]);
+
   const menuCategoriesList = useMemo(
     () => [...new Set(apiMenuItems.map((i) => i.category))].sort(),
     [apiMenuItems],
@@ -351,7 +379,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         if (apiItem.kdsStation?.type) menuItemPayload.kdsStation = apiItem.kdsStation.type;
       }
       if (apiOrder) {
-        ordersApi.addItems(apiOrder.id, [{ menuItemId, quantity: 1, menuItem: menuItemPayload }])
+        ordersApi.addItems(apiOrder.id, [{ menuItemId, quantity: 1, menuItem: menuItemPayload, priorityLevel: 1, priorityDelayMinutes: 0 }])
           .then(() => { refetchOrder?.(); toast({ title: `${item.name} adăugat` }); })
           .catch((e) => toast({ title: 'Eroare la adăugare', description: String(e), variant: 'destructive' }));
       } else {
@@ -365,6 +393,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           modifications: null,
           status: 'pending',
           complimentary: false,
+          priority: { id: -1, orderId: 0, priorityLevel: 1, delayAfterMinutes: 0 },
         };
         setApiDraftItems((prev) => [...prev, draft]);
         setNextDraftItemId((v) => v - 1);
@@ -489,6 +518,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
             weightGrams: wg ?? undefined,
             menuItem: snapshot,
             modifications: Object.keys(modifications).some((k) => (modifications as Record<string, unknown>)[k]) ? modifications : undefined,
+            priorityLevel: 1,
+            priorityDelayMinutes: 0,
           }]);
           await refetchOrder?.();
           toast({ title: `${showModifier.name} adăugat` });
@@ -508,6 +539,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
             : null,
           status: 'pending',
           complimentary: false,
+          priority: { id: -1, orderId: 0, priorityLevel: 1, delayAfterMinutes: 0 },
         };
         setApiDraftItems((prev) => [...prev, draft]);
         setNextDraftItemId((v) => v - 1);
@@ -544,9 +576,16 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const handleSendToKitchenClick = () => {
     if (!order) return;
     
-    const pendingItems = order.items.filter(i => i.status === 'pending');
+    const pendingItems =
+      useApi && apiOrder
+        ? order.items.filter((i) => i.status === 'pending' && Number(i.id) < 0)
+        : order.items.filter((i) => i.status === 'pending');
     if (pendingItems.length === 0) {
-      toast({ title: 'Nu sunt articole noi de trimis', variant: 'destructive' });
+      toast({
+        title: 'Comanda este deja trimisa',
+        description: 'Nu sunt produse noi de trimis.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -584,7 +623,10 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 
   const handleSendToKitchen = async () => {
     if (!order) return;
-    const pendingItems = order.items.filter((i) => i.status === 'pending');
+    const pendingItems =
+      useApi && apiOrder
+        ? order.items.filter((i) => i.status === 'pending' && Number(i.id) < 0)
+        : order.items.filter((i) => i.status === 'pending');
     if (pendingItems.length === 0) return;
     if (useApi) {
       if (!apiOrder) {
@@ -597,6 +639,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
               weightGrams: i.weightGrams ?? null,
               modifications: i.modifications ?? null,
               complimentary: Boolean(i.complimentary),
+              priorityLevel: i.priority?.priorityLevel ?? 1,
             });
             const existing = grouped.get(key);
             if (existing) {
@@ -609,6 +652,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                 menuItem: i.menuItem ?? undefined,
                 modifications: i.modifications ?? undefined,
                 complimentary: i.complimentary,
+                priorityLevel: i.priority?.priorityLevel ?? 1,
+                priorityDelayMinutes: i.priority?.delayAfterMinutes ?? 0,
               });
             }
           }
@@ -630,6 +675,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           });
           await refetchOrder?.();
           setApiDraftItems([]);
+          setLastKitchenDispatch({ count: pendingItems.length, at: new Date() });
           toast({
             title: 'Comandă trimisă la bucătărie',
             description: `${pendingItems.length} articole salvate în orders`,
@@ -655,11 +701,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
               menuItem: i.menuItem ?? undefined,
               modifications: i.modifications ?? undefined,
               complimentary: i.complimentary,
+              priorityLevel: i.priority?.priorityLevel ?? 1,
+              priorityDelayMinutes: i.priority?.delayAfterMinutes ?? 0,
             })),
           );
         }
         await refetchOrder?.();
         if (unsavedDraftItems.length > 0) setApiDraftItems([]);
+        setLastKitchenDispatch({ count: pendingItems.length, at: new Date() });
         toast({
           title: 'Comandă trimisă la bucătărie',
           description:
@@ -678,6 +727,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     }
     const ctxPendingItems = pendingItems as OrderItem[];
     void ctxPendingItems;
+    setLastKitchenDispatch({ count: pendingItems.length, at: new Date() });
     toast({ title: 'Comandă trimisă la bucătărie', description: `${pendingItems.length} articole trimise (pending)` });
   };
 
@@ -731,11 +781,45 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const handleCompletePayment = async () => {
     if (!order) return;
     if (useApi) {
-      toast({
-        title: 'Plată',
-        description: 'Pentru comanda din server folosește casieria / finalizarea din modulul POS (context).',
-        variant: 'destructive',
-      });
+      if (!apiOrder) {
+        toast({
+          title: 'Comanda nu este salvată',
+          description: 'Trimite întâi comanda către bucătărie.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const tip = calculateTip();
+      const chosenPaymentMethod: PaymentMethod =
+        paymentMethod === 'mixed'
+          ? ((parseFloat(mixedCard) || 0) > 0
+              ? 'card'
+              : (parseFloat(mixedUsageCard) || 0) > 0
+                ? 'usage_card'
+                : 'cash')
+          : paymentMethod;
+      try {
+        await ordersApi.update(apiOrder.id, {
+          status: 'completed',
+          paymentMethod: chosenPaymentMethod,
+          tip,
+          cui: cui || undefined,
+          paidAt: new Date().toISOString(),
+        });
+        await refetchOrder?.();
+        toast({
+          title: 'Plată procesată',
+          description: `Comanda a fost finalizată (${(getPayableAmount() + tip).toFixed(2)} RON).`,
+        });
+        setShowPayment(false);
+        onClose();
+      } catch (e) {
+        toast({
+          title: 'Eroare la finalizarea plății',
+          description: String(e),
+          variant: 'destructive',
+        });
+      }
       return;
     }
     const amount = getPayableAmount();
@@ -793,6 +877,109 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     return searchQuery ? matchesSearch : matchesCategory;
   });
 
+  const getItemPriorityLevel = (item: OrderItem | OrderItemApi): number =>
+    (item as OrderItemApi).priority?.priorityLevel ?? 1;
+
+  const getPriorityDelay = (level: number): number => delayByPriorityLevel[level] ?? 0;
+
+  const groupedOrderItems = useMemo(() => {
+    if (!order) return [] as Array<{ level: number; delay: number; items: Array<OrderItem | OrderItemApi> }>;
+    const visibleItems =
+      useApi && apiOrder
+        ? order.items.filter((item) => Number(item.id) < 0)
+        : order.items;
+    const groups = new Map<number, Array<OrderItem | OrderItemApi>>();
+    visibleItems.forEach((item) => {
+      const level = getItemPriorityLevel(item);
+      if (!groups.has(level)) groups.set(level, []);
+      groups.get(level)!.push(item);
+    });
+    return [...groups.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([level, items]) => ({
+        level,
+        delay: getPriorityDelay(level),
+        items,
+      }));
+  }, [order, delayByPriorityLevel, useApi, apiOrder]);
+
+  const sendablePendingCount = useMemo(() => {
+    if (!order) return 0;
+    if (useApi && apiOrder) {
+      return order.items.filter((i) => i.status === 'pending' && Number(i.id) < 0).length;
+    }
+    return order.items.filter((i) => i.status === 'pending').length;
+  }, [order, useApi, apiOrder]);
+
+  const currentCommandItems = useMemo(() => {
+    if (!order) return [] as Array<OrderItem | OrderItemApi>;
+    return useApi && apiOrder
+      ? order.items.filter((item) => Number(item.id) < 0)
+      : order.items;
+  }, [order, useApi, apiOrder]);
+
+  const currentCommandTotal = useMemo(
+    () =>
+      currentCommandItems.reduce(
+        (sum, item) => sum + getItemPrice(item.menuItem, item.quantity, item.weightGrams),
+        0,
+      ),
+    [currentCommandItems],
+  );
+
+  const addPriorityLevel = () => {
+    const next = (priorityLevels.length ? Math.max(...priorityLevels) : 0) + 1;
+    setPriorityLevels((prev) => [...prev, next]);
+    setDelayByPriorityLevel((prev) => ({ ...prev, [next]: 0 }));
+  };
+
+  const updateItemPriority = async (item: OrderItem | OrderItemApi, level: number) => {
+    const delay = getPriorityDelay(level);
+    if (useApi && apiOrder && Number(item.id) > 0) {
+      try {
+        await ordersApi.updateItemPriority(apiOrder.id, Number(item.id), {
+          priorityLevel: level,
+          priorityDelayMinutes: delay,
+        });
+        await refetchOrder?.();
+        return;
+      } catch {
+        toast({ title: 'Eroare la setarea prioritatii', variant: 'destructive' });
+        return;
+      }
+    }
+    if (useApi && !apiOrder) {
+      setApiDraftItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id
+            ? {
+                ...it,
+                priority: {
+                  id: -Math.abs(level),
+                  orderId: 0,
+                  priorityLevel: level,
+                  delayAfterMinutes: delay,
+                },
+              }
+            : it,
+        ),
+      );
+      return;
+    }
+  };
+
+  const updatePriorityDelay = async (level: number, delay: number) => {
+    const normalized = Number.isFinite(delay) ? Math.max(0, delay) : 0;
+    setDelayByPriorityLevel((prev) => ({ ...prev, [level]: normalized }));
+    if (!(useApi && apiOrder)) return;
+    try {
+      await ordersApi.updatePriorityDelay(apiOrder.id, level, normalized);
+      await refetchOrder?.();
+    } catch {
+      toast({ title: 'Eroare la salvarea intervalului', variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-background" {...swipeHandlers}>
       {/* Header */}
@@ -820,7 +1007,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
             variant="outline" 
             size="sm"
             onClick={() => setShowPayment(true)}
-            disabled={!order || order.items.length === 0 || useApi}
+            disabled={!order || order.items.length === 0 || order.status !== 'active'}
           >
             <CreditCard className="w-4 h-4 md:mr-2" />
             <span className="hidden md:inline">Plată</span>
@@ -1046,138 +1233,138 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 
           {!orderCollapsed && (
             <div className="flex-1 overflow-auto p-2 md:p-3">
-              {order?.items.length === 0 ? (
+              {currentCommandItems.length === 0 ? (
                 <p className="text-center text-muted-foreground py-4 md:py-8 text-xs md:text-sm">
-                  Adaugă produse din meniu
+                  Adaugă produse din meniu. Produsele trimise apar în istoric.
                 </p>
               ) : (
-              <div className="space-y-2">
-                {order?.items.map(item => (
-                  <div
-                    key={item.id}
-                    className={cn(
-                      "p-2 md:p-3 rounded-lg bg-card border",
-                      item.status === 'ready' && "border-success",
-                      item.status === 'cooking' && "border-warning"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1 md:gap-2">
-                          <span className="font-medium text-xs md:text-sm">
-                            {(item.menuItem as Record<string, unknown>)?.unitType === 'gram' && item.weightGrams
-                              ? `${item.weightGrams}g` 
-                              : `${item.quantity}x`
-                            }
-                          </span>
-                          <span className="font-medium text-xs md:text-sm truncate">
-                            {String((item.menuItem as Record<string, unknown>)?.name ?? 'Produs')}
-                          </span>
-                          {(item.menuItem as Record<string, unknown>)?.unitType &&
-                            (item.menuItem as Record<string, unknown>).unitType !== 'buc' && (
-                            <span className="text-[10px] text-muted-foreground bg-muted px-1 rounded">
-                              {getUnitLabel(
-                                ['buc', 'portie', 'gram'].includes(
-                                  String((item.menuItem as Record<string, unknown>).unitType),
-                                )
-                                  ? ((item.menuItem as Record<string, unknown>).unitType as UnitType)
-                                  : 'buc',
-                              )}
-                            </span>
-                          )}
-                        </div>
-                        {((item.modifications?.added?.length ?? 0) > 0 || (item.modifications?.removed?.length ?? 0) > 0) && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {(item.modifications?.added ?? []).map((a) => (
-                              <span key={a} className="text-success">+{a} </span>
-                            ))}
-                            {(item.modifications?.removed ?? []).map((r) => (
-                              <span key={r} className="text-destructive">-{r} </span>
-                            ))}
-                          </div>
-                        )}
-                        {item.modifications?.notes && (
-                          <p className="text-xs text-muted-foreground italic mt-1 truncate">
-                            "{item.modifications?.notes}"
-                          </p>
-                        )}
-                        <div className="flex items-center gap-1 mt-1">
-                          {getStatusIcon(item.status)}
-                          <span className="text-xs text-muted-foreground">
-                            {getStatusLabel(item.status)}
-                          </span>
+              <div className="space-y-3">
+                {groupedOrderItems.map((group, groupIndex) => (
+                  <React.Fragment key={`priority-group-${group.level}`}>
+                    <div className="rounded-lg border border-border/70 bg-muted/20 p-2">
+                      <div className="mb-2 flex items-center justify-between gap-2 rounded-md bg-background px-2 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs font-semibold">Prioritate P{group.level}</Badge>
+                          <span className="text-[10px] text-muted-foreground">{group.items.length} produse</span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className="font-medium text-xs md:text-sm">
-                          {item.complimentary ? (
-                            <span className="text-success line-through decoration-success/50">{getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)}</span>
-                          ) : (
-                            getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)
-                          )}
-                        </span>
-                        {item.complimentary && (
-                          <span className="text-[10px] text-success font-medium">Din partea casei</span>
-                        )}
-                        {item.status === 'pending' && (
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 md:h-7 md:w-7"
-                              onClick={() => {
-                                if (useApi) return;
-                                const o = order as Order;
-                                const updatedItems = o.items.map((i) => {
-                                  if (i.id !== item.id) return i;
-                                  return { ...i, complimentary: !i.complimentary };
-                                });
-                                const totalAmount = updatedItems.reduce(
-                                  (sum, i) =>
-                                    sum + (i.complimentary ? 0 : getItemPrice(i.menuItem, i.quantity, i.weightGrams)),
-                                  0,
-                                );
-                                updateOrder({ ...o, items: updatedItems, totalAmount });
-                                toast({
-                                  title: item.complimentary ? 'Produs taxat normal' : 'Produs oferit din partea casei',
-                                });
-                              }}
-                              title="Din partea casei"
-                            >
-                              <Gift className={cn("w-3.5 h-3.5", item.complimentary && "text-success")} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 md:h-7 md:w-7"
-                              onClick={() => handleEditItem(item)}
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 md:h-7 md:w-7 text-destructive"
-                              onClick={() => handleRemoveItem(item.id)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                      <div className="space-y-2">
+                        {group.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className={cn(
+                              "p-2 md:p-3 rounded-lg bg-card border",
+                              item.status === 'ready' && "border-success",
+                              item.status === 'cooking' && "border-warning"
+                            )}
+                          >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1 md:gap-2">
+                                <span className="font-medium text-xs md:text-sm">
+                                  {(item.menuItem as Record<string, unknown>)?.unitType === 'gram' && item.weightGrams
+                                    ? `${item.weightGrams}g` 
+                                    : `${item.quantity}x`
+                                  }
+                                </span>
+                                <span className="font-medium text-xs md:text-sm truncate">
+                                  {String((item.menuItem as Record<string, unknown>)?.name ?? 'Produs')}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 mt-1">
+                                {getStatusIcon(item.status)}
+                                <span className="text-xs text-muted-foreground">
+                                  {getStatusLabel(item.status)}
+                                </span>
+                              </div>
+                              {item.status === 'pending' && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <span className="text-[10px] text-muted-foreground">Mută la</span>
+                                  <select
+                                    className="h-7 rounded border border-border bg-background px-2 text-xs"
+                                    value={getItemPriorityLevel(item)}
+                                    onChange={(e) => void updateItemPriority(item, Number(e.target.value))}
+                                  >
+                                    {priorityLevels.map((level) => (
+                                      <option key={level} value={level}>
+                                        P{level}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="font-medium text-xs md:text-sm">
+                                {item.complimentary ? (
+                                  <span className="text-success line-through decoration-success/50">{getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)}</span>
+                                ) : (
+                                  getItemPrice(item.menuItem, item.quantity, item.weightGrams).toFixed(2)
+                                )}
+                              </span>
+                              {item.status === 'pending' && (
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 md:h-7 md:w-7"
+                                    onClick={() => handleEditItem(item)}
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 md:h-7 md:w-7 text-destructive"
+                                    onClick={() => handleRemoveItem(String(item.id))}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </div>
+                    {groupIndex < groupedOrderItems.length - 1 && (
+                      <div className="mx-2 flex items-center justify-center gap-2 rounded-md border border-dashed border-border bg-background/70 px-2 py-1.5">
+                        <span className="text-[10px] text-muted-foreground">
+                          Timp intre P{group.level} si P{groupedOrderItems[groupIndex + 1].level}
+                        </span>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={String(getPriorityDelay(groupedOrderItems[groupIndex + 1].level))}
+                          onChange={(e) =>
+                            void updatePriorityDelay(
+                              groupedOrderItems[groupIndex + 1].level,
+                              Number(e.target.value),
+                            )
+                          }
+                          className="h-7 w-20 text-xs"
+                        />
+                        <span className="text-[10px] text-muted-foreground">min</span>
+                      </div>
+                    )}
+                  </React.Fragment>
                 ))}
+                <div className="flex justify-center">
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addPriorityLevel}>
+                    + Prioritate
+                  </Button>
+                </div>
               </div>
             )}
           </div>
           )}
 
-          {!orderCollapsed && order && order.items.length > 0 && (
+          {!orderCollapsed && order && currentCommandItems.length > 0 && (
             <div className="p-2 md:p-3 border-t border-border space-y-2 md:space-y-3">
               <div className="flex items-center justify-between font-bold text-base md:text-lg">
                 <span>Total</span>
-                <span>{orderTotalForDisplay.toFixed(2)} RON</span>
+                <span>{currentCommandTotal.toFixed(2)} RON</span>
               </div>
               
               {showClearConfirm ? (
@@ -1191,7 +1378,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   </Button>
                 </div>
               ) : (
-                <div className="flex gap-2">
+                <div className="space-y-2">
+                  {lastKitchenDispatch && (
+                    <div className="rounded-md border border-success/30 bg-success/10 px-2 py-1.5 text-xs text-success">
+                      Comanda a fost trimisa la bucatarie ({lastKitchenDispatch.count} produse) la{' '}
+                      {lastKitchenDispatch.at.toLocaleTimeString('ro-RO', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      .
+                    </div>
+                  )}
+                  <div className="flex gap-2">
                   <Button 
                     variant="outline"
                     size="sm"
@@ -1204,11 +1402,12 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   <Button 
                     className="flex-1 gradient-primary text-sm"
                     onClick={handleSendToKitchenClick}
-                    disabled={order.items.filter(i => i.status === 'pending').length === 0}
+                    disabled={sendablePendingCount === 0}
                   >
                     <Send className="w-4 h-4 mr-2" />
-                    Trimite ({order.items.filter(i => i.status === 'pending').length})
+                    Trimite ({sendablePendingCount})
                   </Button>
+                  </div>
                 </div>
               )}
             </div>

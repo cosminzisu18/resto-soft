@@ -117,12 +117,6 @@ export const CommunicationModule: React.FC = () => {
   const { currentUser, directoryUsers } = useRestaurant();
   const tenantId =
     typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_TENANT_ID?.trim() : undefined;
-
-  const { messages, presence, onlineIds, status, lastError, sendChat, isConnected } = useTeamChat(
-    currentUser,
-    { tenantId: tenantId || undefined },
-  );
-
   const [activeTab, setActiveTab] = useState('chat');
   const [selectedId, setSelectedId] = useState<string>('team');
   const [messageInput, setMessageInput] = useState('');
@@ -131,6 +125,21 @@ export const CommunicationModule: React.FC = () => {
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [newTicket, setNewTicket] = useState({ subject: '', priority: 'medium', description: '' });
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  const selectedChannelId = useMemo(() => {
+    const sid = String(selectedId);
+    if (sid === 'team') return 'team';
+    if (sid.startsWith('dept:')) return sid;
+    if (!currentUser) return 'team';
+    const a = String(currentUser.id);
+    const b = sid;
+    return `dm:${[a, b].sort().join(':')}`;
+  }, [selectedId, currentUser]);
+
+  const { messages, presence, onlineIds, status, lastError, sendChat, isConnected } = useTeamChat(
+    currentUser,
+    { tenantId: tenantId || undefined, channelId: selectedChannelId },
+  );
 
   const teamConversation: ChatListItem = useMemo(() => {
     const last = messages[messages.length - 1];
@@ -668,7 +677,7 @@ export const CommunicationModule: React.FC = () => {
                     <div className="space-y-4">
                       {String(selectedConversation.id) !== 'team' && (
                         <p className="text-xs text-center text-muted-foreground bg-muted/40 rounded-lg py-2 px-3 border border-border/60">
-                          Mesajele se publică pe canalul comun al echipei — toți angajații conectați le văd.
+                          Canal separat activ: mesajele rămân în această conversație.
                         </p>
                       )}
                       {messages.length === 0 && (

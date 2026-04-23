@@ -150,6 +150,12 @@ const OrderHistoryDialog: React.FC<OrderHistoryDialogProps> = ({ open, onClose, 
   const totalRevenue = filteredOrders.reduce((s, o) => s + o.totalAmount, 0);
   const totalTips = filteredOrders.reduce((s, o) => s + (o.tip || 0), 0);
 
+  const extractPriorityLevel = (item: Order['items'][number]): number =>
+    item.priority?.priorityLevel ?? 1;
+
+  const extractPriorityDelay = (item: Order['items'][number]): number =>
+    item.priority?.delayAfterMinutes ?? 0;
+
   return (
     <>
       <Dialog open={open && !invoiceOrder} onOpenChange={(v) => !v && onClose()}>
@@ -313,35 +319,66 @@ const OrderHistoryDialog: React.FC<OrderHistoryDialogProps> = ({ open, onClose, 
                           <div>
                             <p className="text-sm font-medium mb-2">Produse</p>
                             <div className="space-y-1.5">
-                              {order.items.map(item => (
-                                <div key={item.id} className="flex items-start justify-between text-sm p-2 rounded-lg bg-card">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-medium">{item.quantity}×</span>
-                                      <span className="truncate">{item.menuItem.name}</span>
-                                      {item.complimentary && (
-                                        <Badge variant="success" className="text-[10px] px-1 py-0">Gratis</Badge>
-                                      )}
-                                    </div>
-                                    {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
-                                      <div className="text-xs text-muted-foreground mt-0.5 ml-6">
-                                        {item.modifications.added.map(a => (
-                                          <span key={a} className="text-success">+{a} </span>
-                                        ))}
-                                        {item.modifications.removed.map(r => (
-                                          <span key={r} className="text-destructive">-{r} </span>
-                                        ))}
+                              {(() => {
+                                const sortedItems = [...order.items].sort((a, b) => {
+                                  const pa = extractPriorityLevel(a);
+                                  const pb = extractPriorityLevel(b);
+                                  if (pa !== pb) return pa - pb;
+                                  return String(a.id).localeCompare(String(b.id));
+                                });
+
+                                const rows: React.ReactNode[] = [];
+                                sortedItems.forEach((item, idx) => {
+                                  const currentPriority = extractPriorityLevel(item);
+                                  if (idx > 0) {
+                                    const prev = sortedItems[idx - 1];
+                                    const prevPriority = extractPriorityLevel(prev);
+                                    if (currentPriority !== prevPriority) {
+                                      const wait = extractPriorityDelay(item);
+                                      rows.push(
+                                        <div
+                                          key={`wait-${order.id}-${idx}`}
+                                          className="rounded-md border border-dashed border-border bg-background px-2 py-1 text-xs text-muted-foreground"
+                                        >
+                                          Timp de așteptare între P{prevPriority} și P{currentPriority}:{' '}
+                                          <span className="font-medium text-foreground">{wait} min</span>
+                                        </div>,
+                                      );
+                                    }
+                                  }
+                                  rows.push(
+                                    <div key={item.id} className="flex items-start justify-between text-sm p-2 rounded-lg bg-card">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">{item.quantity}×</span>
+                                          <span className="truncate">{item.menuItem.name}</span>
+                                          <Badge variant="outline" className="text-[10px] px-1 py-0">P{currentPriority}</Badge>
+                                          {item.complimentary && (
+                                            <Badge variant="success" className="text-[10px] px-1 py-0">Gratis</Badge>
+                                          )}
+                                        </div>
+                                        {(item.modifications.added.length > 0 || item.modifications.removed.length > 0) && (
+                                          <div className="text-xs text-muted-foreground mt-0.5 ml-6">
+                                            {item.modifications.added.map(a => (
+                                              <span key={a} className="text-success">+{a} </span>
+                                            ))}
+                                            {item.modifications.removed.map(r => (
+                                              <span key={r} className="text-destructive">-{r} </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {item.modifications.notes && (
+                                          <p className="text-xs text-muted-foreground italic ml-6">"{item.modifications.notes}"</p>
+                                        )}
                                       </div>
-                                    )}
-                                    {item.modifications.notes && (
-                                      <p className="text-xs text-muted-foreground italic ml-6">"{item.modifications.notes}"</p>
-                                    )}
-                                  </div>
-                                  <span className={cn("font-medium whitespace-nowrap", item.complimentary && "line-through text-muted-foreground")}>
-                                    {(item.menuItem.price * item.quantity).toFixed(2)} RON
-                                  </span>
-                                </div>
-                              ))}
+                                      <span className={cn("font-medium whitespace-nowrap", item.complimentary && "line-through text-muted-foreground")}>
+                                        {(item.menuItem.price * item.quantity).toFixed(2)} RON
+                                      </span>
+                                    </div>,
+                                  );
+                                });
+                                return rows;
+                              })()}
                             </div>
                           </div>
 

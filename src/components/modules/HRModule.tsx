@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { PageHeader } from '@/components/ui/page-header';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useRestaurant } from '@/context/RestaurantContext';
+import { employeeBreaksApi, type EmployeeBreakApi } from '@/lib/api';
 import { 
   Users, Search, Plus, User, ChefHat, Shield, Coffee, Clock, 
   Play, Pause, AlertTriangle, Award, TrendingUp, TrendingDown,
@@ -70,14 +72,8 @@ const performanceData = [
   { name: 'Dum', performanta: 82, media: 80 },
 ];
 
-const breakHistory = [
-  { id: 1, employee: 'Ion Ionescu', start: '10:30', end: '10:45', duration: 15, status: 'ok' },
-  { id: 2, employee: 'Maria Popescu', start: '12:00', end: '12:30', duration: 30, status: 'ok' },
-  { id: 3, employee: 'Andrei Marin', start: '14:15', end: '14:50', duration: 35, status: 'exceeded' },
-  { id: 4, employee: 'Maria Popescu', start: '15:30', end: '15:45', duration: 15, status: 'ok' },
-];
-
 export const HRModule: React.FC = () => {
+  const { currentUser } = useRestaurant();
   const [employees, setEmployees] = useState<Employee[]>(employeesDataSeed);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -87,6 +83,8 @@ export const HRModule: React.FC = () => {
   const [incidentType, setIncidentType] = useState<'incident' | 'praise' | 'warning'>('incident');
   const [isBreakActive, setIsBreakActive] = useState(false);
   const [breakTimer, setBreakTimer] = useState(0);
+  const [activeBreak, setActiveBreak] = useState<EmployeeBreakApi | null>(null);
+  const [breakHistory, setBreakHistory] = useState<EmployeeBreakApi[]>([]);
   const [showAddEmployeeDialog, setShowAddEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
@@ -100,6 +98,57 @@ export const HRModule: React.FC = () => {
 
   const onlineCount = employees.filter(e => e.status === 'online' || e.status === 'busy').length;
   const onBreakCount = employees.filter(e => e.status === 'break').length;
+
+  useEffect(() => {
+    if (!currentUser) return;
+    employeeBreaksApi
+      .getMyToday()
+      .then((payload) => {
+        setActiveBreak(payload.activeBreak);
+        setBreakHistory(payload.history);
+        setIsBreakActive(!!payload.activeBreak);
+      })
+      .catch(() => {
+        setActiveBreak(null);
+        setBreakHistory([]);
+        setIsBreakActive(false);
+      });
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!activeBreak) {
+      setBreakTimer(0);
+      return;
+    }
+    const updateTimer = () => {
+      const elapsed = Math.max(
+        0,
+        Math.floor((Date.now() - new Date(activeBreak.startedAt).getTime()) / 60000),
+      );
+      setBreakTimer(elapsed);
+    };
+    updateTimer();
+    const id = window.setInterval(updateTimer, 1000);
+    return () => window.clearInterval(id);
+  }, [activeBreak]);
+
+  const breakRows = useMemo(
+    () =>
+      breakHistory.map((entry) => {
+        const start = new Date(entry.startedAt);
+        const end = entry.endedAt ? new Date(entry.endedAt) : null;
+        const duration = entry.durationMinutes ?? Math.max(0, Math.floor((Date.now() - start.getTime()) / 60000));
+        return {
+          id: entry.id,
+          employee: currentUser?.name ?? 'Angajat',
+          start: start.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }),
+          end: end ? end.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : 'In curs',
+          duration,
+          status: duration > 30 ? 'exceeded' : 'ok',
+        };
+      }),
+    [breakHistory, currentUser?.name],
+  );
 
   const getRoleIcon = (role: string) => {
     switch (role) {
@@ -139,15 +188,33 @@ export const HRModule: React.FC = () => {
     }
   };
 
-  const handleStartBreak = () => {
-    setIsBreakActive(true);
-    toast({ title: "Pauză începută", description: "Cronometrul a pornit" });
+  const handleStartBreak = async () => {
+    if (!currentUser) {
+      toast({ title: 'Eroare', description: 'Nu exista utilizator conectat.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const started = await employeeBreaksApi.startMyBreak();
+      setActiveBreak(started);
+      setIsBreakActive(true);
+      setBreakHistory((prev) => [started, ...prev.filter((x) => x.id !== started.id)]);
+      toast({ title: 'Pauza inceputa', description: 'Pauza a fost salvata in baza de date.' });
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu am putut porni pauza.', variant: 'destructive' });
+    }
   };
 
-  const handleStopBreak = () => {
-    setIsBreakActive(false);
-    setBreakTimer(0);
-    toast({ title: "Pauză încheiată", description: `Durată: ${breakTimer} minute` });
+  const handleStopBreak = async () => {
+    try {
+      const stopped = await employeeBreaksApi.stopMyBreak();
+      setIsBreakActive(false);
+      setActiveBreak(null);
+      setBreakTimer(0);
+      setBreakHistory((prev) => [stopped, ...prev.filter((x) => x.id !== stopped.id)]);
+      toast({ title: 'Pauza incheiata', description: `Durata: ${stopped.durationMinutes ?? breakTimer} minute` });
+    } catch {
+      toast({ title: 'Eroare', description: 'Nu exista pauza activa.', variant: 'destructive' });
+    }
   };
 
   const openIncidentDialog = (type: 'incident' | 'praise' | 'warning') => {
@@ -610,7 +677,7 @@ export const HRModule: React.FC = () => {
                   <div className="relative">
                     <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-border" />
                     <div className="space-y-4">
-                      {breakHistory.map((breakItem) => (
+                      {breakRows.map((breakItem) => (
                         <div key={breakItem.id} className="relative flex gap-4 pl-12">
                           <div className={cn(
                             "absolute left-3 w-5 h-5 rounded-full flex items-center justify-center",

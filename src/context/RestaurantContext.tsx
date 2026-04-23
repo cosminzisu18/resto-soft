@@ -190,7 +190,11 @@ export const RestaurantProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   useEffect(() => {
     const stored = readStoredStaffUser();
-    if (stored) setCurrentUser(stored);
+    if (stored && getAccessToken()) {
+      setCurrentUser(stored);
+    } else {
+      persistStaffUser(null);
+    }
     setStaffSessionHydrated(true);
   }, []);
 

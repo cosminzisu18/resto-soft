@@ -355,6 +355,13 @@ export interface OrderItemApi {
   startedAt?: string | null;
   readyAt?: string | null;
   complimentary?: boolean;
+  priorityId?: number | null;
+  priority?: {
+    id: number;
+    orderId: number;
+    priorityLevel: number;
+    delayAfterMinutes: number;
+  } | null;
 }
 
 export interface OrderDeliveryAddressApi {
@@ -405,6 +412,8 @@ export interface CreateOrderItemBody {
   menuItem?: Record<string, unknown>;
   modifications?: { added?: string[]; removed?: string[]; notes?: string };
   complimentary?: boolean;
+  priorityLevel?: number;
+  priorityDelayMinutes?: number;
 }
 
 export interface CreateOrderBody {
@@ -442,6 +451,29 @@ export interface UpdateOrderBody {
   tip?: number;
   cui?: string;
   paidAt?: string;
+}
+
+export interface CashRegisterOperationApi {
+  id: number;
+  type: 'deposit' | 'withdrawal';
+  amount: number | string;
+  reason?: string | null;
+  operatorName: string;
+  operationAt: string;
+}
+
+export interface EmployeeBreakApi {
+  id: number;
+  userId: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationMinutes: number | null;
+  tenantId?: string | null;
+}
+
+export interface EmployeeBreakTodayApi {
+  activeBreak: EmployeeBreakApi | null;
+  history: EmployeeBreakApi[];
 }
 
 export interface CustomerApi {
@@ -565,6 +597,47 @@ export const ordersApi = {
       method: 'PATCH',
       body: JSON.stringify({ status, ...actor }),
     }),
+  updateItemPriority: (
+    orderId: number,
+    itemId: number,
+    payload: { priorityLevel: number; priorityDelayMinutes: number },
+  ) =>
+    request<OrderApi>(`/orders/${orderId}/items/${itemId}/priority`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  updatePriorityDelay: (
+    orderId: number,
+    priorityLevel: number,
+    delayAfterMinutes: number,
+  ) =>
+    request<OrderApi>(`/orders/${orderId}/priorities/${priorityLevel}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ delayAfterMinutes }),
+    }),
+};
+
+export const cashRegisterApi = {
+  getOperations: (date?: string) =>
+    request<CashRegisterOperationApi[]>(
+      date ? `/cash-register/operations?date=${encodeURIComponent(date)}` : '/cash-register/operations',
+    ),
+  createOperation: (body: {
+    type: 'deposit' | 'withdrawal';
+    amount: number;
+    reason?: string;
+    operatorName: string;
+  }) =>
+    request<CashRegisterOperationApi>('/cash-register/operations', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+};
+
+export const employeeBreaksApi = {
+  getMyToday: () => request<EmployeeBreakTodayApi>('/employee-breaks/me/today'),
+  startMyBreak: () => request<EmployeeBreakApi>('/employee-breaks/me/start', { method: 'POST' }),
+  stopMyBreak: () => request<EmployeeBreakApi>('/employee-breaks/me/stop', { method: 'PATCH' }),
 };
 
 export const customersApi = {

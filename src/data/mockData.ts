@@ -106,6 +106,13 @@ export interface OrderItem {
   id: string;
   menuItemId: string;
   menuItem: MenuItem;
+  /** Prioritizare producție per linie (venită din API order_priorities). */
+  priority?: {
+    id: number;
+    orderId: number;
+    priorityLevel: number;
+    delayAfterMinutes: number;
+  };
   quantity: number;
   weightGrams?: number; // used when unitType is 'gram'
   modifications: {
