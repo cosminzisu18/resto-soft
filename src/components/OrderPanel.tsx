@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, MenuItem, Order, OrderItem, UnitType, PaymentMethod } from '@/data/mockData';
 import { useRestaurant } from '@/context/RestaurantContext';
-import { cn } from '@/lib/utils';
+import { buildOrderPrioritySchedule, cn, formatPlanTime, type SchedulePlan } from '@/lib/utils';
 import { menuApi, ordersApi, imageSrc, type CreateOrderItemBody, type MenuItemApi, type OrderApi, type OrderItemApi } from '@/lib/api';
 import { orderApiToPosOrder } from '@/lib/posOrderMapper';
 import { menuItemApiToMenuItem } from '@/lib/restaurantMappers';
@@ -105,6 +105,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [lastKitchenDispatch, setLastKitchenDispatch] = useState<{ count: number; at: Date } | null>(null);
+  const [lastExecutionPlan, setLastExecutionPlan] = useState<SchedulePlan | null>(null);
   const [priorityLevels, setPriorityLevels] = useState<number[]>([1]);
   const [delayByPriorityLevel, setDelayByPriorityLevel] = useState<Record<number, number>>({ 1: 0 });
   
@@ -628,6 +629,44 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         ? order.items.filter((i) => i.status === 'pending' && Number(i.id) < 0)
         : order.items.filter((i) => i.status === 'pending');
     if (pendingItems.length === 0) return;
+
+    const getItemPrepMinutes = (item: OrderItem | OrderItemApi): number => {
+      const prep = Number((item.menuItem as MenuItem | MenuItemApi)?.prepTime ?? 0);
+      return Number.isFinite(prep) && prep > 0 ? prep : 1;
+    };
+    const getItemKdsId = (item: OrderItem | OrderItemApi): string => {
+      const menuItem = item.menuItem as (MenuItem | MenuItemApi) & { kdsStationType?: string };
+      if (typeof menuItem?.kdsStationId === 'number') return String(menuItem.kdsStationId);
+      if (typeof menuItem?.kdsStation === 'string' && menuItem.kdsStation.trim() !== '') return menuItem.kdsStation;
+      if (typeof menuItem?.kdsStationType === 'string' && menuItem.kdsStationType.trim() !== '') return menuItem.kdsStationType;
+      return 'unknown';
+    };
+    const buildExecutionPlanForPending = (): SchedulePlan => {
+      const pendingLevels = Array.from(
+        new Set(pendingItems.map((i) => (i as OrderItemApi).priority?.priorityLevel ?? 1)),
+      ).sort((a, b) => a - b);
+      const priorities = pendingLevels.map((level) => ({
+        priorityLevel: level,
+        delayAfterMinutes: getPriorityDelay(level),
+      }));
+      return buildOrderPrioritySchedule({
+        orderId: String(order.id),
+        now: new Date(),
+        items: pendingItems.map((item) => ({
+          itemId: String(item.id),
+          orderId: String(order.id),
+          tableLabel: `Masa ${table.number}`,
+          name: typeof item.menuItem?.name === 'string' ? item.menuItem.name : 'Produs',
+          kdsId: getItemKdsId(item),
+          priorityLevel: (item as OrderItemApi).priority?.priorityLevel ?? 1,
+          prepMinutes: getItemPrepMinutes(item) * Math.max(1, Number(item.quantity) || 1),
+          status: 'pending',
+        })),
+        priorities,
+      });
+    };
+    const executionPlan = buildExecutionPlanForPending();
+
     if (useApi) {
       if (!apiOrder) {
         try {
@@ -653,7 +692,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                 modifications: i.modifications ?? undefined,
                 complimentary: i.complimentary,
                 priorityLevel: i.priority?.priorityLevel ?? 1,
-                priorityDelayMinutes: i.priority?.delayAfterMinutes ?? 0,
+                priorityDelayMinutes: getPriorityDelay(i.priority?.priorityLevel ?? 1),
               });
             }
           }
@@ -675,6 +714,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           });
           await refetchOrder?.();
           setApiDraftItems([]);
+          setLastExecutionPlan(executionPlan);
           setLastKitchenDispatch({ count: pendingItems.length, at: new Date() });
           toast({
             title: 'Comandă trimisă la bucătărie',
@@ -702,12 +742,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
               modifications: i.modifications ?? undefined,
               complimentary: i.complimentary,
               priorityLevel: i.priority?.priorityLevel ?? 1,
-              priorityDelayMinutes: i.priority?.delayAfterMinutes ?? 0,
+              priorityDelayMinutes: getPriorityDelay(i.priority?.priorityLevel ?? 1),
             })),
           );
         }
         await refetchOrder?.();
         if (unsavedDraftItems.length > 0) setApiDraftItems([]);
+        setLastExecutionPlan(executionPlan);
         setLastKitchenDispatch({ count: pendingItems.length, at: new Date() });
         toast({
           title: 'Comandă trimisă la bucătărie',
@@ -727,6 +768,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     }
     const ctxPendingItems = pendingItems as OrderItem[];
     void ctxPendingItems;
+    setLastExecutionPlan(executionPlan);
     setLastKitchenDispatch({ count: pendingItems.length, at: new Date() });
     toast({ title: 'Comandă trimisă la bucătărie', description: `${pendingItems.length} articole trimise (pending)` });
   };
@@ -971,6 +1013,23 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const updatePriorityDelay = async (level: number, delay: number) => {
     const normalized = Number.isFinite(delay) ? Math.max(0, delay) : 0;
     setDelayByPriorityLevel((prev) => ({ ...prev, [level]: normalized }));
+    if (useApi && !apiOrder) {
+      setApiDraftItems((prev) =>
+        prev.map((it) =>
+          (it.priority?.priorityLevel ?? 1) === level
+            ? {
+                ...it,
+                priority: {
+                  id: it.priority?.id ?? -Math.abs(level),
+                  orderId: it.priority?.orderId ?? 0,
+                  priorityLevel: level,
+                  delayAfterMinutes: normalized,
+                },
+              }
+            : it,
+        ),
+      );
+    }
     if (!(useApi && apiOrder)) return;
     try {
       await ordersApi.updatePriorityDelay(apiOrder.id, level, normalized);
@@ -1387,6 +1446,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                         minute: '2-digit',
                       })}
                       .
+                      {lastExecutionPlan && lastExecutionPlan.windows.length > 0 ? (
+                        <span className="block mt-1 text-[11px] text-success/90">
+                          Plan executie:{' '}
+                          {lastExecutionPlan.windows
+                            .map((w) => `P${w.priorityLevel} gata ${formatPlanTime(w.priorityFinishAt)}`)
+                            .join(' | ')}
+                        </span>
+                      ) : null}
                     </div>
                   )}
                   <div className="flex gap-2">

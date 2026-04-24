@@ -6,7 +6,7 @@ import { KDSStation, OrderItem, Order, MenuItem, allergens } from '@/data/mockDa
 import { ordersApi } from '@/lib/api';
 import { orderApiToPosOrder } from '@/lib/posOrderMapper';
 import { orderItemMatchesKdsStation, kdsOrderDisplayNumber } from '@/lib/kdsUtils';
-import { cn } from '@/lib/utils';
+import { buildGlobalKdsSchedule, cn, formatPlanTime } from '@/lib/utils';
 import { 
   Clock, LogOut, Truck, MessageSquare, ChefHat, CheckCircle2, Timer, 
   Grid3X3, List, AlignJustify, Filter, AlertTriangle, Play, User, 
@@ -178,6 +178,76 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
   );
   const kitchenEmployees = directoryUsers.filter((u) => u.role === 'kitchen');
 
+  const getItemKdsId = useCallback((item: OrderItem): string => {
+    if (typeof item.menuItem.kdsStationId === 'number') return String(item.menuItem.kdsStationId);
+    if (typeof item.menuItem.kdsStation === 'string' && item.menuItem.kdsStation.trim() !== '') {
+      return item.menuItem.kdsStation;
+    }
+    return 'unknown';
+  }, []);
+
+  const globalExecutionPlan = useMemo(() => {
+    const activeOrders = apiOrders.filter((o) => o.status === 'active');
+    const kdsBusyBlocks = activeOrders.flatMap((order) =>
+      order.items
+        .filter((item) => item.status === 'cooking')
+        .map((item) => {
+          const startedAt = item.startedAt ? new Date(item.startedAt) : currentTime;
+          const prepMs = Math.max(1, item.menuItem.prepTime || 1) * Math.max(1, item.quantity) * 60_000;
+          const busyUntil = new Date(startedAt.getTime() + prepMs);
+          return {
+            kdsId: getItemKdsId(item),
+            busyFrom: startedAt,
+            busyUntil: busyUntil > currentTime ? busyUntil : currentTime,
+            reason: `cooking:${order.id}:${item.id}`,
+          };
+        }),
+    );
+
+    return buildGlobalKdsSchedule({
+      now: currentTime,
+      replanReason: 'initial',
+      orders: activeOrders.map((order) => {
+        const priorityMap = new Map<number, number>();
+        order.items.forEach((item) => {
+          const level = item.priority?.priorityLevel ?? 1;
+          const delay = item.priority?.delayAfterMinutes ?? 0;
+          if (!priorityMap.has(level) || delay > (priorityMap.get(level) ?? 0)) {
+            priorityMap.set(level, delay);
+          }
+        });
+        return {
+          orderId: String(order.id),
+          tableLabel: `Masa ${kdsOrderDisplayNumber(order)}`,
+          createdAt: new Date(order.createdAt),
+          items: order.items.map((item) => ({
+            itemId: String(item.id),
+            orderId: String(order.id),
+            tableLabel: `Masa ${kdsOrderDisplayNumber(order)}`,
+            name: item.menuItem.name,
+            kdsId: getItemKdsId(item),
+            priorityLevel: item.priority?.priorityLevel ?? 1,
+            prepMinutes: Math.max(1, item.menuItem.prepTime || 1) * Math.max(1, item.quantity),
+            status: item.status,
+          })),
+          priorities: Array.from(priorityMap.entries()).map(([priorityLevel, delayAfterMinutes]) => ({
+            priorityLevel,
+            delayAfterMinutes,
+          })),
+        };
+      }),
+      kdsBusyBlocks,
+    });
+  }, [apiOrders, currentTime, getItemKdsId]);
+
+  const plannedStartByItemKey = useMemo(() => {
+    const map = new Map<string, Date>();
+    globalExecutionPlan.items.forEach((it) => {
+      map.set(`${it.orderId}:${it.itemId}`, it.plannedStartAt);
+    });
+    return map;
+  }, [globalExecutionPlan]);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -208,40 +278,273 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     return 'normal';
   };
 
-  // Calculate sync timing - when to start cooking based on longest prep time in order
+  // Planned timing - when to start each pending item based on global scheduling
+  const prepForOrderItem = (x: OrderItem): number =>
+    Math.max(1, x.menuItem.prepTime || 1) * Math.max(1, x.quantity || 1);
+
+  const getOrderDelayForPriorityLevel = (order: Order, level: number): number => {
+    const delays = order.items
+      .map((i) => (i.priority?.priorityLevel ?? 1) === level ? i.priority?.delayAfterMinutes ?? 0 : 0)
+      .filter((x) => Number.isFinite(x));
+    return delays.length > 0 ? Math.max(...delays) : 0;
+  };
+
+  const getRemainingMinutesForPriorityLevel = (order: Order, level: number): number => {
+    const levelItems = order.items.filter((i) => (i.priority?.priorityLevel ?? 1) === level);
+    if (levelItems.length === 0) return 0;
+    const remains = levelItems.map((item) => {
+      if (item.status === 'ready' || item.status === 'served') return 0;
+      const prep = prepForOrderItem(item);
+      if (item.status === 'cooking') {
+        // Fallback stabil: uneori startedAt poate lipsi temporar din payload; nu vrem drift in viitor.
+        const startedAtRef = item.startedAt ? new Date(item.startedAt) : new Date(order.createdAt);
+        const elapsed = (currentTime.getTime() - startedAtRef.getTime()) / 60000;
+        return Math.max(0, prep - elapsed);
+      }
+      return prep;
+    });
+    return Math.max(0, ...remains);
+  };
+
+  const getPriorityFinishedAt = (order: Order, level: number): Date | null => {
+    const levelItems = order.items.filter((i) => (i.priority?.priorityLevel ?? 1) === level);
+    if (levelItems.length === 0) return null;
+    const allFinished = levelItems.every((i) => i.status === 'ready' || i.status === 'served');
+    if (!allFinished) return null;
+
+    const finishedCandidates = levelItems.map((item) => {
+      if (item.readyAt) return new Date(item.readyAt);
+      if (item.startedAt) {
+        const prep = prepForOrderItem(item);
+        return new Date(new Date(item.startedAt).getTime() + prep * 60_000);
+      }
+      return new Date(currentTime);
+    });
+    const latest = Math.max(...finishedCandidates.map((d) => d.getTime()));
+    return Number.isFinite(latest) ? new Date(latest) : null;
+  };
+
+  const isPriorityOperationallyFinished = (order: Order, level: number): boolean => {
+    const levelItems = order.items.filter((i) => (i.priority?.priorityLevel ?? 1) === level);
+    if (levelItems.length === 0) return true;
+    return levelItems.every((item) => {
+      if (item.status === 'ready' || item.status === 'served') return true;
+      if (item.status === 'cooking') {
+        const startedAtRef = item.startedAt ? new Date(item.startedAt) : new Date(order.createdAt);
+        const elapsed = (currentTime.getTime() - startedAtRef.getTime()) / 60000;
+        return elapsed >= prepForOrderItem(item);
+      }
+      return false;
+    });
+  };
+
+  const getBlockedPriorityReleaseAt = (order: Order, currentPriority: number): Date | null => {
+    const levels = Array.from(
+      new Set(order.items.map((i) => i.priority?.priorityLevel ?? 1)),
+    ).sort((a, b) => a - b);
+    const path = levels.filter((lv) => lv < currentPriority);
+    if (path.length === 0) return null;
+
+    let cursor = new Date(currentTime);
+    for (const lv of path) {
+      const nextLevel = levels.find((x) => x > lv && x <= currentPriority);
+      const delayToNext = nextLevel != null ? getOrderDelayForPriorityLevel(order, nextLevel) : 0;
+
+      const finishedAt = getPriorityFinishedAt(order, lv);
+      if (finishedAt) {
+        // Daca prioritatea e deja finalizata, delay-ul se masoara de la timpul de finalizare,
+        // nu de la "acum". Astfel evitam supraestimarea startului urmatoarei prioritati.
+        const releaseAt = new Date(finishedAt.getTime() + delayToNext * 60_000);
+        if (releaseAt > cursor) cursor = releaseAt;
+        continue;
+      }
+
+      const hasCookingInLevel = order.items.some(
+        (item) =>
+          (item.priority?.priorityLevel ?? 1) === lv &&
+          item.status === 'cooking',
+      );
+      if (hasCookingInLevel) {
+        // Ancorare la start real (sau createdAt fallback) pentru a evita cresterea artificiala a ETA.
+        const expectedFinishAt = Math.max(
+          ...order.items
+            .filter((item) => (item.priority?.priorityLevel ?? 1) === lv)
+            .map((item) => {
+              if (item.status === 'ready' || item.status === 'served') {
+                if (item.readyAt) return new Date(item.readyAt).getTime();
+                const startedAtRef = item.startedAt ? new Date(item.startedAt) : new Date(order.createdAt);
+                return startedAtRef.getTime() + prepForOrderItem(item) * 60_000;
+              }
+              if (item.status === 'cooking') {
+                const startedAtRef = item.startedAt ? new Date(item.startedAt) : new Date(order.createdAt);
+                return startedAtRef.getTime() + prepForOrderItem(item) * 60_000;
+              }
+              return currentTime.getTime() + prepForOrderItem(item) * 60_000;
+            }),
+        );
+        if (Number.isFinite(expectedFinishAt)) {
+          const stableRelease = new Date(expectedFinishAt + delayToNext * 60_000);
+          if (stableRelease > cursor) cursor = stableRelease;
+          continue;
+        }
+      }
+
+      const remaining = getRemainingMinutesForPriorityLevel(order, lv);
+      if (remaining > 0) {
+        cursor = new Date(cursor.getTime() + remaining * 60_000);
+      }
+      if (delayToNext > 0) {
+        cursor = new Date(cursor.getTime() + delayToNext * 60_000);
+      }
+    }
+    return cursor;
+  };
+
+  const getPriorityAlgorithmTiming = (
+    order: Order,
+    item: OrderItem,
+  ): {
+    blockedByLowerPriorityPending: boolean;
+    blockingPriorityLevel: number | null;
+    blockedByLongestNotStarted: boolean;
+    isLongestPendingAndShouldStartNow: boolean;
+    recommendedStartAt: Date | null;
+    maxPrep: number;
+    currentPrep: number;
+  } => {
+    const currentPriority = item.priority?.priorityLevel ?? 1;
+    const lowerLevels = Array.from(
+      new Set(
+        order.items
+          .map((candidate) => candidate.priority?.priorityLevel ?? 1)
+          .filter((lv) => lv < currentPriority),
+      ),
+    ).sort((a, b) => a - b);
+    const hasUnfinishedLowerPriority = lowerLevels.some(
+      (lv) => !isPriorityOperationallyFinished(order, lv),
+    );
+    if (hasUnfinishedLowerPriority) {
+      const blockingPriorityLevel =
+        lowerLevels.find((lv) => !isPriorityOperationallyFinished(order, lv)) ?? null;
+      return {
+        blockedByLowerPriorityPending: true,
+        blockingPriorityLevel,
+        blockedByLongestNotStarted: false,
+        isLongestPendingAndShouldStartNow: false,
+        recommendedStartAt: getBlockedPriorityReleaseAt(order, currentPriority),
+        maxPrep: prepForOrderItem(item),
+        currentPrep: prepForOrderItem(item),
+      };
+    }
+
+    const samePriorityItems = order.items.filter(
+      (i) => (i.priority?.priorityLevel ?? 1) === currentPriority,
+    );
+    const currentPrep = prepForOrderItem(item);
+    if (samePriorityItems.length <= 1) {
+      return {
+        blockedByLowerPriorityPending: false,
+        blockingPriorityLevel: null,
+        blockedByLongestNotStarted: false,
+        isLongestPendingAndShouldStartNow: item.status === 'pending',
+        recommendedStartAt: null,
+        maxPrep: currentPrep,
+        currentPrep,
+      };
+    }
+
+    const maxPrep = Math.max(...samePriorityItems.map(prepForOrderItem));
+    if (currentPrep >= maxPrep) {
+      const hasAnyStartedInPriority = samePriorityItems.some(
+        (candidate) =>
+          candidate.status === 'cooking' || candidate.status === 'ready' || candidate.status === 'served',
+      );
+      return {
+        blockedByLowerPriorityPending: false,
+        blockingPriorityLevel: null,
+        blockedByLongestNotStarted: false,
+        isLongestPendingAndShouldStartNow: item.status === 'pending' && !hasAnyStartedInPriority,
+        recommendedStartAt: null,
+        maxPrep,
+        currentPrep,
+      };
+    }
+
+    const longestItems = samePriorityItems.filter((candidate) => prepForOrderItem(candidate) === maxPrep);
+    const startedLongest = longestItems.find((candidate) =>
+      candidate.status === 'cooking' || candidate.status === 'ready' || candidate.status === 'served',
+    );
+
+    if (!startedLongest) {
+      return {
+        blockedByLowerPriorityPending: false,
+        blockingPriorityLevel: null,
+        blockedByLongestNotStarted: true,
+        isLongestPendingAndShouldStartNow: false,
+        recommendedStartAt: null,
+        maxPrep,
+        currentPrep,
+      };
+    }
+
+    const longestStartAt = startedLongest.startedAt ? new Date(startedLongest.startedAt) : currentTime;
+    const offsetMinutes = Math.max(0, maxPrep - currentPrep);
+    const recommendedStartAt = new Date(longestStartAt.getTime() + offsetMinutes * 60_000);
+    return {
+      blockedByLowerPriorityPending: false,
+      blockingPriorityLevel: null,
+      blockedByLongestNotStarted: false,
+      isLongestPendingAndShouldStartNow: false,
+      recommendedStartAt,
+      maxPrep,
+      currentPrep,
+    };
+  };
+
   const getSyncStartTime = (item: OrderItem, order: Order): { 
     shouldStartNow: boolean; 
     minutesUntilStart: number; 
     syncActive: boolean;
     startTime: Date | null;
   } => {
-    // Get all items from the full order across all stations
-    const fullOrder = apiOrders.find(o => o.id === order.id);
-    if (!fullOrder || !fullOrder.syncTiming) {
+    if (item.status !== 'pending') {
       return { shouldStartNow: true, minutesUntilStart: 0, syncActive: false, startTime: null };
     }
 
-    // Find max prep time across ALL items in order (all stations)
-    const maxPrepTime = Math.max(...fullOrder.items.map(i => i.menuItem.prepTime));
-    const itemPrepTime = item.menuItem.prepTime;
-    
-    // Calculate delay for this item to finish at the same time as longest item
-    const delayMinutes = maxPrepTime - itemPrepTime;
-    
-    if (delayMinutes <= 0) {
-      // This is the longest prep item, start immediately
-      return { shouldStartNow: true, minutesUntilStart: 0, syncActive: true, startTime: null };
+    // Regula stricta: intr-o comanda + prioritate, item-ul cu timp mai mic NU poate porni
+    // pana nu a inceput cel cu timp maxim.
+    const algorithmTiming = getPriorityAlgorithmTiming(order, item);
+    if (algorithmTiming.blockedByLowerPriorityPending) {
+      return { shouldStartNow: false, minutesUntilStart: 1, syncActive: true, startTime: null };
+    }
+    if (algorithmTiming.blockedByLongestNotStarted) {
+      return { shouldStartNow: false, minutesUntilStart: 1, syncActive: true, startTime: null };
+    }
+    if (algorithmTiming.isLongestPendingAndShouldStartNow) {
+      return { shouldStartNow: true, minutesUntilStart: 0, syncActive: true, startTime: currentTime };
+    }
+    if (algorithmTiming.recommendedStartAt) {
+      const minutesUntilStart = (algorithmTiming.recommendedStartAt.getTime() - currentTime.getTime()) / 60000;
+      return {
+        shouldStartNow: minutesUntilStart <= 0.5,
+        minutesUntilStart,
+        syncActive: true,
+        startTime: algorithmTiming.recommendedStartAt,
+      };
     }
 
-    // Calculate when this item should start
-    const orderCreatedAt = new Date(fullOrder.createdAt);
-    const startTime = new Date(orderCreatedAt.getTime() + delayMinutes * 60000);
+    const key = `${order.id}:${item.id}`;
+    const startTime = plannedStartByItemKey.get(key) ?? null;
+    if (!startTime) return { shouldStartNow: true, minutesUntilStart: 0, syncActive: false, startTime: null };
     const minutesUntilStart = (startTime.getTime() - currentTime.getTime()) / 60000;
-    
-    // Should start if less than 1 minute until start time
-    const shouldStartNow = minutesUntilStart <= 1;
-
+    const shouldStartNow = minutesUntilStart <= 0.5;
     return { shouldStartNow, minutesUntilStart, syncActive: true, startTime };
+  };
+
+  const canStartItemNow = (order: Order, item: OrderItem): boolean => {
+    void order;
+    if (item.status !== 'pending') return false;
+    return true;
   };
 
   // Calculate order progress
@@ -281,11 +584,11 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
 
   // Handlers
   const handleItemTap = (orderId: string, itemId: string) => {
-    const item = stationOrders
-      .flatMap((so) => so.items)
-      .find((i) => String(i.id) === String(itemId));
+    const stationOrder = stationOrders.find((so) => String(so.order.id) === String(orderId));
+    const item = stationOrder?.items.find((i) => String(i.id) === String(itemId));
     
     if (!item || item.status !== 'cooking') {
+      void stationOrder;
       setEmployeeSelectItem({ orderId, itemId });
     } else {
       const { canComplete } = getRemainingTime(item);
@@ -306,17 +609,8 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     const { orderId, itemId } = employeeSelectItem;
     const order = apiOrders.find((o) => String(o.id) === String(orderId));
     const item = order?.items.find((i) => String(i.id) === String(itemId));
-    if (order && item) {
-      const sync = getSyncStartTime(item, order);
-      if (sync.syncActive && !sync.shouldStartNow) {
-        toast({
-          title: 'Sincronizare activă',
-          description: `Acest preparat pornește peste ${Math.max(1, Math.ceil(sync.minutesUntilStart))} min.`,
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
+    void order;
+    void item;
     
     try {
       await ordersApi.updateItemStatus(Number(orderId), Number(itemId), 'cooking', {
@@ -381,9 +675,18 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
   };
 
   const handleStartAllItems = (orderId: string, items: OrderItem[]) => {
-    const pendingItems = items.filter(i => i.status === 'pending');
-    if (pendingItems.length > 0) {
-      setEmployeeSelectItem({ orderId, itemId: pendingItems[0].id });
+    const pendingItems = items
+      .filter((i) => i.status === 'pending')
+      .sort((a, b) => {
+        const prepA = Math.max(1, a.menuItem.prepTime || 1) * Math.max(1, a.quantity || 1);
+        const prepB = Math.max(1, b.menuItem.prepTime || 1) * Math.max(1, b.quantity || 1);
+        return prepB - prepA;
+      });
+    const order = apiOrders.find((o) => String(o.id) === String(orderId));
+    if (!order) return;
+    const firstStartable = pendingItems.find((item) => canStartItemNow(order, item));
+    if (firstStartable) {
+      setEmployeeSelectItem({ orderId, itemId: firstStartable.id });
     }
   };
 
@@ -534,6 +837,18 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     return { display: `~${maxPrepTime} min`, status: 'normal' };
   };
 
+  const formatOrderPlacedAt = (order: Order): string => {
+    const date = new Date(order.createdAt);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleString('ro-RO', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   // Render item with full details (used in all views)
   const renderItemRow = (order: Order, item: OrderItem, items: OrderItem[], showButtons: boolean = true) => {
     const timeInfo = getRemainingTime(item);
@@ -543,20 +858,60 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
     const syncInfo = getSyncStartTime(item, order);
     const isPending = item.status === 'pending';
     const shouldAlertStart = isPending && syncInfo.syncActive && syncInfo.shouldStartNow;
+    const startBlocked = false;
     
     return (
       <div key={item.id} className="flex flex-col">
         {/* Removed alert banner - using button animation instead */}
         
-        {/* Sync timing indicator for pending items */}
-        {isPending && syncInfo.syncActive && !syncInfo.shouldStartNow && syncInfo.startTime && (
-          <div className="mx-3 mt-2 p-2 rounded-lg bg-blue-100 border border-blue-300 text-blue-700 text-sm flex items-center gap-2">
-            <Clock className="w-4 h-4" />
+        {/* Scheduler timing indicator for pending items */}
+        {isPending && (() => {
+          const priorityTiming = getPriorityAlgorithmTiming(order, item);
+          return (
+            syncInfo.syncActive &&
+            !syncInfo.shouldStartNow &&
+            priorityTiming.blockedByLowerPriorityPending
+          );
+        })() && (
+          <div className="mx-3 mt-2 p-2 rounded-lg bg-purple-100 border border-purple-300 text-purple-800 text-sm flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
             <span>
-              Sincronizat - Începe la: {syncInfo.startTime.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-              <span className="font-bold ml-2">
-                (în {Math.ceil(syncInfo.minutesUntilStart)} min)
-              </span>
+              Start estimat (P{item.priority?.priorityLevel ?? 1}):{' '}
+              {getPriorityAlgorithmTiming(order, item).recommendedStartAt
+                ? formatPlanTime(getPriorityAlgorithmTiming(order, item).recommendedStartAt as Date)
+                : '-'}
+            </span>
+          </div>
+        )}
+
+        {isPending &&
+          syncInfo.syncActive &&
+          !syncInfo.shouldStartNow &&
+          !syncInfo.startTime &&
+          !getPriorityAlgorithmTiming(order, item).blockedByLowerPriorityPending && (
+          <div className="mx-3 mt-2 p-2 rounded-lg bg-amber-100 border border-amber-300 text-amber-800 text-sm flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span>Așteaptă produsul principal (timp mai mare) din această comandă.</span>
+          </div>
+        )}
+
+        {isPending && syncInfo.syncActive && syncInfo.startTime && (
+          <div
+            className={cn(
+              "mx-3 mt-2 p-2 rounded-lg text-sm flex items-center gap-2 border",
+              syncInfo.shouldStartNow
+                ? "bg-orange-100 border-orange-300 text-orange-700"
+                : "bg-blue-100 border-blue-300 text-blue-700"
+            )}
+          >
+            <Clock className="w-4 h-4" />
+            <span className="flex-1">
+              {syncInfo.shouldStartNow
+                ? `Începe acum (plan ${formatPlanTime(syncInfo.startTime)})`
+                : `Începe la ${formatPlanTime(syncInfo.startTime)}`}
+              {!syncInfo.shouldStartNow && (
+                <span className="font-bold ml-2">(în {Math.max(1, Math.ceil(syncInfo.minutesUntilStart))} min)</span>
+              )}
             </span>
           </div>
         )}
@@ -717,8 +1072,13 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         const config = platformConfig[order.source] || platformConfig.restaurant;
         const totalTime = getTotalOrderTime(items);
         const hasPendingItems = items.some(i => i.status === 'pending');
-        const fullOrder = apiOrders.find(o => o.id === order.id);
-        const isSyncOrder = fullOrder?.syncTiming;
+        const hasStartablePendingItems = items.some((i) => i.status === 'pending' && canStartItemNow(order, i));
+        const isSyncOrder = items.some((item) => item.status === 'pending' && getSyncStartTime(item, order).syncActive);
+        const nextPlannedStart = items
+          .filter((item) => item.status === 'pending')
+          .map((item) => getSyncStartTime(item, order).startTime)
+          .filter((x): x is Date => Boolean(x))
+          .sort((a, b) => a.getTime() - b.getTime())[0];
         
         // Check if any pending item should start now (for alert)
         const hasItemToStartNow = items.some(item => {
@@ -755,6 +1115,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                   <span>{config.label}</span>
                 </Badge>
               </div>
+              <div className="mt-1 text-xs text-slate-500">Dată la: {formatOrderPlacedAt(order)}</div>
               
             </CardHeader>
 
@@ -768,6 +1129,11 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
               )}>
                 <Timer className="w-4 h-4" />
                 <span>{totalTime.display}</span>
+                {nextPlannedStart && (
+                  <span className="ml-auto text-xs font-semibold">
+                    Următor start: {formatPlanTime(nextPlannedStart)}
+                  </span>
+                )}
               </div>
               
               {/* Progress Bar */}
@@ -796,6 +1162,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                     )}
                     size="sm"
                     onClick={() => handleStartAllItems(order.id, items)}
+                    disabled={!hasStartablePendingItems}
                   >
                     {hasItemToStartNow ? (
                       <>
@@ -827,8 +1194,13 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         const config = platformConfig[order.source] || platformConfig.restaurant;
         const totalTime = getTotalOrderTime(items);
         const hasPendingItems = items.some(i => i.status === 'pending');
-        const fullOrder = apiOrders.find(o => o.id === order.id);
-        const isSyncOrder = fullOrder?.syncTiming;
+        const hasStartablePendingItems = items.some((i) => i.status === 'pending' && canStartItemNow(order, i));
+        const isSyncOrder = items.some((item) => item.status === 'pending' && getSyncStartTime(item, order).syncActive);
+        const nextPlannedStart = items
+          .filter((item) => item.status === 'pending')
+          .map((item) => getSyncStartTime(item, order).startTime)
+          .filter((x): x is Date => Boolean(x))
+          .sort((a, b) => a.getTime() - b.getTime())[0];
         
         // Check if any pending item should start now (for alert)
         const hasItemToStartNow = items.some(item => {
@@ -849,14 +1221,17 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
           >
             {/* Header Row */}
             <div className="flex items-center gap-4 p-4 border-b border-slate-200 bg-slate-50">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl font-black text-primary">#{kdsOrderDisplayNumber(order)}</span>
-                {status === 'urgent' && <AlertTriangle className="w-5 h-5 text-red-500" />}
-                {isSyncOrder && (
-                  <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
-                    SYNC
-                  </Badge>
-                )}
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-black text-primary">#{kdsOrderDisplayNumber(order)}</span>
+                  {status === 'urgent' && <AlertTriangle className="w-5 h-5 text-red-500" />}
+                  {isSyncOrder && (
+                    <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                      SYNC
+                    </Badge>
+                  )}
+                </div>
+                <div className="mt-0.5 text-xs text-slate-500">Dată la: {formatOrderPlacedAt(order)}</div>
               </div>
               
               <Badge className={cn("h-7 px-3", config.color, "text-white")}>
@@ -873,6 +1248,11 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                 <Timer className="w-4 h-4" />
                 <span>{totalTime.display}</span>
               </div>
+              {nextPlannedStart && (
+                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                  Următor start: {formatPlanTime(nextPlannedStart)}
+                </Badge>
+              )}
               
               <div className="flex-1" />
               
@@ -891,6 +1271,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                       : "bg-green-600 hover:bg-green-700"
                   )} 
                   onClick={() => handleStartAllItems(order.id, items)}
+                  disabled={!hasStartablePendingItems}
                 >
                   {hasItemToStartNow ? (
                     <>
@@ -927,6 +1308,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
         <div className="bg-slate-100 rounded-b-xl p-3 space-y-3 min-h-[400px] max-h-[calc(100vh-250px)] overflow-y-auto">
           {filteredOrders.filter(({ items }) => items.every(i => i.status === 'pending')).map(({ order, items }) => {
             const config = platformConfig[order.source] || platformConfig.restaurant;
+            const hasStartablePendingItems = items.some((i) => canStartItemNow(order, i));
             return (
               <Card key={order.id} className="bg-white shadow-sm animate-fade-in overflow-hidden">
                 <CardHeader className="p-3 pb-2 border-b border-slate-100">
@@ -936,13 +1318,19 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                       {config.label}
                     </Badge>
                   </div>
+                  <div className="mt-1 text-xs text-slate-500">Dată la: {formatOrderPlacedAt(order)}</div>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="divide-y divide-slate-50">
                     {items.map(item => renderItemRow(order, item, items))}
                   </div>
                   <div className="p-2 border-t border-slate-100">
-                    <Button size="sm" className="w-full bg-green-600 hover:bg-green-700" onClick={() => handleStartAllItems(order.id, items)}>
+                    <Button
+                      size="sm"
+                      className="w-full bg-green-600 hover:bg-green-700"
+                      onClick={() => handleStartAllItems(order.id, items)}
+                      disabled={!hasStartablePendingItems}
+                    >
                       <Play className="w-4 h-4 mr-1" /> Start
                     </Button>
                   </div>
@@ -973,6 +1361,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                       <span className="text-xs font-bold">{progress}%</span>
                     </div>
                   </div>
+                  <div className="mt-1 text-xs text-slate-500">Dată la: {formatOrderPlacedAt(order)}</div>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="divide-y divide-slate-50">
@@ -999,6 +1388,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                   <span className="font-black text-green-600 text-lg">#{kdsOrderDisplayNumber(order)}</span>
                   <CheckCircle2 className="w-5 h-5 text-green-500" />
                 </div>
+                <div className="mb-2 text-xs text-slate-500">Dată la: {formatOrderPlacedAt(order)}</div>
                 <div className="space-y-1">
                   {items.map(item => (
                     <div key={item.id} className="text-sm text-slate-600 line-through flex items-center gap-2">
@@ -1040,6 +1430,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
                     {config.label}
                   </Badge>
                 </div>
+                <div className="mt-1 text-xs text-slate-600">Dată la: {formatOrderPlacedAt(order)}</div>
               </CardHeader>
               <CardContent className="p-3 pt-0 space-y-1">
                 {stationItems.map(item => (
@@ -1102,7 +1493,7 @@ const KDSEnhancedModule: React.FC<KDSEnhancedModuleProps> = ({ station, onLogout
             <div className="min-w-0">
               <h1 className="text-base md:text-xl font-bold truncate">{station.name}</h1>
               <p className="text-xs md:text-sm text-slate-400 hidden sm:block">
-                {ordersLoading ? 'KDS Enhanced · se încarcă din DB…' : 'KDS Enhanced · sursă: DB'}
+                {ordersLoading ? 'KDS Enhanced · se încarcă…' : 'KDS Enhanced · date live'}
               </p>
             </div>
           </div>
